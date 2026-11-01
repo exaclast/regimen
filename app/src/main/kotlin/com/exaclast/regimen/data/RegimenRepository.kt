@@ -2,6 +2,7 @@ package com.exaclast.regimen.data
 
 import android.content.Context
 import com.exaclast.regimen.domain.DoseEngine
+import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.Condition
 import com.exaclast.regimen.model.ConditionStatus
 import com.exaclast.regimen.model.DoseLog
@@ -16,6 +17,7 @@ import com.exaclast.regimen.model.Prescriber
 import com.exaclast.regimen.model.RegimenBackupBundle
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.TimeOfDayBucket
+import com.exaclast.regimen.notifications.DoseNotificationManager
 import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -24,6 +26,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 data class RegimenSnapshot(
+  val settings: AppSettings = AppSettings(),
   val medications: List<Medication> = emptyList(),
   val prescribers: List<Prescriber> = emptyList(),
   val conditions: List<Condition> = emptyList(),
@@ -67,9 +70,21 @@ class RegimenRepository private constructor(context: Context) {
     reloadSnapshot()
   }
 
+  private fun loadSettings(): AppSettings {
+    val raw = prefs.getString(KEY_APP_SETTINGS, null) ?: return AppSettings()
+    return runCatching { json.decodeFromString<AppSettings>(raw) }.getOrDefault(AppSettings())
+  }
+
+  fun saveSettings(settings: AppSettings) {
+    prefs.edit().putString(KEY_APP_SETTINGS, json.encodeToString(settings)).apply()
+    reloadSnapshot()
+  }
+
   @Synchronized
   fun reloadSnapshot() {
-    _snapshot.value = RegimenSnapshot(
+    val loadedSettings = loadSettings()
+    val nextSnapshot = RegimenSnapshot(
+      settings = loadedSettings,
       medications = db.getAllMedications(),
       prescribers = db.getAllPrescribers(),
       conditions = db.getAllConditions(),
@@ -77,6 +92,13 @@ class RegimenRepository private constructor(context: Context) {
       schedules = db.getAllSchedules(),
       doseLogs = db.getAllDoseLogs(),
     )
+    _snapshot.value = nextSnapshot
+    DoseNotificationManager.scheduleDailyBucketAlarms(
+      context = appContext,
+      buckets = nextSnapshot.buckets,
+      settings = loadedSettings,
+    )
+    DoseNotificationManager.syncActiveWindowNotifications(appContext, nextSnapshot)
   }
 
   fun saveMedication(medication: Medication, schedulesForMedication: List<MedicationSchedule>? = null) {
@@ -204,6 +226,15 @@ class RegimenRepository private constructor(context: Context) {
       updatedAtEpochMillis = now,
     )
     db.upsertDoseLog(log)
+    if (scheduleId != null && bucketId != null) {
+      val itemKey = "${scheduleId}_${bucketId}_$scheduledDateIso"
+      DoseNotificationManager.cancelNotificationForItem(appContext, itemKey)
+      if (status == DoseStatus.SNOOZED && snoozedUntilMillis != null) {
+        DoseNotificationManager.scheduleSnoozeAlarm(appContext, itemKey, bucketId, snoozedUntilMillis)
+      } else {
+        DoseNotificationManager.cancelSnoozeAlarm(appContext, itemKey, bucketId)
+      }
+    }
     reloadSnapshot()
     return log
   }
@@ -218,8 +249,9 @@ class RegimenRepository private constructor(context: Context) {
   fun exportBackupJson(): String {
     val s = _snapshot.value
     val bundle = RegimenBackupBundle(
-      version = 1,
+      version = 2,
       exportedAtEpochMillis = System.currentTimeMillis(),
+      settings = s.settings,
       medications = s.medications,
       prescribers = s.prescribers,
       conditions = s.conditions,
@@ -233,6 +265,7 @@ class RegimenRepository private constructor(context: Context) {
   fun importBackupJson(rawJson: String): Result<Int> {
     return runCatching {
       val bundle = json.decodeFromString<RegimenBackupBundle>(rawJson)
+      prefs.edit().putString(KEY_APP_SETTINGS, json.encodeToString(bundle.settings)).apply()
       bundle.buckets.forEach { db.upsertBucket(it) }
       bundle.prescribers.forEach { db.upsertPrescriber(it) }
       bundle.conditions.forEach { db.upsertCondition(it) }
@@ -242,6 +275,21 @@ class RegimenRepository private constructor(context: Context) {
       reloadSnapshot()
       bundle.medications.size
     }
+  }
+
+  @Synchronized
+  fun clearAllUserData() {
+    DoseNotificationManager.cancelAllNotifications(appContext)
+    db.clearUserRecords()
+    reloadSnapshot()
+  }
+
+  @Synchronized
+  fun resetToSampleData() {
+    DoseNotificationManager.cancelAllNotifications(appContext)
+    db.clearUserRecords()
+    seedInitialSampleData()
+    reloadSnapshot()
   }
 
   private fun seedInitialSampleData() {
@@ -430,6 +478,7 @@ class RegimenRepository private constructor(context: Context) {
 
   companion object {
     private const val KEY_SEEDED_INITIAL = "seeded_initial_v1"
+    private const val KEY_APP_SETTINGS = "app_settings_v1"
 
     @Volatile
     private var INSTANCE: RegimenRepository? = null

@@ -84,5 +84,28 @@ class FdaNdcLookupServiceTest {
     )
     assertEquals("7:00 AM – 10:00 AM", morning.formattedTime())
   }
+
+  @Test
+  fun parseDrugBarcode_extractsNdcExpAndLotFromGs1DataMatrixAndUpc() {
+    // 1. Parenthesized GS1 DataMatrix
+    val gs1Paren = FdaNdcLookupService.parseDrugBarcode("(01)00300090085106(17)271231(10)PFZ882")
+    assertEquals("0009008510", gs1Paren.extractedNdc)
+    assertEquals("2027-12-31", gs1Paren.expirationDateIso)
+    assertEquals("PFZ882", gs1Paren.lotNumber)
+
+    // 2. Raw GS1 DataMatrix with AIM identifier "]d2"
+    val gs1Raw = FdaNdcLookupService.parseDrugBarcode("]d201003594170104151728063010LOT42")
+    assertEquals("5941701041", gs1Raw.extractedNdc)
+    assertEquals("2028-06-30", gs1Raw.expirationDateIso)
+    assertEquals("LOT42", gs1Raw.lotNumber)
+
+    // 3. 12-digit UPC-A starting with '3' (3 + 10-digit NDC + check digit)
+    val upcA = FdaNdcLookupService.parseDrugBarcode("300090085106")
+    assertEquals("0009008510", upcA.extractedNdc)
+
+    // 4. Candidate NDC-11s for a 10-digit unhyphenated barcode cover 4-4-2, 5-3-2, and 5-4-1
+    val candidates = FdaNdcLookupService.candidateNdc11s("(01)00359417104105")
+    assertTrue(candidates.contains("59417-0104-10"))
+  }
 }
 

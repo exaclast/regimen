@@ -341,9 +341,32 @@ data class DoseLog(
 )
 
 @Serializable
+enum class ThemeMode(val displayName: String) {
+  SYSTEM("System Default"),
+  LIGHT("Light"),
+  DARK("Dark"),
+}
+
+@Serializable
+data class AppSettings(
+  val notificationsEnabled: Boolean = true,
+  val alarmsEnabled: Boolean = true,
+  val snoozeMinutes: Int = 30,
+  val discreetNotifications: Boolean = false,
+  val confirmBeforeTake: Boolean = false,
+  val themeMode: ThemeMode = ThemeMode.SYSTEM,
+  val dynamicColor: Boolean = true,
+) {
+  companion object {
+    val SNOOZE_PRESETS = listOf(15, 30, 45, 60)
+  }
+}
+
+@Serializable
 data class RegimenBackupBundle(
-  val version: Int = 1,
+  val version: Int = 2,
   val exportedAtEpochMillis: Long = System.currentTimeMillis(),
+  val settings: AppSettings = AppSettings(),
   val medications: List<Medication> = emptyList(),
   val prescribers: List<Prescriber> = emptyList(),
   val conditions: List<Condition> = emptyList(),

@@ -1,5 +1,6 @@
 package com.exaclast.regimen.notifications
 
+import android.app.AlarmManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -17,18 +18,29 @@ class DoseActionReceiver : BroadcastReceiver() {
     val repo = RegimenRepository.getInstance(context)
     val action = intent.action ?: return
 
-    if (action == Intent.ACTION_BOOT_COMPLETED) {
+    if (
+      action == Intent.ACTION_BOOT_COMPLETED ||
+      action == Intent.ACTION_MY_PACKAGE_REPLACED ||
+      action == Intent.ACTION_TIME_CHANGED ||
+      action == Intent.ACTION_TIMEZONE_CHANGED ||
+      action == AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED
+    ) {
       val s = repo.snapshot.value
-      DoseNotificationManager.scheduleDailyBucketAlarms(context, s.buckets)
+      DoseNotificationManager.scheduleDailyBucketAlarms(context, s.buckets, s.settings)
+      DoseNotificationManager.syncActiveWindowNotifications(context, s)
       return
     }
 
     if (action == ACTION_TRIGGER_WINDOW_START || action == ACTION_TRIGGER_WINDOW_END_ALARM) {
       val s = repo.snapshot.value
-      DoseNotificationManager.scheduleDailyBucketAlarms(context, s.buckets)
+      // Immediately chain the next day's exact window start and end alarms
+      DoseNotificationManager.scheduleDailyBucketAlarms(context, s.buckets, s.settings)
+      if (!s.settings.notificationsEnabled) return
+
       val bucketId = intent.getStringExtra(EXTRA_BUCKET_ID)
       val targetItemKey = intent.getStringExtra(EXTRA_ITEM_KEY)
       val stage = if (action == ACTION_TRIGGER_WINDOW_END_ALARM) {
+        if (!s.settings.alarmsEnabled) return
         DoseNotificationStage.WINDOW_END_ALARM
       } else {
         DoseNotificationStage.WINDOW_START_PERSISTENT
@@ -60,6 +72,7 @@ class DoseActionReceiver : BroadcastReceiver() {
             context = context,
             item = item,
             stage = stage,
+            settings = s.settings,
           )
         }
       return
@@ -94,7 +107,8 @@ class DoseActionReceiver : BroadcastReceiver() {
       }
 
       ACTION_SNOOZE -> {
-        val snoozeUntil = System.currentTimeMillis() + 30L * 60L * 1000L
+        val snoozeMins = repo.snapshot.value.settings.snoozeMinutes
+        val snoozeUntil = System.currentTimeMillis() + snoozeMins.toLong() * 60L * 1000L
         repo.logDose(
           medicationId = medicationId,
           scheduleId = scheduleId,
@@ -107,13 +121,7 @@ class DoseActionReceiver : BroadcastReceiver() {
           snoozedUntilMillis = snoozeUntil,
           existingLogId = existingLogId,
         )
-        DoseNotificationManager.scheduleSnoozeAlarm(
-          context = context,
-          itemKey = "${scheduleId}_${bucketId}_$dateIso",
-          bucketId = bucketId,
-          triggerAtMillis = snoozeUntil,
-        )
-        Toast.makeText(context, "Snoozed for 30 minutes", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Snoozed for $snoozeMins minutes", Toast.LENGTH_SHORT).show()
       }
 
       ACTION_SKIP -> {

@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
@@ -101,7 +102,21 @@ fun TodayScreen(
   var pendingNotificationItem by remember { mutableStateOf<Pair<ScheduledDoseItem, DoseNotificationStage>?>(null) }
   var notificationPickerItem by remember { mutableStateOf<ScheduledDoseItem?>(null) }
   var siteOverrideDialogItem by remember { mutableStateOf<ScheduledDoseItem?>(null) }
+  var confirmTakeDialogItem by remember { mutableStateOf<ScheduledDoseItem?>(null) }
   var prnSiteOverrideItem by remember { mutableStateOf<PrnDoseItem?>(null) }
+  val settings = uiState.snapshot.settings
+
+  val handlePrimaryTakeClick: (ScheduledDoseItem) -> Unit = { item ->
+    if (settings.confirmBeforeTake) {
+      if (item.medication.siteRotationEnabled && item.medication.rotationSites.size > 1) {
+        siteOverrideDialogItem = item
+      } else {
+        confirmTakeDialogItem = item
+      }
+    } else {
+      onTakeScheduledDose(item, item.suggestedSite)
+    }
+  }
 
   val permissionLauncher = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.RequestPermission()
@@ -162,8 +177,11 @@ fun TodayScreen(
             items(uiState.dailyBoard.bucketGroups, key = { it.bucket.id }) { group ->
               BucketSectionCard(
                 group = group,
+                snoozeMinutes = settings.snoozeMinutes,
+                globalNotificationsEnabled = settings.notificationsEnabled,
+                globalAlarmsEnabled = settings.alarmsEnabled,
                 onTakeAll = { onTakeAllInBucket(group.bucket.id) },
-                onTakeItem = { item, site -> onTakeScheduledDose(item, site) },
+                onTakeItem = { item -> handlePrimaryTakeClick(item) },
                 onSkipItem = onSkipScheduledDose,
                 onSnoozeItem = onSnoozeScheduledDose,
                 onUndoItem = onUndoScheduledDose,
@@ -232,8 +250,11 @@ fun TodayScreen(
           items(uiState.dailyBoard.bucketGroups, key = { it.bucket.id }) { group ->
             BucketSectionCard(
               group = group,
+              snoozeMinutes = settings.snoozeMinutes,
+              globalNotificationsEnabled = settings.notificationsEnabled,
+              globalAlarmsEnabled = settings.alarmsEnabled,
               onTakeAll = { onTakeAllInBucket(group.bucket.id) },
-              onTakeItem = { item, site -> onTakeScheduledDose(item, site) },
+              onTakeItem = { item -> handlePrimaryTakeClick(item) },
               onSkipItem = onSkipScheduledDose,
               onSnoozeItem = onSnoozeScheduledDose,
               onUndoItem = onUndoScheduledDose,
@@ -279,6 +300,35 @@ fun TodayScreen(
       onConfirmSiteAndTake = { chosenSite ->
         onTakeScheduledDose(item, chosenSite)
         siteOverrideDialogItem = null
+      },
+    )
+  }
+
+  // Confirm take dialog when confirmBeforeTake setting is enabled (for non-site-rotation meds)
+  confirmTakeDialogItem?.let { item ->
+    AlertDialog(
+      onDismissRequest = { confirmTakeDialogItem = null },
+      title = { Text("Confirm Dose: ${item.medication.displayTitle}") },
+      text = {
+        Text(
+          text = "Log ${item.formattedDoseInstruction()} for ${item.bucket.name} (${item.bucket.formattedTime()})?",
+          style = MaterialTheme.typography.bodyMedium,
+        )
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            onTakeScheduledDose(item, item.suggestedSite)
+            confirmTakeDialogItem = null
+          }
+        ) {
+          Text("Log Dose Taken")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { confirmTakeDialogItem = null }) {
+          Text("Cancel")
+        }
       },
     )
   }
@@ -398,6 +448,20 @@ private fun DateAndProgressHeader(
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
+          if (!uiState.snapshot.settings.notificationsEnabled) {
+            AssistChip(
+              onClick = onOpenSettings,
+              label = { Text("Alerts Off") },
+              leadingIcon = {
+                Icon(
+                  Icons.Default.NotificationsOff,
+                  contentDescription = null,
+                  modifier = Modifier.size(16.dp),
+                )
+              },
+              modifier = Modifier.padding(end = 4.dp),
+            )
+          }
           if (!isToday) {
             TextButton(onClick = onResetToToday) {
               Text("Today", color = MaterialTheme.colorScheme.onPrimaryContainer)
@@ -406,7 +470,7 @@ private fun DateAndProgressHeader(
           IconButton(onClick = onOpenSettings) {
             Icon(
               Icons.Default.Settings,
-              contentDescription = "Schedule & Backup Settings",
+              contentDescription = "Settings",
               tint = MaterialTheme.colorScheme.onPrimaryContainer,
             )
           }
@@ -457,8 +521,11 @@ private fun EmptyScheduleCard() {
 @Composable
 private fun BucketSectionCard(
   group: BucketDoseGroup,
+  snoozeMinutes: Int,
+  globalNotificationsEnabled: Boolean,
+  globalAlarmsEnabled: Boolean,
   onTakeAll: () -> Unit,
-  onTakeItem: (ScheduledDoseItem, String?) -> Unit,
+  onTakeItem: (ScheduledDoseItem) -> Unit,
   onSkipItem: (ScheduledDoseItem) -> Unit,
   onSnoozeItem: (ScheduledDoseItem) -> Unit,
   onUndoItem: (ScheduledDoseItem) -> Unit,
@@ -497,10 +564,11 @@ private fun BucketSectionCard(
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.Bold,
             )
-            val alarmNote = if (group.bucket.alarmAtWindowEnd) {
-              " • Alarm at ${group.bucket.formattedEndTime()}"
-            } else {
-              ""
+            val alarmNote = when {
+              !globalNotificationsEnabled || !group.bucket.notificationsEnabled -> " • Notifications off"
+              globalAlarmsEnabled && group.bucket.alarmAtWindowEnd ->
+                " • Alarm at ${group.bucket.formattedEndTime()}"
+              else -> " • Persistent notification only"
             }
             Text(
               text = "Window: ${group.bucket.formattedTime()}$alarmNote",
@@ -528,7 +596,8 @@ private fun BucketSectionCard(
         group.items.forEach { item ->
           ScheduledDoseRowCard(
             item = item,
-            onTake = { onTakeItem(item, item.suggestedSite) },
+            snoozeMinutes = snoozeMinutes,
+            onTake = { onTakeItem(item) },
             onSkip = { onSkipItem(item) },
             onSnooze = { onSnoozeItem(item) },
             onUndo = { onUndoItem(item) },
@@ -546,6 +615,7 @@ private fun BucketSectionCard(
 @Composable
 private fun ScheduledDoseRowCard(
   item: ScheduledDoseItem,
+  snoozeMinutes: Int,
   onTake: () -> Unit,
   onSkip: () -> Unit,
   onSnooze: () -> Unit,
@@ -733,7 +803,7 @@ private fun ScheduledDoseRowCard(
           ) {
             Icon(Icons.Default.Snooze, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(4.dp))
-            Text(if (item.isSnoozed) "Snoozed (30m)" else "Snooze")
+            Text(if (item.isSnoozed) "Snoozed (${snoozeMinutes}m)" else "Snooze (${snoozeMinutes}m)")
           }
 
           TextButton(

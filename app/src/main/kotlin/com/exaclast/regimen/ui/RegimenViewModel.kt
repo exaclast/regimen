@@ -8,6 +8,7 @@ import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.DailyDoseBoard
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.ScheduledDoseItem
+import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.Condition
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
@@ -105,8 +106,10 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
   )
 
   init {
+    val s = repository.snapshot.value
     DoseNotificationManager.ensureChannels(application)
-    DoseNotificationManager.scheduleDailyBucketAlarms(application, repository.snapshot.value.buckets)
+    DoseNotificationManager.scheduleDailyBucketAlarms(application, s.buckets, s.settings)
+    DoseNotificationManager.syncActiveWindowNotifications(application, s)
   }
 
   fun selectDestination(destination: TopLevelDestination) {
@@ -166,7 +169,10 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     DoseNotificationManager.cancelNotificationForItem(getApplication(), item.key)
   }
 
-  fun snoozeScheduledDose(item: ScheduledDoseItem, minutes: Int = 30) {
+  fun snoozeScheduledDose(
+    item: ScheduledDoseItem,
+    minutes: Int = repository.snapshot.value.settings.snoozeMinutes,
+  ) {
     val snoozeUntil = System.currentTimeMillis() + minutes * 60_000L
     repository.logDose(
       medicationId = item.medication.id,
@@ -179,13 +185,6 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
       siteUsed = item.suggestedSite,
       snoozedUntilMillis = snoozeUntil,
       existingLogId = item.existingLog?.id,
-    )
-    DoseNotificationManager.cancelNotificationForItem(getApplication(), item.key)
-    DoseNotificationManager.scheduleSnoozeAlarm(
-      context = getApplication(),
-      itemKey = item.key,
-      bucketId = item.bucket.id,
-      triggerAtMillis = snoozeUntil,
     )
   }
 
@@ -272,14 +271,36 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
 
   fun saveBucket(bucket: TimeOfDayBucket) {
     repository.saveBucket(bucket)
-    DoseNotificationManager.scheduleDailyBucketAlarms(getApplication(), repository.snapshot.value.buckets)
+  }
+
+  fun saveSettings(settings: AppSettings) {
+    repository.saveSettings(settings)
+  }
+
+  fun clearAllUserData() {
+    _selectedMedicationId.value = null
+    _selectedPrescriberId.value = null
+    _selectedConditionId.value = null
+    repository.clearAllUserData()
+  }
+
+  fun resetToSampleData() {
+    _selectedMedicationId.value = null
+    _selectedPrescriberId.value = null
+    _selectedConditionId.value = null
+    repository.resetToSampleData()
   }
 
   fun sendTestReminder(
     item: ScheduledDoseItem,
     stage: DoseNotificationStage = DoseNotificationStage.WINDOW_START_PERSISTENT,
   ): Boolean {
-    return DoseNotificationManager.showDoseWindowNotification(getApplication(), item, stage)
+    return DoseNotificationManager.showDoseWindowNotification(
+      context = getApplication(),
+      item = item,
+      stage = stage,
+      settings = repository.snapshot.value.settings,
+    )
   }
 
   fun exportBackupJson(): String = repository.exportBackupJson()

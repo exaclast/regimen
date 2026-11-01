@@ -139,4 +139,8 @@ dependencies {
   implementation(libs.androidx.navigation3.ui)
   implementation(libs.androidx.navigation3.runtime)
   implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+
+  // Barcode / GS1 DataMatrix Scanner (Google Code Scanner)
+  implementation(libs.play.services.code.scanner)
+  implementation(libs.play.services.base)
 }

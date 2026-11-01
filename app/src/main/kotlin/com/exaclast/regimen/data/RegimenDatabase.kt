@@ -257,6 +257,21 @@ class RegimenDatabase(context: Context) :
     writableDatabase.insertWithOnConflict("dose_logs", null, values, SQLiteDatabase.CONFLICT_REPLACE)
   }
 
+  fun clearUserRecords() {
+    val db = writableDatabase
+    db.beginTransaction()
+    try {
+      db.delete("dose_logs", null, null)
+      db.delete("schedules", null, null)
+      db.delete("medications", null, null)
+      db.delete("prescribers", null, null)
+      db.delete("conditions", null, null)
+      db.setTransactionSuccessful()
+    } finally {
+      db.endTransaction()
+    }
+  }
+
   companion object {
     private const val DB_NAME = "regimen_store.db"
     private const val DB_VERSION = 1

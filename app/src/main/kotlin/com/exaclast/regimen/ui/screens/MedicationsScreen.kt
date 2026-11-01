@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -71,11 +72,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.exaclast.regimen.data.DrugBarcodeScanner
 import com.exaclast.regimen.data.FdaNdcLookupService
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.DoseEngine
@@ -1103,19 +1106,69 @@ private fun MedicationEditorDialog(
   var prescribedDateIso by rememberSaveable { mutableStateOf(initialMedication?.prescribedDateIso.orEmpty()) }
   var notes by rememberSaveable { mutableStateOf(initialMedication?.notes.orEmpty()) }
 
-  // Compact NDC lookup state
+  // Compact NDC & Barcode lookup state
+  val context = LocalContext.current
   val coroutineScope = rememberCoroutineScope()
   var isLookingUpNdc by remember { mutableStateOf(false) }
   var ndcErrorText by remember { mutableStateOf<String?>(null) }
+  var ndcStatusText by remember { mutableStateOf<String?>(null) }
   var ndcMatched by remember { mutableStateOf(false) }
+  var showManualBarcodeDialog by remember { mutableStateOf(false) }
+  var manualBarcodeNote by remember { mutableStateOf<String?>(null) }
+  var manualBarcodeInput by remember { mutableStateOf("") }
+
+  fun runNdcOrBarcodeLookup(rawQuery: String) {
+    val query = rawQuery.trim()
+    if (query.isEmpty()) return
+    isLookingUpNdc = true
+    ndcErrorText = null
+    ndcStatusText = null
+    coroutineScope.launch {
+      val res = FdaNdcLookupService.lookupByNdc(query)
+      isLookingUpNdc = false
+      res.fold(
+        onSuccess = { fda ->
+          ndc11 = fda.ndc11
+          formulaName = fda.formulaName
+          fda.brandName?.let { brandName = it }
+          fda.manufacturer?.let { manufacturer = it }
+          strength = fda.strength
+          form = fda.form
+          defaultDoseUnit = fda.defaultDoseUnit
+          fda.route?.let { route = it }
+          fda.concentrationMgPerMl?.let { concentrationText = formatNum(it) }
+          fda.vialVolumeMl?.let { vialVolumeText = formatNum(it) }
+          if (fda.form.supportsSiteRotation) {
+            siteRotationEnabled = true
+          }
+          val metaParts = mutableListOf<String>()
+          fda.lotNumber?.let { metaParts.add("Lot: $it") }
+          fda.expirationDateIso?.let { metaParts.add("Exp: $it") }
+          if (metaParts.isNotEmpty()) {
+            val metaLine = metaParts.joinToString(" • ")
+            ndcStatusText = "Autofilled (${fda.ndc11} • $metaLine)"
+            if (!notes.contains(metaLine)) {
+              notes = if (notes.isBlank()) metaLine else "$notes\n$metaLine"
+            }
+          } else {
+            ndcStatusText = "Autofilled from FDA NDC (${fda.ndc11})"
+          }
+          ndcMatched = true
+        },
+        onFailure = { err ->
+          ndcMatched = false
+          ndcErrorText = err.message ?: "NDC not found"
+        },
+      )
+    }
+  }
 
   val hasInitialPacing = initialMedication?.let {
     it.minIntervalMinutes != null || it.maxDailyDoses != null || it.maxDailyAmount != null
   } ?: false
 
   val hasInitialOptionalDetails = initialMedication?.let {
-    !it.brandName.isNullOrBlank() ||
-      !it.manufacturer.isNullOrBlank() ||
+    !it.manufacturer.isNullOrBlank() ||
       it.prescriberId != null ||
       !it.prescribedDateIso.isNullOrBlank() ||
       !it.notes.isNullOrBlank()
@@ -1211,7 +1264,105 @@ private fun MedicationEditorDialog(
             .padding(20.dp),
           verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-          // 1. Essential Medication Identity
+          // 1. Top Barcode / NDC-11 Scanner & Lookup + Core Medication Identity
+          OutlinedTextField(
+            value = ndc11,
+            onValueChange = {
+              ndc11 = it
+              ndcErrorText = null
+              ndcStatusText = null
+              ndcMatched = false
+            },
+            label = { Text("NDC-11 or Barcode (Optional)") },
+            placeholder = { Text("Scan 2D/UPC or enter 00009-0085-10") },
+            singleLine = true,
+            isError = ndcErrorText != null,
+            supportingText = (ndcErrorText ?: ndcStatusText)?.let { msg -> { Text(msg) } },
+            trailingIcon = {
+              when {
+                isLookingUpNdc -> {
+                  CircularProgressIndicator(
+                    modifier = Modifier
+                      .padding(end = 12.dp)
+                      .size(18.dp),
+                    strokeWidth = 2.dp,
+                  )
+                }
+                ndc11.isNotBlank() -> {
+                  Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                      onClick = {
+                        DrugBarcodeScanner.startScan(
+                          context = context,
+                          onScanned = { rawBarcode ->
+                            runNdcOrBarcodeLookup(rawBarcode)
+                          },
+                          onUnavailable = { reason ->
+                            manualBarcodeNote = reason
+                            showManualBarcodeDialog = true
+                          },
+                        )
+                      }
+                    ) {
+                      Icon(
+                        Icons.Default.QrCodeScanner,
+                        contentDescription = "Scan Drug Barcode or 2D DataMatrix",
+                        modifier = Modifier.size(20.dp),
+                      )
+                    }
+                    TextButton(
+                      onClick = { runNdcOrBarcodeLookup(ndc11) }
+                    ) {
+                      if (ndcMatched) {
+                        Icon(
+                          Icons.Default.Check,
+                          contentDescription = null,
+                          modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                      }
+                      Text("Autofill")
+                    }
+                  }
+                }
+                else -> {
+                  TextButton(
+                    onClick = {
+                      DrugBarcodeScanner.startScan(
+                        context = context,
+                        onScanned = { rawBarcode ->
+                          runNdcOrBarcodeLookup(rawBarcode)
+                        },
+                        onUnavailable = { reason ->
+                          manualBarcodeNote = reason
+                          showManualBarcodeDialog = true
+                        },
+                      )
+                    }
+                  ) {
+                    Icon(
+                      Icons.Default.QrCodeScanner,
+                      contentDescription = null,
+                      modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Scan")
+                  }
+                }
+              }
+            },
+            modifier = Modifier.fillMaxWidth(),
+          )
+
+          OutlinedTextField(
+            value = brandName,
+            onValueChange = { brandName = it },
+            label = { Text("Brand Name (Optional)") },
+            placeholder = { Text("e.g. Depo-Testosterone, Vyvanse") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+          )
+
           OutlinedTextField(
             value = formulaName,
             onValueChange = { formulaName = it },
@@ -1285,80 +1436,6 @@ private fun MedicationEditorDialog(
             options = listOf<Condition?>(null) + conditions,
             optionLabel = { it?.name ?: "None linked" },
             onOptionSelected = { selectedConditionId = it?.id },
-            modifier = Modifier.fillMaxWidth(),
-          )
-
-          // Inline, subtle NDC-11 field with trailing Lookup action
-          OutlinedTextField(
-            value = ndc11,
-            onValueChange = {
-              ndc11 = it
-              ndcErrorText = null
-              ndcMatched = false
-            },
-            label = { Text("NDC-11 (Optional)") },
-            placeholder = { Text("00009-0085-10") },
-            singleLine = true,
-            isError = ndcErrorText != null,
-            supportingText = ndcErrorText?.let { err -> { Text(err) } },
-            trailingIcon = {
-              when {
-                isLookingUpNdc -> {
-                  CircularProgressIndicator(
-                    modifier = Modifier
-                      .padding(end = 12.dp)
-                      .size(18.dp),
-                    strokeWidth = 2.dp,
-                  )
-                }
-                ndc11.isNotBlank() -> {
-                  TextButton(
-                    onClick = {
-                      val query = ndc11.trim()
-                      if (query.isEmpty()) return@TextButton
-                      isLookingUpNdc = true
-                      ndcErrorText = null
-                      coroutineScope.launch {
-                        val res = FdaNdcLookupService.lookupByNdc(query)
-                        isLookingUpNdc = false
-                        res.fold(
-                          onSuccess = { fda ->
-                            ndc11 = fda.ndc11
-                            formulaName = fda.formulaName
-                            fda.brandName?.let { brandName = it }
-                            fda.manufacturer?.let { manufacturer = it }
-                            strength = fda.strength
-                            form = fda.form
-                            defaultDoseUnit = fda.defaultDoseUnit
-                            fda.route?.let { route = it }
-                            fda.concentrationMgPerMl?.let { concentrationText = formatNum(it) }
-                            fda.vialVolumeMl?.let { vialVolumeText = formatNum(it) }
-                            if (fda.form.supportsSiteRotation) {
-                              siteRotationEnabled = true
-                            }
-                            ndcMatched = true
-                          },
-                          onFailure = { err ->
-                            ndcMatched = false
-                            ndcErrorText = err.message ?: "NDC not found"
-                          },
-                        )
-                      }
-                    }
-                  ) {
-                    if (ndcMatched) {
-                      Icon(
-                        Icons.Default.Check,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                      )
-                      Spacer(modifier = Modifier.width(4.dp))
-                    }
-                    Text("Autofill")
-                  }
-                }
-              }
-            },
             modifier = Modifier.fillMaxWidth(),
           )
 
@@ -1637,32 +1714,22 @@ private fun MedicationEditorDialog(
 
           // 5. Collapsible Optional Rx & Drug Details Section
           val optionalSummary = listOfNotNull(
-            brandName.takeIf { it.isNotBlank() },
             manufacturer.takeIf { it.isNotBlank() },
             prescribers.find { it.id == selectedPrescriberId }?.name,
-          ).joinToString(" • ").ifEmpty { "Brand, manufacturer, prescriber, prescribed date & notes" }
+          ).joinToString(" • ").ifEmpty { "Manufacturer, prescriber, prescribed date & notes" }
 
           CollapsibleFormSection(
             title = "Optional Rx & Drug Details",
             subtitle = optionalSummary,
             initiallyExpanded = hasInitialOptionalDetails,
           ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-              OutlinedTextField(
-                value = brandName,
-                onValueChange = { brandName = it },
-                label = { Text("Brand Name") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-              )
-              OutlinedTextField(
-                value = manufacturer,
-                onValueChange = { manufacturer = it },
-                label = { Text("Manufacturer") },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-              )
-            }
+            OutlinedTextField(
+              value = manufacturer,
+              onValueChange = { manufacturer = it },
+              label = { Text("Manufacturer") },
+              singleLine = true,
+              modifier = Modifier.fillMaxWidth(),
+            )
 
             val selectedDoc = prescribers.find { it.id == selectedPrescriberId }
             DropdownSelectorField(
@@ -1704,6 +1771,77 @@ private fun MedicationEditorDialog(
         }
       }
     }
+  }
+
+  if (showManualBarcodeDialog) {
+    AlertDialog(
+      onDismissRequest = { showManualBarcodeDialog = false },
+      title = { Text("Scan or Paste Drug Barcode") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          manualBarcodeNote?.let { note ->
+            Text(
+              text = note,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+          Text(
+            text = "Supports 2D GS1 DataMatrix ((01) GTIN + (17) Exp + (10) Lot), 1D UPC-A, or 10/11-digit NDC:",
+            style = MaterialTheme.typography.bodySmall,
+          )
+          OutlinedTextField(
+            value = manualBarcodeInput,
+            onValueChange = { manualBarcodeInput = it },
+            label = { Text("Raw Barcode / GS1 DataMatrix / UPC") },
+            placeholder = { Text("(01)00300090085106(17)271231(10)PFZ882") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+          )
+          Text(
+            text = "Quick Test Barcodes:",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+          )
+          FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            AssistChip(
+              onClick = {
+                manualBarcodeInput = "(01)00300090085106(17)271231(10)PFZ882"
+              },
+              label = { Text("2D DataMatrix (Depo-Testosterone)") },
+            )
+            AssistChip(
+              onClick = {
+                manualBarcodeInput = "3594170104105"
+              },
+              label = { Text("UPC-A (Vyvanse)") },
+            )
+          }
+        }
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            val code = manualBarcodeInput.trim()
+            showManualBarcodeDialog = false
+            if (code.isNotEmpty()) {
+              runNdcOrBarcodeLookup(code)
+            }
+          },
+          enabled = manualBarcodeInput.isNotBlank(),
+        ) {
+          Text("Decode & Autofill")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showManualBarcodeDialog = false }) {
+          Text("Cancel")
+        }
+      },
+    )
   }
 }
 

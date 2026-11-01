@@ -123,5 +123,6 @@ jobs:
         with:
           name: "Regimen ${{ steps.version.outputs.tag_name }}"
           generate_release_notes: true
+          prerelease: ${{ contains(steps.version.outputs.tag_name, '-') }}
           files: dist/*
 
