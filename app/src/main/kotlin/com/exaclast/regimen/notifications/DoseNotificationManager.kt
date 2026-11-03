@@ -19,6 +19,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.exaclast.regimen.MainActivity
+import com.exaclast.regimen.R
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.ScheduledDoseItem
@@ -265,9 +266,7 @@ object DoseNotificationManager {
 
     val channelId = if (isAlarm) CHANNEL_WINDOW_ALARM else CHANNEL_WINDOW_PERSISTENT
     val builder = NotificationCompat.Builder(context, channelId)
-      .setSmallIcon(
-        if (isAlarm) android.R.drawable.ic_lock_idle_alarm else android.R.drawable.ic_popup_reminder
-      )
+      .setSmallIcon(R.drawable.ic_notification)
       .setContentTitle(title)
       .setContentText(shortText)
       .setStyle(NotificationCompat.BigTextStyle().bigText(summaryLines.joinToString("\n")))
