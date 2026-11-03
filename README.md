@@ -13,9 +13,10 @@
   - Vial concentration (`mg/mL`) and vial volume (`mL`).
   - Automatic draw volume (`mL`) and `U-100` insulin syringe unit calculation from `mg` or `mcg` doses.
   - Separate draw needle and injection needle specifications (`Gauge × Length`) plus syringe size/description.
-- **OpenFDA NDC-11 & Barcode / 2D DataMatrix Scanner**:
-  - Scan **2D GS1 DataMatrix** (`(01)` GTIN-14 + `(17)` Expiration Date + `(10)` Lot Number), **1D UPC-A / EAN-13** retail drug barcodes, or enter a 10- or 11-digit National Drug Code (`NDC-11`).
-  - Automatically queries the [OpenFDA Drug NDC API](https://open.fda.gov/apis/drug/ndc/) across all 10- and 11-digit segment permutations (`4-4-2`, `5-3-2`, `5-4-1`) and populates formula name, brand name, manufacturer, strength, dosage form, route, vial concentration/volume, lot number, and expiration date.
+- **OpenFDA NDC-11, All-Format Barcode & On-Device Label Text (OCR) Scanner**:
+  - **2D / 1D Barcode Scanner**: Scan **2D GS1 DataMatrix** (`(01)` GTIN-14 + `(17)` Expiration Date + `(10)` Lot Number), **1D UPC-A / EAN-13** retail drug barcodes, or enter a 10- or 11-digit National Drug Code (`NDC-11`). Automatically detects when a barcode is an internal OTC label control code or pharmacy store Rx refill number and guides you to scan the printed label text instead.
+  - **On-Device Label Text Scanning (OCR)**: Uses Google Play Services ML Kit Text Recognition (`Scan Label Text`) to read printed bottle/vial labels across **pharmacy-dispensed amber vials** (extracting generic name, strength, dosage form, `MFG` manufacturer, prescriber, and sig instructions), **multi-ingredient compounded medications** (flagging `THIS IS A COMPOUND PRODUCT` so it doesn't query OpenFDA for a non-existent NDC), and **OTC single/combination bottles**.
+  - **Multi-Signal Cross-Referenced OpenFDA Lookup**: Cross-references all available signals (`ndc`, `formulaName`, `brandName`, `strength`, `form`, and `manufacturer`) against the [OpenFDA Drug NDC API](https://open.fda.gov/apis/drug/ndc/) without making blind assumptions—when multiple strengths, forms, or manufacturers match, presents a disambiguation dialog showing the matched signals for each candidate.
 - **Medication-Level Safety & Pacing Guardrails**:
   - Minimum interval between doses (`minIntervalMinutes`).
   - Maximum daily dose count (`maxDailyDoses`) and maximum daily cumulative amount (`maxDailyAmount`).
@@ -48,6 +49,7 @@
   - Separate master switch to silence end-of-window ringing alarms while keeping persistent window-start notifications active.
   - **Discreet Notifications**: Optional lock-screen & notification shade privacy mode (`VISIBILITY_PRIVATE`) that hides medication names and anatomical injection sites.
   - Configurable default snooze duration (`15m`, `30m`, `45m`, `60m`) and optional confirmation prompt before 1-tap dose logging.
+  - **First-Launch Startup Permissions Checklist**: Guides users through granting `POST_NOTIFICATIONS`, `SCHEDULE_EXACT_ALARM` (*Alarms & reminders*), and `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (*Unrestricted Battery*) on first launch, and remains accessible anytime from **Settings → System Permissions**.
 - **Appearance & Theme Controls**:
   - Instant switching between `System Default`, `Light`, and `Dark` themes plus **Material You Dynamic Color** support.
 - **Adaptive Navigation & List-Detail Panes**:
@@ -65,8 +67,9 @@ app/src/main/kotlin/com/exaclast/regimen/
 ├── MainActivity.kt                  # Entry point & edge-to-edge host
 ├── RegimenApp.kt                    # Adaptive NavigationSuiteScaffold & live theme host
 ├── data/
-│   ├── DrugBarcodeScanner.kt        # Google Code Scanner wrapper for 2D GS1 DataMatrix & UPC
-│   ├── FdaNdcLookupService.kt       # OpenFDA NDC-11 lookup, GS1/UPC barcode parser & string parser
+│   ├── DrugBarcodeScanner.kt        # Google Code Scanner (all 1D/2D formats) & ML Kit Label OCR
+│   ├── DrugLabelParser.kt           # Printed bottle/vial/compound/OTC label text parser
+│   ├── FdaNdcLookupService.kt       # OpenFDA NDC-11 lookup, multi-signal cross-reference & barcode parser
 │   ├── RegimenDatabase.kt           # SQLite storage engine
 │   └── RegimenRepository.kt         # Reactive StateFlow repository, settings store & demo seeding
 ├── domain/

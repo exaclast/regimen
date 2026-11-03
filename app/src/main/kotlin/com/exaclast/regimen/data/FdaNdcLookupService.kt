@@ -18,6 +18,7 @@ data class ParsedDrugBarcode(
   val gtin14: String? = null,
   val expirationDateIso: String? = null,
   val lotNumber: String? = null,
+  val nonNdcHint: String? = null,
 )
 
 data class FdaDrugLookupResult(
@@ -35,6 +36,41 @@ data class FdaDrugLookupResult(
   val expirationDateIso: String? = null,
   val lotNumber: String? = null,
 )
+
+/**
+ * Input signals available from the form or from an OCR label scan to cross-reference against OpenFDA.
+ */
+data class DrugCrossReferenceCriteria(
+  val ndc: String? = null,
+  val formulaName: String? = null,
+  val brandName: String? = null,
+  val strength: String? = null,
+  val form: MedicationForm? = null,
+  val manufacturer: String? = null,
+)
+
+/**
+ * A single OpenFDA candidate scored and cross-referenced against [DrugCrossReferenceCriteria].
+ */
+data class CrossReferencedFdaCandidate(
+  val result: FdaDrugLookupResult,
+  val score: Int,
+  val matchedSignals: List<String>,
+  val missingOrDifferentSignals: List<String>,
+  val matchesName: Boolean,
+  val matchesStrength: Boolean,
+  val matchesForm: Boolean,
+  val matchesManufacturer: Boolean,
+)
+
+sealed class CrossReferenceOutcome {
+  data class UnambiguousMatch(val candidate: CrossReferencedFdaCandidate) : CrossReferenceOutcome()
+  data class NeedsUserSelection(
+    val reason: String,
+    val candidates: List<CrossReferencedFdaCandidate>,
+  ) : CrossReferenceOutcome()
+  data class NoMatch(val message: String) : CrossReferenceOutcome()
+}
 
 @Serializable
 internal data class OpenFdaNdcResponse(
@@ -83,6 +119,15 @@ object FdaNdcLookupService {
       .trim()
       .replace(Regex("^\\][A-Za-z][0-9]"), "")
       .trim()
+
+    // 0. Check if there is an explicit hyphenated NDC inside the string (e.g. "41167-4122-2")
+    val hyphenatedNdcMatch = Regex("""\b(\d{4,5}-\d{3,4}-\d{1,2})\b""").find(cleaned)
+    if (hyphenatedNdcMatch != null) {
+      return ParsedDrugBarcode(
+        rawBarcode = rawInput,
+        extractedNdc = hyphenatedNdcMatch.groupValues[1],
+      )
+    }
 
     // 1. Check parenthesized GS1 human-readable / scanner format: e.g. (01)00300090085106(17)271231(10)LOT123
     val parenGtinMatch = Regex("""\(01\)\s*(\d{14})""").find(cleaned)
@@ -157,6 +202,24 @@ object FdaNdcLookupService {
           extractedNdc = digitsOnly.substring(1, 11),
         )
       }
+
+      // 6. Detect short packaging/artwork codes (e.g. 6-digit "824208" on OTC label corners)
+      if (digitsOnly.length in 1..9) {
+        return ParsedDrugBarcode(
+          rawBarcode = rawInput,
+          extractedNdc = cleaned,
+          nonNdcHint = "Scanned code '$cleaned' is an internal packaging/lot code (${digitsOnly.length} digits), not an FDA NDC. Tap 'Scan Label' to read the printed drug text instead.",
+        )
+      }
+
+      // 7. Detect pharmacy internal Rx refill barcodes (12+ digits not starting with US drug prefix 3 / 03)
+      if (digitsOnly.length >= 12) {
+        return ParsedDrugBarcode(
+          rawBarcode = rawInput,
+          extractedNdc = digitsOnly.take(11),
+          nonNdcHint = "Pharmacy vial barcode ('$cleaned') encodes a store prescription refill number rather than an FDA NDC. Tap 'Scan Label' to read the printed medication text.",
+        )
+      }
     }
 
     return ParsedDrugBarcode(
@@ -167,8 +230,6 @@ object FdaNdcLookupService {
 
   private fun extractNdc10FromGtin14(gtin14: String): String? {
     if (gtin14.length != 14) return null
-    // US FDA NDC GTIN-14 has indicator digit at index 0, followed by "03" at indices 1..2,
-    // or "003" at indices 0..2, then 10-digit NDC at indices 3..12, then check digit at index 13.
     return if (gtin14.substring(1, 3) == "03") {
       gtin14.substring(3, 13)
     } else {
@@ -236,7 +297,6 @@ object FdaNdcLookupService {
   /**
    * Generates candidate OpenFDA `package_ndc` and `product_ndc` search tokens from an NDC-11,
    * hyphenated NDC, or scanned barcode (GS1 DataMatrix / UPC-A / 10-digit unhyphenated NDC).
-   * OpenFDA stores unpadded 10-digit hyphenated NDCs (4-4-2, 5-3-2, or 5-4-1).
    */
   fun buildOpenFdaSearchQuery(rawNdc: String): String {
     val parsed = parseDrugBarcode(rawNdc)
@@ -258,19 +318,16 @@ object FdaNdcLookupService {
         val (s1, s2, s3) = parts
         packageCandidates.add("$s1-$s2-$s3")
         productCandidates.add("$s1-$s2")
-        // 4-4-2 candidate if segment 1 starts with '0'
         if (s1.startsWith("0")) {
           val u1 = s1.substring(1)
           packageCandidates.add("$u1-$s2-$s3")
           productCandidates.add("$u1-$s2")
         }
-        // 5-3-2 candidate if segment 2 starts with '0'
         if (s2.startsWith("0")) {
           val u2 = s2.substring(1)
           packageCandidates.add("$s1-$u2-$s3")
           productCandidates.add("$s1-$u2")
         }
-        // 5-4-1 candidate if segment 3 starts with '0'
         if (s3.startsWith("0")) {
           val u3 = s3.substring(1)
           packageCandidates.add("$s1-$s2-$u3")
@@ -285,8 +342,7 @@ object FdaNdcLookupService {
   }
 
   /**
-   * Queries OpenFDA `/drug/ndc.json` for the given NDC-11, 10-digit NDC, or scanned barcode
-   * and parses available medication attributes.
+   * Queries OpenFDA `/drug/ndc.json` for the given NDC-11, 10-digit NDC, or scanned barcode.
    */
   suspend fun lookupByNdc(rawNdc: String): Result<FdaDrugLookupResult> = withContext(Dispatchers.IO) {
     runCatching {
@@ -294,8 +350,11 @@ object FdaNdcLookupService {
       val candidates = candidateNdc11s(rawNdc)
       val primaryNdc11 = candidates.first()
       val digitsOnly = primaryNdc11.filter { it.isDigit() }
-      if (digitsOnly.length < 8) {
-        throw IllegalArgumentException("Please enter or scan a valid 10- or 11-digit NDC or drug barcode.")
+      if (digitsOnly.length < 10) {
+        throw IllegalArgumentException(
+          parsedBarcode.nonNdcHint
+            ?: "Please enter a valid 10- or 11-digit NDC (or tap 'Scan Label' to read printed bottle text)."
+        )
       }
 
       val searchClause = buildOpenFdaSearchQuery(rawNdc)
@@ -319,7 +378,6 @@ object FdaNdcLookupService {
         }
       }
 
-      // Check local fallback catalog across all candidate NDC-11s
       for (candidate in candidates) {
         offlineCatalog[candidate]?.let {
           return@runCatching it.copy(
@@ -329,7 +387,281 @@ object FdaNdcLookupService {
         }
       }
 
-      throw IllegalStateException("No matching FDA NDC record found for $primaryNdc11.")
+      throw IllegalStateException(
+        parsedBarcode.nonNdcHint
+          ?: "No matching FDA NDC record found for $primaryNdc11. Tap 'Scan Label' to read the printed drug name & strength."
+      )
+    }
+  }
+
+  /**
+   * Cross-references all available medication data ([DrugCrossReferenceCriteria]) against OpenFDA
+   * without making blind assumptions when data is limited or multiple matches exist.
+   */
+  suspend fun searchAndCrossReference(
+    criteria: DrugCrossReferenceCriteria,
+  ): CrossReferenceOutcome = withContext(Dispatchers.IO) {
+    // 1. If an explicit NDC is available, check it first
+    if (!criteria.ndc.isNullOrBlank()) {
+      val ndcResult = lookupByNdc(criteria.ndc).getOrNull()
+      if (ndcResult != null) {
+        val scored = scoreCandidateAgainstCriteria(ndcResult, criteria)
+        return@withContext CrossReferenceOutcome.UnambiguousMatch(scored)
+      }
+    }
+
+    val nameQuery = criteria.formulaName?.takeIf { it.isNotBlank() }
+      ?: criteria.brandName?.takeIf { it.isNotBlank() }
+      ?: return@withContext CrossReferenceOutcome.NoMatch(
+        "Enter or scan at least a Brand Name, Formula Name, or NDC-11 to cross-reference against OpenFDA."
+      )
+
+    // Build OpenFDA search query across generic_name, brand_name, and active_ingredients.name
+    val primaryToken = nameQuery
+      .split("/", ",", "(", " ")
+      .map { it.trim() }
+      .firstOrNull { it.length >= 3 && !it.equals("HCl", ignoreCase = true) }
+      ?: nameQuery.trim()
+
+    val searchClauses = mutableListOf<String>()
+    val cleanToken = primaryToken.replace("\"", "")
+    searchClauses.add("generic_name:\"$cleanToken\"")
+    searchClauses.add("brand_name:\"$cleanToken\"")
+    searchClauses.add("active_ingredients.name:\"$cleanToken\"")
+
+    if (!criteria.brandName.isNullOrBlank() && !criteria.brandName.equals(primaryToken, ignoreCase = true)) {
+      val bToken = criteria.brandName.trim().replace("\"", "")
+      searchClauses.add("brand_name:\"$bToken\"")
+    }
+
+    val rawSearch = searchClauses.distinct().joinToString("+OR+")
+    val encodedSearch = URLEncoder.encode(rawSearch, "UTF-8")
+      .replace("%2B", "+")
+      .replace("%3A", ":")
+      .replace("%22", "\"")
+    val urlString = "https://api.fda.gov/drug/ndc.json?search=$encodedSearch&limit=35"
+
+    val apiResults = mutableListOf<FdaDrugLookupResult>()
+    val responseBody = runCatching { fetchHttpUrl(urlString) }.getOrNull()
+    if (responseBody != null) {
+      apiResults.addAll(parseAllOpenFdaItems(responseBody))
+    }
+
+    // Also include matching entries from our offline fallback catalog
+    offlineCatalog.values.forEach { item ->
+      if (apiResults.none { it.ndc11 == item.ndc11 }) {
+        apiResults.add(item)
+      }
+    }
+
+    val scoredCandidates = scoreAndFilterCandidates(apiResults, criteria)
+    if (scoredCandidates.isEmpty()) {
+      return@withContext CrossReferenceOutcome.NoMatch(
+        "No OpenFDA records matched '$nameQuery'${criteria.strength?.let { " ($it)" } ?: ""}."
+      )
+    }
+
+    // Decide whether we have 1 unambiguous match across all known criteria or if we MUST ask the user
+    return@withContext evaluateDisambiguation(scoredCandidates, criteria)
+  }
+
+  internal fun scoreAndFilterCandidates(
+    rawResults: List<FdaDrugLookupResult>,
+    criteria: DrugCrossReferenceCriteria,
+  ): List<CrossReferencedFdaCandidate> {
+    val hasStrengthCriterion = !criteria.strength.isNullOrBlank()
+    val scored = rawResults
+      .map { scoreCandidateAgainstCriteria(it, criteria) }
+      .filter { it.matchesName }
+      .filter { candidate ->
+        // Never include a candidate that explicitly contradicts a provided strength
+        // unless zero candidates matched the strength.
+        !hasStrengthCriterion || candidate.matchesStrength
+      }
+      .sortedByDescending { it.score }
+
+    // Deduplicate identical (formulaName, brandName, strength, form, manufacturer) combinations
+    return scored.distinctBy {
+      listOf(
+        it.result.formulaName.lowercase(),
+        it.result.brandName?.lowercase().orEmpty(),
+        normalizeStrengthNumbers(it.result.strength),
+        it.result.form.name,
+        it.result.manufacturer?.lowercase().orEmpty(),
+      )
+    }
+  }
+
+  internal fun evaluateDisambiguation(
+    candidates: List<CrossReferencedFdaCandidate>,
+    criteria: DrugCrossReferenceCriteria,
+  ): CrossReferenceOutcome {
+    if (candidates.isEmpty()) {
+      return CrossReferenceOutcome.NoMatch("No matching FDA records found.")
+    }
+
+    val hasStrength = !criteria.strength.isNullOrBlank()
+    val hasMfg = !criteria.manufacturer.isNullOrBlank()
+
+    // Check if multiple distinct strengths exist among candidates
+    val distinctStrengths = candidates.map { normalizeStrengthNumbers(it.result.strength) }.distinct()
+    // Check if multiple distinct manufacturers/labelers exist among top candidates
+    val mfgMatchedSubset = if (hasMfg) {
+      candidates.filter { it.matchesManufacturer }
+    } else {
+      emptyList()
+    }
+
+    val effectivePool = if (mfgMatchedSubset.isNotEmpty()) mfgMatchedSubset else candidates
+
+    // Only auto-select a single match when:
+    // 1. Effective pool has 1 unique product AND
+    // 2. If OpenFDA has multiple strengths, the user/label provided the strength AND it matched!
+    if (effectivePool.size == 1 && (hasStrength || distinctStrengths.size == 1)) {
+      val single = effectivePool.first()
+      // If manufacturer was NOT provided and there were other manufacturers in `candidates`, do not guess the manufacturer!
+      if (!hasMfg && candidates.size > 1) {
+        return CrossReferenceOutcome.NeedsUserSelection(
+          reason = "Multiple manufacturers/packages match ${single.result.formulaName} (${single.result.strength}). Select your exact package or apply without a specific manufacturer NDC:",
+          candidates = candidates.take(10),
+        )
+      }
+      return CrossReferenceOutcome.UnambiguousMatch(single)
+    }
+
+    val reason = when {
+      !hasStrength && distinctStrengths.size > 1 ->
+        "Multiple strengths exist for this medication (${distinctStrengths.take(4).joinToString(", ")}). Select the exact strength & package:"
+      hasMfg && mfgMatchedSubset.size > 1 ->
+        "Multiple packages from ${criteria.manufacturer} matched. Select the exact match:"
+      else ->
+        "Found ${candidates.size} matching FDA records across different manufacturers/strengths. Select the exact match:"
+    }
+
+    return CrossReferenceOutcome.NeedsUserSelection(
+      reason = reason,
+      candidates = effectivePool.ifEmpty { candidates }.take(10),
+    )
+  }
+
+  internal fun scoreCandidateAgainstCriteria(
+    candidate: FdaDrugLookupResult,
+    criteria: DrugCrossReferenceCriteria,
+  ): CrossReferencedFdaCandidate {
+    var score = 0
+    val matched = mutableListOf<String>()
+    val missingOrDiff = mutableListOf<String>()
+
+    // 1. Name cross-reference (Formula / Generic & Brand)
+    val qFormula = criteria.formulaName?.trim()?.lowercase().orEmpty()
+    val qBrand = criteria.brandName?.trim()?.lowercase().orEmpty()
+    val cFormula = candidate.formulaName.lowercase()
+    val cBrand = candidate.brandName?.lowercase().orEmpty()
+
+    var matchesName = false
+    if (qFormula.isNotEmpty()) {
+      val qTokens = extractAlphaTokens(qFormula)
+      val cTokens = extractAlphaTokens(cFormula) + extractAlphaTokens(cBrand)
+      if (qTokens.isNotEmpty() && qTokens.all { qt -> cTokens.any { ct -> ct.contains(qt) || qt.contains(ct) } }) {
+        matchesName = true
+        score += 40
+        matched.add("Formula (${candidate.formulaName})")
+      }
+    }
+    if (qBrand.isNotEmpty()) {
+      if (cBrand.contains(qBrand) || qBrand.contains(cBrand.takeIf { it.isNotEmpty() } ?: "___") || cFormula.contains(qBrand)) {
+        matchesName = true
+        score += 35
+        matched.add("Brand (${candidate.brandName ?: candidate.formulaName})")
+      } else {
+        missingOrDiff.add("Brand differs (${candidate.brandName ?: "Generic"})")
+      }
+    }
+
+    // 2. Strength cross-reference
+    val qStrength = criteria.strength?.trim().orEmpty()
+    var matchesStrength = false
+    if (qStrength.isNotEmpty()) {
+      val qNorm = normalizeStrengthNumbers(qStrength)
+      val cNorm = normalizeStrengthNumbers(candidate.strength)
+      if (qNorm.isNotEmpty() && (qNorm == cNorm || cNorm.contains(qNorm) || qNorm.contains(cNorm))) {
+        matchesStrength = true
+        score += 45
+        matched.add("Strength (${candidate.strength})")
+      } else {
+        score -= 40
+        missingOrDiff.add("Strength is ${candidate.strength} (wanted $qStrength)")
+      }
+    } else {
+      missingOrDiff.add("Strength not specified (${candidate.strength})")
+    }
+
+    // 3. Dosage Form cross-reference
+    var matchesForm = false
+    if (criteria.form != null) {
+      if (candidate.form == criteria.form) {
+        matchesForm = true
+        score += 20
+        matched.add("Form (${candidate.form.displayName})")
+      } else {
+        score -= 15
+        missingOrDiff.add("Form is ${candidate.form.displayName}")
+      }
+    }
+
+    // 4. Manufacturer / Labeler cross-reference
+    val qMfg = criteria.manufacturer?.trim().orEmpty()
+    var matchesMfg = false
+    if (qMfg.isNotEmpty()) {
+      val qMfgTokens = extractAlphaTokens(qMfg.lowercase()).filter {
+        it !in setOf("inc", "llc", "ltd", "corp", "company", "pharmaceuticals", "pharma", "usa", "mfg")
+      }
+      val cMfg = candidate.manufacturer?.lowercase().orEmpty()
+      if (qMfgTokens.isNotEmpty() && qMfgTokens.any { cMfg.contains(it) }) {
+        matchesMfg = true
+        score += 45
+        matched.add("Mfg (${candidate.manufacturer})")
+      } else {
+        missingOrDiff.add("Mfg: ${candidate.manufacturer ?: "Unknown"}")
+      }
+    }
+
+    return CrossReferencedFdaCandidate(
+      result = candidate,
+      score = score,
+      matchedSignals = matched,
+      missingOrDifferentSignals = missingOrDiff,
+      matchesName = matchesName,
+      matchesStrength = matchesStrength,
+      matchesForm = matchesForm,
+      matchesManufacturer = matchesMfg,
+    )
+  }
+
+  private fun extractAlphaTokens(input: String): List<String> {
+    return Regex("""[a-z0-9]{3,}""")
+      .findAll(input.lowercase())
+      .map { it.value }
+      .filter { it !in setOf("hcl", "hydrochloride", "sulfate", "sodium", "tablet", "tablets", "capsule", "capsules") }
+      .toList()
+  }
+
+  private fun normalizeStrengthNumbers(raw: String): String {
+    return raw.lowercase()
+      .replace(" ", "")
+      .replace("/1ml", "/ml")
+      .trim()
+  }
+
+  internal fun parseAllOpenFdaItems(rawJson: String): List<FdaDrugLookupResult> {
+    val response = runCatching { json.decodeFromString<OpenFdaNdcResponse>(rawJson) }.getOrNull()
+      ?: return emptyList()
+    return response.results.mapNotNull { item ->
+      val pkgNdc = item.packaging.firstOrNull()?.packageNdc
+      val fallbackNdc = pkgNdc?.let { toCanonicalNdc11(it) }
+        ?: item.productNdc?.let { "${it}-01" }
+        ?: "00000-0000-00"
+      mapOpenFdaItemToResult(item, fallbackNdc)
     }
   }
 
@@ -337,13 +669,18 @@ object FdaNdcLookupService {
     val response = runCatching { json.decodeFromString<OpenFdaNdcResponse>(rawJson) }.getOrNull()
       ?: return null
     val item = response.results.firstOrNull() ?: return null
+    return mapOpenFdaItemToResult(item, fallbackCanonicalNdc11)
+  }
 
+  private fun mapOpenFdaItemToResult(
+    item: OpenFdaDrugItem,
+    fallbackCanonicalNdc11: String,
+  ): FdaDrugLookupResult? {
     val rawGeneric = item.genericName?.takeIf { it.isNotBlank() }
       ?: item.activeIngredients.mapNotNull { it.name }.joinToString(" / ").takeIf { it.isNotBlank() }
       ?: item.brandName
       ?: return null
 
-    // Resolve exact canonical 11-digit NDC from packaging if available (crucial for 10-digit barcodes)
     val matchedPackageNdc = item.packaging.firstOrNull()?.packageNdc
     val resolvedNdc11 = if (!matchedPackageNdc.isNullOrBlank()) {
       toCanonicalNdc11(matchedPackageNdc)
@@ -516,6 +853,24 @@ object FdaNdcLookupService {
       route = InjectionRoute.SC,
       concentrationMgPerMl = 1.34,
       vialVolumeMl = 3.0,
+    ),
+    "68382-0205-05" to FdaDrugLookupResult(
+      ndc11 = "68382-0205-05",
+      formulaName = "Anastrozole",
+      brandName = null,
+      manufacturer = "Zydus Pharmaceuticals (USA) Inc.",
+      strength = "1 mg",
+      form = MedicationForm.TABLET,
+      defaultDoseUnit = DoseUnit.TABLET,
+    ),
+    "41167-4122-02" to FdaDrugLookupResult(
+      ndc11 = "41167-4122-02",
+      formulaName = "Fexofenadine HCl",
+      brandName = "Allegra Allergy",
+      manufacturer = "Chattem, Inc. / Sanofi",
+      strength = "180 mg",
+      form = MedicationForm.TABLET,
+      defaultDoseUnit = DoseUnit.TABLET,
     ),
   )
 }

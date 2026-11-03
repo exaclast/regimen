@@ -1,8 +1,12 @@
 package com.exaclast.regimen.ui.screens
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -17,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -30,6 +35,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -42,7 +48,9 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -53,6 +61,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.ThemeMode
 import com.exaclast.regimen.model.TimeOfDayBucket
@@ -155,63 +166,8 @@ fun SettingsDialog(
                 )
               }
 
-              // Exact Alarm status banner
-              val exactAllowed = DoseNotificationManager.canScheduleExactAlarms(context)
-              Surface(
-                shape = MaterialTheme.shapes.small,
-                color = if (exactAllowed) {
-                  MaterialTheme.colorScheme.secondaryContainer
-                } else {
-                  MaterialTheme.colorScheme.errorContainer
-                },
-                modifier = Modifier.fillMaxWidth(),
-              ) {
-                Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                  Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                      text = if (exactAllowed) {
-                        "Exact Doze-Piercing Timing Active"
-                      } else {
-                        "Exact Alarm Permission Needed"
-                      },
-                      style = MaterialTheme.typography.labelLarge,
-                      fontWeight = FontWeight.Bold,
-                      color = if (exactAllowed) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                      } else {
-                        MaterialTheme.colorScheme.onErrorContainer
-                      },
-                    )
-                    Text(
-                      text = if (exactAllowed) {
-                        "Window start persistent notifications & end-of-window alarms wake the device on the exact minute."
-                      } else {
-                        "Grant Exact Alarms so Android Doze mode does not delay window notifications."
-                      },
-                      style = MaterialTheme.typography.bodySmall,
-                      color = if (exactAllowed) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                      } else {
-                        MaterialTheme.colorScheme.onErrorContainer
-                      },
-                    )
-                  }
-                  if (!exactAllowed) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                      onClick = { DoseNotificationManager.openExactAlarmSettings(context) }
-                    ) {
-                      Text("Grant")
-                    }
-                  }
-                }
-              }
+              // System Permissions Checklist (Notifications, Exact Alarms & Battery)
+              PermissionsChecklistSection()
 
               // Master Notifications Toggle
               SettingToggleRow(
@@ -734,5 +690,228 @@ private fun SettingToggleRow(
       enabled = enabled,
       onCheckedChange = onCheckedChange,
     )
+  }
+}
+
+@Composable
+fun StartupPermissionsDialog(
+  onDismiss: () -> Unit,
+  onPermissionsChanged: () -> Unit,
+) {
+  val context = LocalContext.current
+  val lifecycleOwner = LocalLifecycleOwner.current
+  var refreshTick by remember { mutableIntStateOf(0) }
+
+  DisposableEffect(lifecycleOwner) {
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_RESUME) {
+        refreshTick++
+        onPermissionsChanged()
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
+
+  val allCoreGranted = remember(refreshTick) {
+    DoseNotificationManager.areCorePermissionsGranted(context)
+  }
+  val batteryUnrestricted = remember(refreshTick) {
+    DoseNotificationManager.isIgnoringBatteryOptimizations(context)
+  }
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Enable Reliable Dose Reminders") },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+          text = "To pin persistent notifications at the start of your dose windows and ring end-of-window alarms on time, grant these Android permissions:",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        PermissionsChecklistSection(
+          onPermissionStateChanged = {
+            refreshTick++
+            onPermissionsChanged()
+          },
+        )
+      }
+    },
+    confirmButton = {
+      Button(onClick = onDismiss) {
+        Text(
+          if (allCoreGranted && batteryUnrestricted) {
+            "All Set"
+          } else if (allCoreGranted) {
+            "Continue"
+          } else {
+            "Done for Now"
+          }
+        )
+      }
+    },
+  )
+}
+
+@Composable
+fun PermissionsChecklistSection(
+  onPermissionStateChanged: () -> Unit = {},
+) {
+  val context = LocalContext.current
+  val lifecycleOwner = LocalLifecycleOwner.current
+  var refreshTick by remember { mutableIntStateOf(0) }
+
+  DisposableEffect(lifecycleOwner) {
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_RESUME) {
+        refreshTick++
+        onPermissionStateChanged()
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
+
+  val notifGranted = remember(refreshTick) {
+    DoseNotificationManager.hasNotificationPermission(context)
+  }
+  val exactAlarmsGranted = remember(refreshTick) {
+    DoseNotificationManager.canScheduleExactAlarms(context)
+  }
+  val batteryUnrestricted = remember(refreshTick) {
+    DoseNotificationManager.isIgnoringBatteryOptimizations(context)
+  }
+
+  val notifPermissionLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.RequestPermission(),
+  ) { granted ->
+    refreshTick++
+    onPermissionStateChanged()
+    if (!granted) {
+      DoseNotificationManager.openAppNotificationSettings(context)
+    }
+  }
+
+  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    PermissionItemCard(
+      title = "1. Notifications",
+      subtitle = if (notifGranted) {
+        "Granted — persistent window notifications & alarms can be displayed"
+      } else {
+        "Required to display active dose window notifications and alarms"
+      },
+      isGranted = notifGranted,
+      actionLabel = "Allow",
+      onActionClick = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+          notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+          DoseNotificationManager.openAppNotificationSettings(context)
+        }
+      },
+    )
+
+    PermissionItemCard(
+      title = "2. Alarms & Reminders (Exact Timing)",
+      subtitle = if (exactAlarmsGranted) {
+        "Granted — window start & end triggers fire on the exact minute"
+      } else {
+        "Required so Android Doze mode does not delay window notifications"
+      },
+      isGranted = exactAlarmsGranted,
+      actionLabel = "Allow",
+      onActionClick = {
+        DoseNotificationManager.openExactAlarmSettings(context)
+      },
+    )
+
+    PermissionItemCard(
+      title = "3. Unrestricted Background Battery",
+      subtitle = if (batteryUnrestricted) {
+        "Granted — exempt from background battery throttling"
+      } else {
+        "Recommended so overnight/morning windows wake reliably"
+      },
+      isGranted = batteryUnrestricted,
+      actionLabel = "Exempt",
+      onActionClick = {
+        DoseNotificationManager.requestIgnoreBatteryOptimizations(context)
+      },
+    )
+  }
+}
+
+@Composable
+private fun PermissionItemCard(
+  title: String,
+  subtitle: String,
+  isGranted: Boolean,
+  actionLabel: String,
+  onActionClick: () -> Unit,
+) {
+  Surface(
+    shape = MaterialTheme.shapes.small,
+    color = if (isGranted) {
+      MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+    } else {
+      MaterialTheme.colorScheme.surface
+    },
+    modifier = Modifier.fillMaxWidth(),
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 12.dp, vertical = 10.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Column(
+        modifier = Modifier
+          .weight(1f)
+          .padding(end = 8.dp),
+      ) {
+        Text(
+          text = title,
+          style = MaterialTheme.typography.labelLarge,
+          fontWeight = FontWeight.Bold,
+          color = if (isGranted) {
+            MaterialTheme.colorScheme.onSecondaryContainer
+          } else {
+            MaterialTheme.colorScheme.onSurface
+          },
+        )
+        Text(
+          text = subtitle,
+          style = MaterialTheme.typography.bodySmall,
+          color = if (isGranted) {
+            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
+          } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+          },
+        )
+      }
+      if (isGranted) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Icon(
+            Icons.Default.CheckCircle,
+            contentDescription = "Granted",
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+          )
+          Spacer(modifier = Modifier.width(4.dp))
+          Text(
+            text = "Active",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+          )
+        }
+      } else {
+        FilledTonalButton(onClick = onActionClick) {
+          Text(actionLabel)
+        }
+      }
+    }
   }
 }

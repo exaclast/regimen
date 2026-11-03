@@ -1,34 +1,30 @@
 package com.exaclast.regimen.data
 
 import android.content.Context
+import android.net.Uri
+import androidx.core.content.FileProvider
 import com.google.android.gms.common.moduleinstall.ModuleInstall
 import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import java.io.File
 
 object DrugBarcodeScanner {
 
   private fun buildScannerOptions(): GmsBarcodeScannerOptions {
     return GmsBarcodeScannerOptions.Builder()
-      .setBarcodeFormats(
-        Barcode.FORMAT_DATA_MATRIX,
-        Barcode.FORMAT_UPC_A,
-        Barcode.FORMAT_UPC_E,
-        Barcode.FORMAT_EAN_13,
-        Barcode.FORMAT_EAN_8,
-        Barcode.FORMAT_CODE_128,
-        Barcode.FORMAT_QR_CODE,
-      )
+      .setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS)
       .enableAutoZoom()
       .build()
   }
 
   /**
-   * Launches Google's native system camera barcode/DataMatrix scanner sheet.
-   * Requires zero camera permissions in the app manifest.
-   * If the scanner module is not yet installed or unavailable (e.g. on an emulator without Play Services),
-   * triggers background module installation and invokes [onUnavailable] so the UI can show a fallback input dialog.
+   * Launches Google's native system camera barcode/DataMatrix scanner sheet
+   * with ALL 1D/2D barcode formats enabled (DataMatrix, UPC-A/E, EAN-13, Code 39, ITF, Codabar, Code 128, PDF417).
    */
   fun startScan(
     context: Context,
@@ -59,7 +55,6 @@ object DrugBarcodeScanner {
               onUnavailable(e.localizedMessage ?: "Camera barcode scanner unavailable.")
             }
         } else {
-          // Request module download in background and immediately offer manual/paste fallback
           val installRequest = ModuleInstallRequest.newBuilder()
             .addApi(scanner)
             .build()
@@ -71,5 +66,53 @@ object DrugBarcodeScanner {
         onUnavailable(e.localizedMessage ?: "Google Play Services barcode scanner is not available on this device.")
       }
   }
-}
 
+  /**
+   * Creates a temporary FileProvider Uri in cacheDir for capturing a full-resolution photo
+   * of a medication bottle label.
+   */
+  fun createTempLabelPhotoUri(context: Context): Uri {
+    val dir = File(context.cacheDir, "label_scans").apply { mkdirs() }
+    val file = File(dir, "label_${System.currentTimeMillis()}.jpg")
+    return FileProvider.getUriForFile(
+      context,
+      "${context.packageName}.fileprovider",
+      file,
+    )
+  }
+
+  /**
+   * Runs on-device ML Kit Text Recognition (OCR) on a captured or selected photo of a medication label,
+   * then parses the extracted text into a [ParsedMedicationLabel].
+   */
+  fun recognizeLabelFromImageUri(
+    context: Context,
+    imageUri: Uri,
+    onResult: (ParsedMedicationLabel) -> Unit,
+    onError: (String) -> Unit,
+  ) {
+    val image = runCatching {
+      InputImage.fromFilePath(context, imageUri)
+    }.getOrElse { err ->
+      onError("Could not read label image: ${err.localizedMessage}")
+      return
+    }
+
+    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    recognizer.process(image)
+      .addOnSuccessListener { visionText ->
+        val rawText = visionText.text
+        if (rawText.isBlank()) {
+          onError("No readable text detected on the label. Try moving closer with good lighting.")
+        } else {
+          onResult(DrugLabelParser.parseLabelText(rawText))
+        }
+      }
+      .addOnFailureListener { e ->
+        onError(
+          e.localizedMessage
+            ?: "On-device OCR module is still downloading from Google Play Services. Try again in a moment."
+        )
+      }
+  }
+}

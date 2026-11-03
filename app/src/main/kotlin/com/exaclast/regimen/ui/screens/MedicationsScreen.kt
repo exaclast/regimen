@@ -1,5 +1,8 @@
 package com.exaclast.regimen.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -28,12 +31,15 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
@@ -78,8 +84,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.exaclast.regimen.data.CrossReferenceOutcome
+import com.exaclast.regimen.data.CrossReferencedFdaCandidate
 import com.exaclast.regimen.data.DrugBarcodeScanner
+import com.exaclast.regimen.data.DrugCrossReferenceCriteria
+import com.exaclast.regimen.data.DrugLabelParser
+import com.exaclast.regimen.data.FdaDrugLookupResult
 import com.exaclast.regimen.data.FdaNdcLookupService
+import com.exaclast.regimen.data.ParsedMedicationLabel
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.model.Condition
@@ -1106,7 +1118,7 @@ private fun MedicationEditorDialog(
   var prescribedDateIso by rememberSaveable { mutableStateOf(initialMedication?.prescribedDateIso.orEmpty()) }
   var notes by rememberSaveable { mutableStateOf(initialMedication?.notes.orEmpty()) }
 
-  // Compact NDC & Barcode lookup state
+  // Compact NDC, Barcode, Label OCR & Cross-Reference lookup state
   val context = LocalContext.current
   val coroutineScope = rememberCoroutineScope()
   var isLookingUpNdc by remember { mutableStateOf(false) }
@@ -1116,6 +1128,184 @@ private fun MedicationEditorDialog(
   var showManualBarcodeDialog by remember { mutableStateOf(false) }
   var manualBarcodeNote by remember { mutableStateOf<String?>(null) }
   var manualBarcodeInput by remember { mutableStateOf("") }
+
+  // Label OCR & Cross-Reference Disambiguation state
+  var showLabelScanDialog by remember { mutableStateOf(false) }
+  var manualLabelInput by remember { mutableStateOf("") }
+  var pendingLabelPhotoUri by remember { mutableStateOf<Uri?>(null) }
+  var disambiguationPrompt by remember {
+    mutableStateOf<CrossReferenceOutcome.NeedsUserSelection?>(null)
+  }
+
+  fun applyFdaResultToForm(fda: FdaDrugLookupResult, statusSummary: String? = null) {
+    ndc11 = fda.ndc11
+    formulaName = fda.formulaName
+    fda.brandName?.let { brandName = it }
+    fda.manufacturer?.let { manufacturer = it }
+    strength = fda.strength
+    form = fda.form
+    defaultDoseUnit = fda.defaultDoseUnit
+    fda.route?.let { route = it }
+    fda.concentrationMgPerMl?.let { concentrationText = formatNum(it) }
+    fda.vialVolumeMl?.let { vialVolumeText = formatNum(it) }
+    if (fda.form.supportsSiteRotation) {
+      siteRotationEnabled = true
+    }
+    val metaParts = mutableListOf<String>()
+    fda.lotNumber?.let { metaParts.add("Lot: $it") }
+    fda.expirationDateIso?.let { metaParts.add("Exp: $it") }
+    if (metaParts.isNotEmpty()) {
+      val metaLine = metaParts.joinToString(" • ")
+      ndcStatusText = statusSummary ?: "Autofilled (${fda.ndc11} • $metaLine)"
+      if (!notes.contains(metaLine)) {
+        notes = if (notes.isBlank()) metaLine else "$notes\n$metaLine"
+      }
+    } else {
+      ndcStatusText = statusSummary ?: "Autofilled from FDA NDC (${fda.ndc11})"
+    }
+    ndcErrorText = null
+    ndcMatched = true
+  }
+
+  fun runCrossReferenceLookup(criteria: DrugCrossReferenceCriteria) {
+    isLookingUpNdc = true
+    ndcErrorText = null
+    coroutineScope.launch {
+      val outcome = FdaNdcLookupService.searchAndCrossReference(criteria)
+      isLookingUpNdc = false
+      when (outcome) {
+        is CrossReferenceOutcome.UnambiguousMatch -> {
+          val cand = outcome.candidate
+          val signals = cand.matchedSignals.joinToString(", ")
+          applyFdaResultToForm(
+            fda = cand.result,
+            statusSummary = "Verified via OpenFDA (${cand.result.ndc11} • Matched: $signals)",
+          )
+        }
+        is CrossReferenceOutcome.NeedsUserSelection -> {
+          disambiguationPrompt = outcome
+        }
+        is CrossReferenceOutcome.NoMatch -> {
+          if (formulaName.isBlank() && brandName.isBlank()) {
+            ndcErrorText = outcome.message
+          } else {
+            ndcStatusText = outcome.message
+          }
+        }
+      }
+    }
+  }
+
+  fun applyParsedMedicationLabel(parsedLabel: ParsedMedicationLabel) {
+    if (!parsedLabel.hasAnyClinicalSignal) {
+      ndcErrorText = "Could not detect medication name or NDC on the label. Try moving closer or check lighting."
+      return
+    }
+    ndcErrorText = null
+    parsedLabel.extractedNdc?.let { ndc11 = FdaNdcLookupService.toCanonicalNdc11(it) }
+    parsedLabel.brandName?.let { brandName = it }
+    parsedLabel.formulaName?.let { formulaName = it }
+    parsedLabel.strength?.let { strength = it }
+    parsedLabel.form?.let { detectedForm ->
+      form = detectedForm
+      if (detectedForm.supportsSiteRotation) {
+        siteRotationEnabled = true
+      }
+    }
+    parsedLabel.defaultDoseUnit?.let { defaultDoseUnit = it }
+    parsedLabel.defaultDoseAmount?.let { defaultDoseAmountText = formatNum(it) }
+    parsedLabel.manufacturer?.let { manufacturer = it }
+
+    // Auto-link prescriber if name matches an existing prescriber in snapshot
+    parsedLabel.prescriberName?.let { scannedDoc ->
+      val docTokens = scannedDoc.lowercase().split(" ", ",").filter { it.length >= 3 }
+      val matchedPrescriber = prescribers.firstOrNull { p ->
+        val pLower = p.name.lowercase()
+        docTokens.isNotEmpty() && docTokens.all { t -> pLower.contains(t) }
+      }
+      if (matchedPrescriber != null) {
+        selectedPrescriberId = matchedPrescriber.id
+      }
+    }
+
+    val noteAdditions = mutableListOf<String>()
+    parsedLabel.instructions?.let { noteAdditions.add(it) }
+    val lotExp = listOfNotNull(
+      parsedLabel.lotNumber?.let { "Lot: $it" },
+      parsedLabel.expirationDateIso?.let { "Exp: $it" },
+      parsedLabel.prescriberName?.takeIf { selectedPrescriberId == null }?.let { "Prescriber: $it" },
+    ).joinToString(" • ")
+    if (lotExp.isNotEmpty()) {
+      noteAdditions.add(lotExp)
+    }
+    noteAdditions.forEach { line ->
+      if (!notes.contains(line)) {
+        notes = if (notes.isBlank()) line else "$notes\n$line"
+      }
+    }
+
+    if (parsedLabel.isCompound) {
+      ndcMatched = true
+      ndcStatusText = "Parsed compounded medication label (no FDA NDC applicable)"
+    } else {
+      ndcStatusText = "Parsed label text — cross-referencing OpenFDA..."
+      runCrossReferenceLookup(
+        DrugCrossReferenceCriteria(
+          ndc = parsedLabel.extractedNdc ?: ndc11.takeIf { it.isNotBlank() },
+          formulaName = parsedLabel.formulaName ?: formulaName.takeIf { it.isNotBlank() },
+          brandName = parsedLabel.brandName ?: brandName.takeIf { it.isNotBlank() },
+          strength = parsedLabel.strength ?: strength.takeIf { it.isNotBlank() },
+          form = parsedLabel.form ?: form,
+          manufacturer = parsedLabel.manufacturer ?: manufacturer.takeIf { it.isNotBlank() },
+        )
+      )
+    }
+  }
+
+  val cameraLabelLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.TakePicture()
+  ) { success ->
+    val uri = pendingLabelPhotoUri
+    if (success && uri != null) {
+      isLookingUpNdc = true
+      ndcErrorText = null
+      ndcStatusText = "Reading printed label text..."
+      DrugBarcodeScanner.recognizeLabelFromImageUri(
+        context = context,
+        imageUri = uri,
+        onResult = { parsed ->
+          isLookingUpNdc = false
+          applyParsedMedicationLabel(parsed)
+        },
+        onError = { errMsg ->
+          isLookingUpNdc = false
+          ndcErrorText = errMsg
+        },
+      )
+    }
+  }
+
+  val galleryLabelLauncher = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.GetContent()
+  ) { uri: Uri? ->
+    if (uri != null) {
+      isLookingUpNdc = true
+      ndcErrorText = null
+      ndcStatusText = "Reading printed label text from photo..."
+      DrugBarcodeScanner.recognizeLabelFromImageUri(
+        context = context,
+        imageUri = uri,
+        onResult = { parsed ->
+          isLookingUpNdc = false
+          applyParsedMedicationLabel(parsed)
+        },
+        onError = { errMsg ->
+          isLookingUpNdc = false
+          ndcErrorText = errMsg
+        },
+      )
+    }
+  }
 
   fun runNdcOrBarcodeLookup(rawQuery: String) {
     val query = rawQuery.trim()
@@ -1128,32 +1318,7 @@ private fun MedicationEditorDialog(
       isLookingUpNdc = false
       res.fold(
         onSuccess = { fda ->
-          ndc11 = fda.ndc11
-          formulaName = fda.formulaName
-          fda.brandName?.let { brandName = it }
-          fda.manufacturer?.let { manufacturer = it }
-          strength = fda.strength
-          form = fda.form
-          defaultDoseUnit = fda.defaultDoseUnit
-          fda.route?.let { route = it }
-          fda.concentrationMgPerMl?.let { concentrationText = formatNum(it) }
-          fda.vialVolumeMl?.let { vialVolumeText = formatNum(it) }
-          if (fda.form.supportsSiteRotation) {
-            siteRotationEnabled = true
-          }
-          val metaParts = mutableListOf<String>()
-          fda.lotNumber?.let { metaParts.add("Lot: $it") }
-          fda.expirationDateIso?.let { metaParts.add("Exp: $it") }
-          if (metaParts.isNotEmpty()) {
-            val metaLine = metaParts.joinToString(" • ")
-            ndcStatusText = "Autofilled (${fda.ndc11} • $metaLine)"
-            if (!notes.contains(metaLine)) {
-              notes = if (notes.isBlank()) metaLine else "$notes\n$metaLine"
-            }
-          } else {
-            ndcStatusText = "Autofilled from FDA NDC (${fda.ndc11})"
-          }
-          ndcMatched = true
+          applyFdaResultToForm(fda)
         },
         onFailure = { err ->
           ndcMatched = false
@@ -1353,6 +1518,70 @@ private fun MedicationEditorDialog(
             },
             modifier = Modifier.fillMaxWidth(),
           )
+
+          // Quick-Action Row: Scan Label Text (for pharmacy vials, OTCs & compounds) + Cross-Reference FDA
+          FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            AssistChip(
+              onClick = {
+                val uri = runCatching { DrugBarcodeScanner.createTempLabelPhotoUri(context) }.getOrNull()
+                if (uri != null) {
+                  pendingLabelPhotoUri = uri
+                  runCatching {
+                    cameraLabelLauncher.launch(uri)
+                  }.onFailure {
+                    showLabelScanDialog = true
+                  }
+                } else {
+                  showLabelScanDialog = true
+                }
+              },
+              leadingIcon = {
+                Icon(
+                  Icons.Default.DocumentScanner,
+                  contentDescription = null,
+                  modifier = Modifier.size(16.dp),
+                )
+              },
+              label = { Text("Scan Label Text") },
+            )
+            AssistChip(
+              onClick = { showLabelScanDialog = true },
+              leadingIcon = {
+                Icon(
+                  Icons.Default.PhotoLibrary,
+                  contentDescription = null,
+                  modifier = Modifier.size(16.dp),
+                )
+              },
+              label = { Text("Label Photo / Paste") },
+            )
+            AssistChip(
+              onClick = {
+                runCrossReferenceLookup(
+                  DrugCrossReferenceCriteria(
+                    ndc = ndc11.takeIf { it.isNotBlank() },
+                    formulaName = formulaName.takeIf { it.isNotBlank() },
+                    brandName = brandName.takeIf { it.isNotBlank() },
+                    strength = strength.takeIf { it.isNotBlank() },
+                    form = form,
+                    manufacturer = manufacturer.takeIf { it.isNotBlank() },
+                  )
+                )
+              },
+              leadingIcon = {
+                Icon(
+                  Icons.Default.Search,
+                  contentDescription = null,
+                  modifier = Modifier.size(16.dp),
+                )
+              },
+              label = { Text("Cross-Reference FDA") },
+            )
+          }
 
           OutlinedTextField(
             value = brandName,
@@ -1843,6 +2072,252 @@ private fun MedicationEditorDialog(
       },
     )
   }
+
+  // Label OCR Photo / Paste Dialog (for pharmacy vials, compounded bottles, and OTC labels)
+  if (showLabelScanDialog) {
+    AlertDialog(
+      onDismissRequest = { showLabelScanDialog = false },
+      title = { Text("Scan or Paste Medication Label Text") },
+      text = {
+        Column(
+          modifier = Modifier.verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+          Text(
+            text = "Pharmacy prescription vials, compounded bottles, and OTC containers print drug name, strength, manufacturer (MFG), NDC, and prescriber in text rather than an FDA barcode.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            FilledTonalButton(
+              onClick = {
+                showLabelScanDialog = false
+                val uri = runCatching { DrugBarcodeScanner.createTempLabelPhotoUri(context) }.getOrNull()
+                if (uri != null) {
+                  pendingLabelPhotoUri = uri
+                  cameraLabelLauncher.launch(uri)
+                }
+              },
+              modifier = Modifier.weight(1f),
+            ) {
+              Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("Camera")
+            }
+            OutlinedButton(
+              onClick = {
+                showLabelScanDialog = false
+                galleryLabelLauncher.launch("image/*")
+              },
+              modifier = Modifier.weight(1f),
+            ) {
+              Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(6.dp))
+              Text("Photos")
+            }
+          }
+          HorizontalDivider()
+          OutlinedTextField(
+            value = manualLabelInput,
+            onValueChange = { manualLabelInput = it },
+            label = { Text("Or Paste / Test Printed Label Text") },
+            placeholder = {
+              Text("ANASTROZOLE 1MG TABLET\nMFG ZYDUS\nTAKE 1 TABLET BY MOUTH")
+            },
+            minLines = 3,
+            maxLines = 6,
+            modifier = Modifier.fillMaxWidth(),
+          )
+          Text(
+            text = "Sample Real Bottle Labels:",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+          )
+          FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            AssistChip(
+              onClick = {
+                manualLabelInput = """
+                  CASEY BROWN
+                  ANASTROZOLE 1MG TABLET
+                  MFG ZYDUS
+                  TAKE 1 TABLET BY MOUTH 1 TIME A WEEK
+                  2 REFILLS BEFORE 04/05/27 QTY 12
+                """.trimIndent()
+              },
+              label = { Text("Pharmacy Vial (Anastrozole Zydus)") },
+            )
+            AssistChip(
+              onClick = {
+                manualLabelInput = """
+                  CASEY BROWN
+                  Finasteride 1.2mg Minoxidil 3mg Biotin 2.5mg
+                  Vitamin B5 11mg Vitamin B6 2.5mg Vitamin C 100mg Chewable Tablet
+                  Chew or swallow 1 tablet by mouth daily
+                  USE BY: 11/07/2026
+                  PRESCRIBED BY: Vacek, Jeffrey
+                  LOT #: DPTSESKSLIEE
+                  XeCare LLC
+                  THIS IS A COMPOUND PRODUCT
+                """.trimIndent()
+              },
+              label = { Text("Compound (XeCare)") },
+            )
+            AssistChip(
+              onClick = {
+                manualLabelInput = """
+                  NDC 41167-4122-2
+                  NON-DROWSY
+                  Allegra ALLERGY 24HR
+                  fexofenadine HCl tablet
+                  180 mg antihistamine
+                  90 GELCAPS
+                  Dist. By Chattem, Inc.
+                  LOT 43336
+                  EXP 10/2027
+                """.trimIndent()
+              },
+              label = { Text("OTC (Allegra 180mg)") },
+            )
+          }
+        }
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            val raw = manualLabelInput.trim()
+            showLabelScanDialog = false
+            if (raw.isNotEmpty()) {
+              applyParsedMedicationLabel(DrugLabelParser.parseLabelText(raw))
+            }
+          },
+          enabled = manualLabelInput.isNotBlank(),
+        ) {
+          Text("Parse & Cross-Reference")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showLabelScanDialog = false }) {
+          Text("Cancel")
+        }
+      },
+    )
+  }
+
+  // Disambiguation Dialog when multiple OpenFDA packages/strengths/manufacturers match
+  disambiguationPrompt?.let { prompt ->
+    CrossReferenceDisambiguationDialog(
+      reason = prompt.reason,
+      candidates = prompt.candidates,
+      onSelectCandidate = { chosen ->
+        disambiguationPrompt = null
+        val signals = chosen.matchedSignals.joinToString(", ")
+        applyFdaResultToForm(
+          fda = chosen.result,
+          statusSummary = "Selected FDA match (${chosen.result.ndc11} • $signals)",
+        )
+      },
+      onKeepWithoutNdc = {
+        disambiguationPrompt = null
+        ndcStatusText = "Kept entered/scanned fields without assigning a specific manufacturer NDC"
+      },
+    )
+  }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CrossReferenceDisambiguationDialog(
+  reason: String,
+  candidates: List<CrossReferencedFdaCandidate>,
+  onSelectCandidate: (CrossReferencedFdaCandidate) -> Unit,
+  onKeepWithoutNdc: () -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onKeepWithoutNdc,
+    title = { Text("Confirm Exact Medication Match") },
+    text = {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        Text(
+          text = reason,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        candidates.forEach { cand ->
+          val res = cand.result
+          Card(
+            onClick = { onSelectCandidate(cand) },
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+              containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            ),
+          ) {
+            Column(
+              modifier = Modifier.padding(12.dp),
+              verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Text(
+                  text = if (!res.brandName.isNullOrBlank()) {
+                    "${res.brandName} (${res.formulaName})"
+                  } else {
+                    res.formulaName
+                  },
+                  style = MaterialTheme.typography.titleSmall,
+                  fontWeight = FontWeight.Bold,
+                  modifier = Modifier.weight(1f),
+                )
+                Text(
+                  text = res.strength,
+                  style = MaterialTheme.typography.labelLarge,
+                  color = MaterialTheme.colorScheme.primary,
+                  fontWeight = FontWeight.SemiBold,
+                )
+              }
+              Text(
+                text = "${res.form.displayName} • Mfg: ${res.manufacturer ?: "Unspecified"} • NDC: ${res.ndc11}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              if (cand.matchedSignals.isNotEmpty()) {
+                Text(
+                  text = "Matched: ${cand.matchedSignals.joinToString(" • ")}",
+                  style = MaterialTheme.typography.labelSmall,
+                  color = MaterialTheme.colorScheme.primary,
+                )
+              }
+              if (cand.missingOrDifferentSignals.isNotEmpty()) {
+                Text(
+                  text = "Note: ${cand.missingOrDifferentSignals.joinToString(" • ")}",
+                  style = MaterialTheme.typography.labelSmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+            }
+          }
+        }
+      }
+    },
+    confirmButton = {
+      TextButton(onClick = onKeepWithoutNdc) {
+        Text("Keep Fields Only (No Specific NDC)")
+      }
+    },
+  )
 }
 
 /**

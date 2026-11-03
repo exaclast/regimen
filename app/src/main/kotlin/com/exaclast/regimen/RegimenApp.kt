@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.exaclast.regimen.model.ThemeMode
+import com.exaclast.regimen.notifications.DoseNotificationManager
 import com.exaclast.regimen.notifications.DoseNotificationStage
 import com.exaclast.regimen.ui.RegimenViewModel
 import com.exaclast.regimen.ui.TopLevelDestination
@@ -35,6 +36,7 @@ import com.exaclast.regimen.ui.screens.ConditionsScreen
 import com.exaclast.regimen.ui.screens.MedicationsScreen
 import com.exaclast.regimen.ui.screens.PrescribersScreen
 import com.exaclast.regimen.ui.screens.SettingsDialog
+import com.exaclast.regimen.ui.screens.StartupPermissionsDialog
 import com.exaclast.regimen.ui.screens.TodayScreen
 import com.exaclast.regimen.ui.theme.RegimenTheme
 import java.time.LocalDate
@@ -51,8 +53,12 @@ fun RegimenApp(
   val selectedConditionId by viewModel.selectedConditionId.collectAsState()
 
   var showSettingsDialog by rememberSaveable { mutableStateOf(false) }
+  var dismissedStartupPermissions by rememberSaveable { mutableStateOf(false) }
 
   val settings = uiState.snapshot.settings
+  val needsStartupPermissions = settings.notificationsEnabled &&
+    !DoseNotificationManager.areCorePermissionsGranted(context) &&
+    !dismissedStartupPermissions
   val systemDark = isSystemInDarkTheme()
   val useDarkTheme = when (settings.themeMode) {
     ThemeMode.SYSTEM -> systemDark
@@ -242,6 +248,13 @@ fun RegimenApp(
           onClearAllData = { viewModel.clearAllUserData() },
           onResetSampleData = { viewModel.resetToSampleData() },
           onDismiss = { showSettingsDialog = false },
+        )
+      }
+
+      if (needsStartupPermissions && !showSettingsDialog) {
+        StartupPermissionsDialog(
+          onDismiss = { dismissedStartupPermissions = true },
+          onPermissionsChanged = { viewModel.refreshPermissionsAndAlarms() },
         )
       }
     }

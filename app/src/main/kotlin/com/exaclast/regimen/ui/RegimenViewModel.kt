@@ -277,6 +277,12 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     repository.saveSettings(settings)
   }
 
+  fun refreshPermissionsAndAlarms() {
+    val s = repository.snapshot.value
+    DoseNotificationManager.scheduleDailyBucketAlarms(getApplication(), s.buckets, s.settings)
+    DoseNotificationManager.syncActiveWindowNotifications(getApplication(), s)
+  }
+
   fun clearAllUserData() {
     _selectedMedicationId.value = null
     _selectedPrescriberId.value = null
