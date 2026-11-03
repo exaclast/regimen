@@ -1,11 +1,13 @@
 package com.exaclast.regimen.data
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
@@ -37,6 +39,79 @@ object DrugBarcodeScanner {
         model.close()
       }
     }.getOrDefault(false)
+  }
+
+  /**
+   * Checks the current [FeatureStatus] of on-device Gemini Nano from AICore.
+   */
+  suspend fun checkNanoStatus(): Int = withContext(Dispatchers.IO) {
+    runCatching {
+      val model = Generation.getClient()
+      try {
+        model.checkStatus()
+      } finally {
+        model.close()
+      }
+    }.getOrDefault(FeatureStatus.UNAVAILABLE)
+  }
+
+  /**
+   * Initiates the background model download for Gemini Nano via AICore.
+   */
+  suspend fun startNanoDownload(
+    onProgress: (String) -> Unit = {},
+  ): Result<Unit> = withContext(Dispatchers.IO) {
+    runCatching {
+      val model = Generation.getClient()
+      try {
+        val status = model.checkStatus()
+        if (status == FeatureStatus.AVAILABLE) return@runCatching
+        if (status != FeatureStatus.DOWNLOADABLE && status != FeatureStatus.DOWNLOADING) {
+          throw IllegalStateException("Gemini Nano is not downloadable on this device ($status).")
+        }
+        onProgress("Downloading Gemini Nano via AICore...")
+        model.download().collect { dl ->
+          when (dl) {
+            is DownloadStatus.DownloadStarted -> onProgress("Download started...")
+            is DownloadStatus.DownloadProgress -> {
+              val mb = dl.totalBytesDownloaded / (1024 * 1024)
+              onProgress("Downloading ($mb MB)...")
+            }
+            is DownloadStatus.DownloadCompleted -> onProgress("Gemini Nano ready!")
+            is DownloadStatus.DownloadFailed -> throw IllegalStateException(
+              "Download failed: ${dl.e.localizedMessage ?: "Unknown error"}"
+            )
+          }
+        }
+      } finally {
+        model.close()
+      }
+    }
+  }
+
+  /**
+   * Opens Android AICore system app details or Developer Options AICore settings.
+   */
+  fun openAiCoreSettings(context: Context) {
+    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+      data = Uri.parse("package:com.google.android.aicore")
+      flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    }
+    val opened = runCatching {
+      context.startActivity(intent)
+      true
+    }.getOrDefault(false)
+
+    if (!opened) {
+      val devIntent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).apply {
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+      }
+      runCatching { context.startActivity(devIntent) }.getOrElse {
+        context.startActivity(Intent(Settings.ACTION_SETTINGS).apply {
+          flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        })
+      }
+    }
   }
 
   /**

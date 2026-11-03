@@ -48,7 +48,7 @@
   - Separate master switch to silence end-of-window ringing alarms while keeping persistent window-start notifications active.
   - **Discreet Notifications**: Optional lock-screen & notification shade privacy mode (`VISIBILITY_PRIVATE`) that hides medication names and anatomical injection sites.
   - Configurable default snooze duration (`15m`, `30m`, `45m`, `60m`) and optional confirmation prompt before 1-tap dose logging.
-  - **First-Launch Startup Permissions Checklist**: Guides users through granting `POST_NOTIFICATIONS`, `SCHEDULE_EXACT_ALARM` (*Alarms & reminders*), and `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (*Unrestricted Battery*) on first launch, and remains accessible anytime from **Settings → System Permissions**.
+  - **First-Launch Permissions & AI Setup Checklist**: Guides users through granting `POST_NOTIFICATIONS`, `SCHEDULE_EXACT_ALARM` (*Alarms & reminders*), `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (*Unrestricted Battery*), and monitoring on-device **Gemini Nano (AICore)** status on first launch (or when permissions change in future updates). If a user skips or declines any optional permission, the decision is persisted in settings so they are never nagged again on subsequent launches (and remains accessible anytime from **Settings**).
 - **Appearance & Theme Controls**:
   - Instant switching between `System Default`, `Light`, and `Dark` themes plus **Material You Dynamic Color** support.
 - **Adaptive Navigation & List-Detail Panes**:

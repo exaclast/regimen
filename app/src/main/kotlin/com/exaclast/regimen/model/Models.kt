@@ -356,8 +356,10 @@ data class AppSettings(
   val confirmBeforeTake: Boolean = false,
   val themeMode: ThemeMode = ThemeMode.SYSTEM,
   val dynamicColor: Boolean = true,
+  val permissionsPromptDismissedVersion: Int = 0,
 ) {
   companion object {
+    const val CURRENT_PERMISSIONS_VERSION = 1
     val SNOOZE_PRESETS = listOf(15, 30, 45, 60)
   }
 }

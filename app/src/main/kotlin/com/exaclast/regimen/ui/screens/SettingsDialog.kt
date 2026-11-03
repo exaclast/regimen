@@ -49,10 +49,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,10 +66,13 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.exaclast.regimen.data.DrugBarcodeScanner
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.ThemeMode
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.notifications.DoseNotificationManager
+import com.google.mlkit.genai.common.FeatureStatus
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -722,11 +727,14 @@ fun StartupPermissionsDialog(
 
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("Enable Reliable Dose Reminders") },
+    title = { Text("Permissions & System Setup") },
     text = {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
         Text(
-          text = "To pin persistent notifications at the start of your dose windows and ring end-of-window alarms on time, grant these Android permissions:",
+          text = "Configure notification reliability and on-device AI features. If you skip any optional permissions now, you will not be nagged again on future launches (accessible anytime in Settings):",
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -760,7 +768,10 @@ fun PermissionsChecklistSection(
 ) {
   val context = LocalContext.current
   val lifecycleOwner = LocalLifecycleOwner.current
+  val coroutineScope = rememberCoroutineScope()
   var refreshTick by remember { mutableIntStateOf(0) }
+  var nanoStatus by remember { mutableStateOf<Int?>(null) }
+  var nanoProgressMessage by remember { mutableStateOf<String?>(null) }
 
   DisposableEffect(lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event ->
@@ -771,6 +782,10 @@ fun PermissionsChecklistSection(
     }
     lifecycleOwner.lifecycle.addObserver(observer)
     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
+
+  LaunchedEffect(refreshTick) {
+    nanoStatus = DrugBarcodeScanner.checkNanoStatus()
   }
 
   val notifGranted = remember(refreshTick) {
@@ -839,6 +854,54 @@ fun PermissionsChecklistSection(
         DoseNotificationManager.requestIgnoreBatteryOptimizations(context)
       },
     )
+
+    val isNanoReady = nanoStatus == FeatureStatus.AVAILABLE
+    val nanoSubtitle = when (nanoStatus) {
+      FeatureStatus.AVAILABLE ->
+        "Active — Gemini Nano is downloaded and ready for on-device label parsing"
+      FeatureStatus.DOWNLOADING ->
+        nanoProgressMessage ?: "Downloading via AICore... (Connect to unmetered Wi-Fi and charger if paused)"
+      FeatureStatus.DOWNLOADABLE ->
+        nanoProgressMessage ?: "Ready for download (~1.5 GB) — requires Wi-Fi and power/charging"
+      FeatureStatus.UNAVAILABLE ->
+        "Not supported on this hardware (manual OpenFDA search works everywhere)"
+      else -> "Checking on-device AI status..."
+    }
+    val nanoActionLabel = when (nanoStatus) {
+      FeatureStatus.DOWNLOADING -> "AICore Settings"
+      FeatureStatus.DOWNLOADABLE -> "Download"
+      else -> null
+    }
+
+    PermissionItemCard(
+      title = "4. On-Device AI (Gemini Nano / AICore)",
+      subtitle = nanoSubtitle,
+      isGranted = isNanoReady,
+      actionLabel = nanoActionLabel,
+      onActionClick = if (nanoActionLabel != null) {
+        {
+          if (nanoStatus == FeatureStatus.DOWNLOADING) {
+            DrugBarcodeScanner.openAiCoreSettings(context)
+          } else if (nanoStatus == FeatureStatus.DOWNLOADABLE) {
+            coroutineScope.launch {
+              nanoProgressMessage = "Initiating download via AICore..."
+              DrugBarcodeScanner.startNanoDownload(
+                onProgress = { msg -> nanoProgressMessage = msg }
+              ).fold(
+                onSuccess = {
+                  nanoStatus = DrugBarcodeScanner.checkNanoStatus()
+                  onPermissionStateChanged()
+                },
+                onFailure = { err ->
+                  nanoProgressMessage = err.localizedMessage ?: "Download failed"
+                  DrugBarcodeScanner.openAiCoreSettings(context)
+                }
+              )
+            }
+          }
+        }
+      } else null,
+    )
   }
 }
 
@@ -847,8 +910,8 @@ private fun PermissionItemCard(
   title: String,
   subtitle: String,
   isGranted: Boolean,
-  actionLabel: String,
-  onActionClick: () -> Unit,
+  actionLabel: String? = null,
+  onActionClick: (() -> Unit)? = null,
 ) {
   Surface(
     shape = MaterialTheme.shapes.small,
@@ -907,7 +970,7 @@ private fun PermissionItemCard(
             color = MaterialTheme.colorScheme.primary,
           )
         }
-      } else {
+      } else if (actionLabel != null && onActionClick != null) {
         FilledTonalButton(onClick = onActionClick) {
           Text(actionLabel)
         }
