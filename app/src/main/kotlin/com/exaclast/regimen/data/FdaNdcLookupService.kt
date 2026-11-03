@@ -397,40 +397,78 @@ object FdaNdcLookupService {
   /**
    * Cross-references all available medication data ([DrugCrossReferenceCriteria]) against OpenFDA
    * without making blind assumptions when data is limited or multiple matches exist.
+   *
+   * Priority 1: If an NDC-11 (or 10-digit NDC) was detected via OCR or entered, query it first.
+   *   - If it resolves cleanly in OpenFDA (and does not conflict with another explicitly parsed drug name),
+   *     it is sufficient on its own for an immediate [CrossReferenceOutcome.UnambiguousMatch].
+   * Priority 2: If no NDC was detected or if the NDC lookup was inconclusive, cross-reference
+   *   [DrugCrossReferenceCriteria.formulaName], [DrugCrossReferenceCriteria.brandName],
+   *   [DrugCrossReferenceCriteria.strength], [DrugCrossReferenceCriteria.form], and
+   *   [DrugCrossReferenceCriteria.manufacturer].
    */
   suspend fun searchAndCrossReference(
     criteria: DrugCrossReferenceCriteria,
   ): CrossReferenceOutcome = withContext(Dispatchers.IO) {
-    // 1. If an explicit NDC is available, check it first
+    val hasOtherNameSignal = !criteria.formulaName.isNullOrBlank() || !criteria.brandName.isNullOrBlank()
+
+    // Priority 1: Check explicit NDC first if available
     if (!criteria.ndc.isNullOrBlank()) {
       val ndcResult = lookupByNdc(criteria.ndc).getOrNull()
       if (ndcResult != null) {
         val scored = scoreCandidateAgainstCriteria(ndcResult, criteria)
-        return@withContext CrossReferenceOutcome.UnambiguousMatch(scored)
+        // Conclusive if no conflicting name was scanned, or if the scanned name also matches this NDC
+        if (!hasOtherNameSignal || scored.matchesName) {
+          val withNdcSignal = scored.copy(
+            score = scored.score + 100,
+            matchedSignals = listOf("NDC (${ndcResult.ndc11})") + scored.matchedSignals,
+          )
+          return@withContext CrossReferenceOutcome.UnambiguousMatch(withNdcSignal)
+        }
       }
     }
 
     val nameQuery = criteria.formulaName?.takeIf { it.isNotBlank() }
       ?: criteria.brandName?.takeIf { it.isNotBlank() }
       ?: return@withContext CrossReferenceOutcome.NoMatch(
-        "Enter or scan at least a Brand Name, Formula Name, or NDC-11 to cross-reference against OpenFDA."
+        if (!criteria.ndc.isNullOrBlank()) {
+          "No matching FDA record found for NDC '${criteria.ndc}', and no drug name was provided to cross-reference."
+        } else {
+          "Scan a medication label or enter a Brand / Formula Name (or NDC-11) to cross-reference against OpenFDA."
+        }
       )
 
     // Build OpenFDA search query across generic_name, brand_name, and active_ingredients.name
-    val primaryToken = nameQuery
+    val rawPrimaryToken = nameQuery
       .split("/", ",", "(", " ")
       .map { it.trim() }
       .firstOrNull { it.length >= 3 && !it.equals("HCl", ignoreCase = true) }
       ?: nameQuery.trim()
+    val deobfuscatedPrimary = DrugLabelParser.deobfuscateOcrWord(rawPrimaryToken)
 
     val searchClauses = mutableListOf<String>()
-    val cleanToken = primaryToken.replace("\"", "")
-    searchClauses.add("generic_name:\"$cleanToken\"")
-    searchClauses.add("brand_name:\"$cleanToken\"")
-    searchClauses.add("active_ingredients.name:\"$cleanToken\"")
+    val cleanTokens = listOf(deobfuscatedPrimary, rawPrimaryToken)
+      .map { it.replace("\"", "").trim() }
+      .filter { it.isNotEmpty() }
+      .distinctBy { it.lowercase() }
 
-    if (!criteria.brandName.isNullOrBlank() && !criteria.brandName.equals(primaryToken, ignoreCase = true)) {
-      val bToken = criteria.brandName.trim().replace("\"", "")
+    for (token in cleanTokens) {
+      searchClauses.add("generic_name:\"$token\"")
+      searchClauses.add("brand_name:\"$token\"")
+      searchClauses.add("active_ingredients.name:\"$token\"")
+    }
+
+    // Add a 5-character stem wildcard clause so 1-2 character OCR/typing errors in the middle/end
+    // of a drug name still retrieve the candidate family from OpenFDA for strict cross-referencing
+    val alphaStem = deobfuscatedPrimary.filter { it.isLetter() }.lowercase()
+    if (alphaStem.length >= 5) {
+      val stem5 = alphaStem.take(5)
+      searchClauses.add("generic_name:${stem5}*")
+      searchClauses.add("brand_name:${stem5}*")
+      searchClauses.add("active_ingredients.name:${stem5}*")
+    }
+
+    if (!criteria.brandName.isNullOrBlank() && !criteria.brandName.equals(rawPrimaryToken, ignoreCase = true)) {
+      val bToken = DrugLabelParser.deobfuscateOcrWord(criteria.brandName.trim()).replace("\"", "")
       searchClauses.add("brand_name:\"$bToken\"")
     }
 
@@ -439,7 +477,8 @@ object FdaNdcLookupService {
       .replace("%2B", "+")
       .replace("%3A", ":")
       .replace("%22", "\"")
-    val urlString = "https://api.fda.gov/drug/ndc.json?search=$encodedSearch&limit=35"
+      .replace("%2A", "*")
+    val urlString = "https://api.fda.gov/drug/ndc.json?search=$encodedSearch&limit=40"
 
     val apiResults = mutableListOf<FdaDrugLookupResult>()
     val responseBody = runCatching { fetchHttpUrl(urlString) }.getOrNull()
@@ -552,7 +591,7 @@ object FdaNdcLookupService {
     val matched = mutableListOf<String>()
     val missingOrDiff = mutableListOf<String>()
 
-    // 1. Name cross-reference (Formula / Generic & Brand)
+    // 1. Name cross-reference (Formula / Generic & Brand) with OCR-tolerant fuzzy matching
     val qFormula = criteria.formulaName?.trim()?.lowercase().orEmpty()
     val qBrand = criteria.brandName?.trim()?.lowercase().orEmpty()
     val cFormula = candidate.formulaName.lowercase()
@@ -562,16 +601,30 @@ object FdaNdcLookupService {
     if (qFormula.isNotEmpty()) {
       val qTokens = extractAlphaTokens(qFormula)
       val cTokens = extractAlphaTokens(cFormula) + extractAlphaTokens(cBrand)
-      if (qTokens.isNotEmpty() && qTokens.all { qt -> cTokens.any { ct -> ct.contains(qt) || qt.contains(ct) } }) {
+      if (qTokens.isNotEmpty() && qTokens.all { qt -> cTokens.any { ct -> tokensMatchFuzzy(qt, ct) } }) {
         matchesName = true
-        score += 40
-        matched.add("Formula (${candidate.formulaName})")
+        val exactMatch = qTokens.all { qt -> cTokens.any { ct -> ct.contains(qt) || qt.contains(ct) } }
+        score += if (exactMatch) 40 else 34
+        matched.add(
+          if (exactMatch) {
+            "Formula (${candidate.formulaName})"
+          } else {
+            "Formula (${candidate.formulaName}, fuzzy match)"
+          }
+        )
       }
     }
     if (qBrand.isNotEmpty()) {
-      if (cBrand.contains(qBrand) || qBrand.contains(cBrand.takeIf { it.isNotEmpty() } ?: "___") || cFormula.contains(qBrand)) {
+      val qBrandTokens = extractAlphaTokens(qBrand)
+      val cBrandTokens = extractAlphaTokens(cBrand) + extractAlphaTokens(cFormula)
+      val exactBrand = cBrand.contains(qBrand) ||
+        qBrand.contains(cBrand.takeIf { it.isNotEmpty() } ?: "___") ||
+        cFormula.contains(qBrand)
+      val fuzzyBrand = qBrandTokens.isNotEmpty() &&
+        qBrandTokens.all { qt -> cBrandTokens.any { ct -> tokensMatchFuzzy(qt, ct) } }
+      if (exactBrand || fuzzyBrand) {
         matchesName = true
-        score += 35
+        score += if (exactBrand) 35 else 30
         matched.add("Brand (${candidate.brandName ?: candidate.formulaName})")
       } else {
         missingOrDiff.add("Brand differs (${candidate.brandName ?: "Generic"})")
@@ -609,15 +662,17 @@ object FdaNdcLookupService {
       }
     }
 
-    // 4. Manufacturer / Labeler cross-reference
+    // 4. Manufacturer / Labeler cross-reference (with OCR-tolerant fuzzy matching)
     val qMfg = criteria.manufacturer?.trim().orEmpty()
     var matchesMfg = false
     if (qMfg.isNotEmpty()) {
       val qMfgTokens = extractAlphaTokens(qMfg.lowercase()).filter {
         it !in setOf("inc", "llc", "ltd", "corp", "company", "pharmaceuticals", "pharma", "usa", "mfg")
       }
-      val cMfg = candidate.manufacturer?.lowercase().orEmpty()
-      if (qMfgTokens.isNotEmpty() && qMfgTokens.any { cMfg.contains(it) }) {
+      val cMfgTokens = extractAlphaTokens(candidate.manufacturer?.lowercase().orEmpty()).filter {
+        it !in setOf("inc", "llc", "ltd", "corp", "company", "pharmaceuticals", "pharma", "usa", "mfg")
+      }
+      if (qMfgTokens.isNotEmpty() && qMfgTokens.any { qt -> cMfgTokens.any { ct -> tokensMatchFuzzy(qt, ct) } }) {
         matchesMfg = true
         score += 45
         matched.add("Mfg (${candidate.manufacturer})")
@@ -641,9 +696,63 @@ object FdaNdcLookupService {
   private fun extractAlphaTokens(input: String): List<String> {
     return Regex("""[a-z0-9]{3,}""")
       .findAll(input.lowercase())
-      .map { it.value }
+      .map { DrugLabelParser.deobfuscateOcrWord(it.value).lowercase() }
       .filter { it !in setOf("hcl", "hydrochloride", "sulfate", "sodium", "tablet", "tablets", "capsule", "capsules") }
       .toList()
+  }
+
+  /**
+   * OCR-tolerant token matcher:
+   * - Normalizes OCR lookalike digits (`0`->`o`, `1`->`i`, `5`->`s`, `8`->`b`, `2`->`z`) and `l`/`i` equivalence.
+   * - Accepts exact or substring matches (for tokens >= 4 chars).
+   * - Accepts Levenshtein edit distance <= 1 for 5..7 char tokens, and <= 2 for 8+ char tokens
+   *   (e.g., "anastroz0le" or "anastrazole" -> "anastrozole").
+   */
+  internal fun tokensMatchFuzzy(queryToken: String, candidateToken: String): Boolean {
+    val q = DrugLabelParser.deobfuscateOcrWord(queryToken).lowercase()
+    val c = DrugLabelParser.deobfuscateOcrWord(candidateToken).lowercase()
+    if (q == c) return true
+    if (q.length >= 4 && c.length >= 4 && (c.contains(q) || q.contains(c))) return true
+
+    // Normalize l/i confusions for edit distance comparison
+    val qNorm = q.replace('l', 'i')
+    val cNorm = c.replace('l', 'i')
+    if (qNorm == cNorm) return true
+
+    val minLen = minOf(qNorm.length, cNorm.length)
+    val maxAllowedDist = when {
+      minLen >= 8 -> 2
+      minLen >= 5 -> 1
+      else -> 0
+    }
+    if (maxAllowedDist == 0) return false
+    if (kotlin.math.abs(qNorm.length - cNorm.length) > maxAllowedDist) return false
+    return levenshteinDistance(qNorm, cNorm) <= maxAllowedDist
+  }
+
+  internal fun levenshteinDistance(a: String, b: String): Int {
+    if (a == b) return 0
+    if (a.isEmpty()) return b.length
+    if (b.isEmpty()) return a.length
+
+    var prev = IntArray(b.length + 1) { it }
+    var curr = IntArray(b.length + 1)
+
+    for (i in a.indices) {
+      curr[0] = i + 1
+      for (j in b.indices) {
+        val cost = if (a[i] == b[j]) 0 else 1
+        curr[j + 1] = minOf(
+          curr[j] + 1,
+          prev[j + 1] + 1,
+          prev[j] + cost,
+        )
+      }
+      val tmp = prev
+      prev = curr
+      curr = tmp
+    }
+    return prev[b.length]
   }
 
   private fun normalizeStrengthNumbers(raw: String): String {

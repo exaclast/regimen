@@ -13,10 +13,9 @@
   - Vial concentration (`mg/mL`) and vial volume (`mL`).
   - Automatic draw volume (`mL`) and `U-100` insulin syringe unit calculation from `mg` or `mcg` doses.
   - Separate draw needle and injection needle specifications (`Gauge × Length`) plus syringe size/description.
-- **OpenFDA NDC-11, All-Format Barcode & On-Device Label Text (OCR) Scanner**:
-  - **2D / 1D Barcode Scanner**: Scan **2D GS1 DataMatrix** (`(01)` GTIN-14 + `(17)` Expiration Date + `(10)` Lot Number), **1D UPC-A / EAN-13** retail drug barcodes, or enter a 10- or 11-digit National Drug Code (`NDC-11`). Automatically detects when a barcode is an internal OTC label control code or pharmacy store Rx refill number and guides you to scan the printed label text instead.
-  - **On-Device Label Text Scanning (OCR)**: Uses Google Play Services ML Kit Text Recognition (`Scan Label Text`) to read printed bottle/vial labels across **pharmacy-dispensed amber vials** (extracting generic name, strength, dosage form, `MFG` manufacturer, prescriber, and sig instructions), **multi-ingredient compounded medications** (flagging `THIS IS A COMPOUND PRODUCT` so it doesn't query OpenFDA for a non-existent NDC), and **OTC single/combination bottles**.
-  - **Multi-Signal Cross-Referenced OpenFDA Lookup**: Cross-references all available signals (`ndc`, `formulaName`, `brandName`, `strength`, `form`, and `manufacturer`) against the [OpenFDA Drug NDC API](https://open.fda.gov/apis/drug/ndc/) without making blind assumptions—when multiple strengths, forms, or manufacturers match, presents a disambiguation dialog showing the matched signals for each candidate.
+- **On-Device Gemini Nano (AICore) Label Scanner & Multi-Signal OpenFDA Cross-Reference**:
+  - **On-Device Gemini Nano Label Extraction**: Uses the ML Kit GenAI Prompt API (`com.google.mlkit:genai-prompt` backed by Android AICore) to analyze medication bottle/vial photos (`ImagePart`) or pasted text (`TextPart`) directly on-device and return a structured JSON payload (`ndc`, `formulaName`, `brandName`, `strength`, `form`, `defaultDoseAmount`, `manufacturer`, `prescriberName`, `lotNumber`, `expirationDateIso`, `instructions`, and `isCompound`)—with zero brittle regex or brand lists. Automatically disables the camera scan buttons on devices/emulators without AICore while keeping manual FDA lookup available everywhere.
+  - **NDC-11 First-Priority & Multi-Signal Cross-Reference**: If an `NDC-11` (or 10-digit NDC) is extracted from the label or entered in the **Optional Rx & Drug Details** section, it takes first priority as a direct match in the [OpenFDA Drug NDC API](https://open.fda.gov/apis/drug/ndc/). If no NDC is present or if it is inconclusive, Regimen cross-references all available signals (`formulaName`, `brandName`, `strength`, `form`, and `manufacturer`) without making blind assumptions—presenting a disambiguation dialog whenever multiple strengths, forms, or manufacturers match.
 - **Medication-Level Safety & Pacing Guardrails**:
   - Minimum interval between doses (`minIntervalMinutes`).
   - Maximum daily dose count (`maxDailyDoses`) and maximum daily cumulative amount (`maxDailyAmount`).
@@ -67,9 +66,9 @@ app/src/main/kotlin/com/exaclast/regimen/
 ├── MainActivity.kt                  # Entry point & edge-to-edge host
 ├── RegimenApp.kt                    # Adaptive NavigationSuiteScaffold & live theme host
 ├── data/
-│   ├── DrugBarcodeScanner.kt        # Google Code Scanner (all 1D/2D formats) & ML Kit Label OCR
-│   ├── DrugLabelParser.kt           # Printed bottle/vial/compound/OTC label text parser
-│   ├── FdaNdcLookupService.kt       # OpenFDA NDC-11 lookup, multi-signal cross-reference & barcode parser
+│   ├── DrugBarcodeScanner.kt        # On-device Gemini Nano (ML Kit GenAI Prompt / AICore) label analyzer
+│   ├── DrugLabelParser.kt           # Structured JSON prompt & kotlinx.serialization schema for Gemini Nano
+│   ├── FdaNdcLookupService.kt       # OpenFDA NDC-11 lookup & multi-signal cross-reference engine
 │   ├── RegimenDatabase.kt           # SQLite storage engine
 │   └── RegimenRepository.kt         # Reactive StateFlow repository, settings store & demo seeding
 ├── domain/

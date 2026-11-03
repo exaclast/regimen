@@ -114,78 +114,82 @@ class FdaNdcLookupServiceTest {
   }
 
   @Test
-  fun drugLabelParser_parsesPharmacyVialOtcAndCompoundLabels() {
-    // 1. Zydus Anastrozole 1mg Pharmacy Vial
-    val zydusVial = DrugLabelParser.parseLabelText(
+  fun drugLabelParser_parsesGeminiNanoStructuredJsonOutputs() {
+    // 1. Zydus Anastrozole 1mg Pharmacy Vial JSON from Gemini Nano
+    val zydusVial = DrugLabelParser.parseGeminiJsonResponse(
       """
-      CASEY BROWN
-      ANASTROZOLE 1MG TABLET
-      MFG ZYDUS
-      TAKE 1 TABLET BY MOUTH 1 TIME A WEEK
-      2 REFILLS BEFORE 04/05/27 QTY 12
+      ```json
+      {
+        "ndc": null,
+        "formulaName": "Anastrozole",
+        "brandName": null,
+        "strength": "1 mg",
+        "form": "TABLET",
+        "defaultDoseAmount": 1.0,
+        "manufacturer": "Zydus",
+        "prescriberName": null,
+        "lotNumber": null,
+        "expirationDateIso": null,
+        "instructions": "Take 1 tablet by mouth 1 time a week",
+        "isCompound": false
+      }
+      ```
       """.trimIndent()
     )
     assertEquals("Anastrozole", zydusVial.formulaName)
     assertEquals("1 mg", zydusVial.strength)
     assertEquals(MedicationForm.TABLET, zydusVial.form)
-    assertEquals("ZYDUS", zydusVial.manufacturer)
+    assertEquals("Zydus", zydusVial.manufacturer)
     assertEquals(1.0, zydusVial.defaultDoseAmount!!, 0.001)
 
-    // 2. Allegra Allergy 24HR OTC Bottle
-    val allegra = DrugLabelParser.parseLabelText(
+    // 2. Allegra Allergy 24HR OTC Bottle JSON (including canonical NDC-11 normalization from 41167-4122-2)
+    val allegra = DrugLabelParser.parseGeminiJsonResponse(
       """
-      NDC 41167-4122-2
-      NON-DROWSY
-      Allegra ALLERGY 24HR
-      fexofenadine HCl tablet
-      180 mg antihistamine
-      90 GELCAPS
-      Dist. By Chattem, Inc.
-      LOT 43336
-      EXP 10/2027
+      {
+        "ndc": "41167-4122-2",
+        "formulaName": "Fexofenadine HCl",
+        "brandName": "Allegra",
+        "strength": "180 mg",
+        "form": "TABLET",
+        "defaultDoseAmount": 1.0,
+        "manufacturer": "Chattem, Inc.",
+        "prescriberName": null,
+        "lotNumber": "43336",
+        "expirationDateIso": "2027-10-28",
+        "instructions": null,
+        "isCompound": false
+      }
       """.trimIndent()
     )
-    assertEquals("41167-4122-2", allegra.extractedNdc)
+    assertEquals("41167-4122-02", allegra.extractedNdc)
     assertEquals("Allegra", allegra.brandName)
     assertEquals("Fexofenadine HCl", allegra.formulaName)
     assertEquals("180 mg", allegra.strength)
     assertEquals("43336", allegra.lotNumber)
     assertEquals("2027-10-28", allegra.expirationDateIso)
 
-    // 3. Advil Dual Action Combination OTC
-    val advilDual = DrugLabelParser.parseLabelText(
+    // 3. XeCare Multi-Ingredient Compound Bottle JSON
+    val compound = DrugLabelParser.parseGeminiJsonResponse(
       """
-      CONTAINS 2 MEDICINES
-      Advil DUAL ACTION
-      WITH Acetaminophen
-      Acetaminophen 250 mg
-      Ibuprofen (NSAID) 125 mg
-      Pain Reliever
-      EXP 03/28
-      """.trimIndent()
-    )
-    assertEquals("Advil Dual Action", advilDual.brandName)
-    assertEquals("Acetaminophen / Ibuprofen", advilDual.formulaName)
-    assertEquals("250 mg / 125 mg", advilDual.strength)
-    assertEquals("2028-03-28", advilDual.expirationDateIso)
-
-    // 4. XeCare Multi-Ingredient Compound Bottle
-    val compound = DrugLabelParser.parseLabelText(
-      """
-      CASEY BROWN
-      Finasteride 1.2mg Minoxidil 3mg Biotin 2.5mg
-      Vitamin B5 11mg Vitamin B6 2.5mg Vitamin C 100mg Chewable Tablet
-      Chew or swallow 1 tablet by mouth daily
-      USE BY: 11/07/2026
-      PRESCRIBED BY: Vacek, Jeffrey
-      LOT #: DPTSESKSLIEE
-      XeCare LLC (855) 918-4467
-      THIS IS A COMPOUND PRODUCT
+      {
+        "ndc": null,
+        "formulaName": "Finasteride / Minoxidil / Biotin / Vitamin B5 / Vitamin B6 / Vitamin C",
+        "brandName": null,
+        "strength": "1.2 mg / 3 mg / 2.5 mg / 11 mg / 2.5 mg / 100 mg",
+        "form": "TABLET",
+        "defaultDoseAmount": 1.0,
+        "manufacturer": "XeCare LLC",
+        "prescriberName": "Jeffrey Vacek",
+        "lotNumber": "DPTSESKSLIEE",
+        "expirationDateIso": "2026-11-07",
+        "instructions": "Chew or swallow 1 tablet by mouth daily",
+        "isCompound": true
+      }
       """.trimIndent()
     )
     assertTrue(compound.isCompound)
     assertTrue(compound.formulaName!!.contains("Finasteride"))
-    assertTrue(compound.formulaName!!.contains("Minoxidil"))
+    assertTrue(compound.formulaName.contains("Minoxidil"))
     assertTrue(compound.strength!!.contains("1.2 mg"))
     assertEquals("Jeffrey Vacek", compound.prescriberName)
     assertEquals("DPTSESKSLIEE", compound.lotNumber)
@@ -267,6 +271,21 @@ class FdaNdcLookupServiceTest {
     val scoredNoStrength = FdaNdcLookupService.scoreAndFilterCandidates(pool, noStrengthCriteria)
     val outcomeNoStrength = FdaNdcLookupService.evaluateDisambiguation(scoredNoStrength, noStrengthCriteria)
     assertTrue(outcomeNoStrength is CrossReferenceOutcome.NeedsUserSelection)
+
+    // Case 4: Fuzzy / OCR-corrupted name ("Anastroz0le" or "Anastrazole") + Strength + Mfg -> UnambiguousMatch
+    val fuzzyOcrCriteria = DrugCrossReferenceCriteria(
+      formulaName = "Anastroz0le",
+      strength = "1 mg",
+      form = MedicationForm.TABLET,
+      manufacturer = "ZYDU5",
+    )
+    val scoredFuzzy = FdaNdcLookupService.scoreAndFilterCandidates(pool, fuzzyOcrCriteria)
+    val outcomeFuzzy = FdaNdcLookupService.evaluateDisambiguation(scoredFuzzy, fuzzyOcrCriteria)
+    assertTrue(outcomeFuzzy is CrossReferenceOutcome.UnambiguousMatch)
+    assertEquals(
+      "68382-0205-05",
+      (outcomeFuzzy as CrossReferenceOutcome.UnambiguousMatch).candidate.result.ndc11
+    )
   }
 }
 

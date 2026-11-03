@@ -40,7 +40,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -69,6 +68,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -1118,23 +1118,23 @@ private fun MedicationEditorDialog(
   var prescribedDateIso by rememberSaveable { mutableStateOf(initialMedication?.prescribedDateIso.orEmpty()) }
   var notes by rememberSaveable { mutableStateOf(initialMedication?.notes.orEmpty()) }
 
-  // Compact NDC, Barcode, Label OCR & Cross-Reference lookup state
+  // Gemini Nano (AICore) Label Scanner & Cross-Reference lookup state
   val context = LocalContext.current
   val coroutineScope = rememberCoroutineScope()
+  var isGeminiNanoSupported by remember { mutableStateOf(false) }
   var isLookingUpNdc by remember { mutableStateOf(false) }
   var ndcErrorText by remember { mutableStateOf<String?>(null) }
   var ndcStatusText by remember { mutableStateOf<String?>(null) }
   var ndcMatched by remember { mutableStateOf(false) }
-  var showManualBarcodeDialog by remember { mutableStateOf(false) }
-  var manualBarcodeNote by remember { mutableStateOf<String?>(null) }
-  var manualBarcodeInput by remember { mutableStateOf("") }
-
-  // Label OCR & Cross-Reference Disambiguation state
   var showLabelScanDialog by remember { mutableStateOf(false) }
   var manualLabelInput by remember { mutableStateOf("") }
   var pendingLabelPhotoUri by remember { mutableStateOf<Uri?>(null) }
   var disambiguationPrompt by remember {
     mutableStateOf<CrossReferenceOutcome.NeedsUserSelection?>(null)
+  }
+
+  LaunchedEffect(Unit) {
+    isGeminiNanoSupported = DrugBarcodeScanner.isGeminiNanoAvailable()
   }
 
   fun applyFdaResultToForm(fda: FdaDrugLookupResult, statusSummary: String? = null) {
@@ -1262,26 +1262,47 @@ private fun MedicationEditorDialog(
     }
   }
 
+  fun runGeminiLabelImageAnalysis(imageUri: Uri) {
+    isLookingUpNdc = true
+    ndcErrorText = null
+    ndcStatusText = "Analyzing label with on-device Gemini Nano..."
+    coroutineScope.launch {
+      val res = DrugBarcodeScanner.analyzeLabelFromImageUri(
+        context = context,
+        imageUri = imageUri,
+        onStatusUpdate = { status -> ndcStatusText = status },
+      )
+      isLookingUpNdc = false
+      res.fold(
+        onSuccess = { parsed -> applyParsedMedicationLabel(parsed) },
+        onFailure = { err -> ndcErrorText = err.localizedMessage ?: "Failed to analyze label." },
+      )
+    }
+  }
+
+  fun runGeminiLabelTextAnalysis(rawText: String) {
+    isLookingUpNdc = true
+    ndcErrorText = null
+    ndcStatusText = "Analyzing label text with on-device Gemini Nano..."
+    coroutineScope.launch {
+      val res = DrugBarcodeScanner.analyzeLabelFromText(
+        rawLabelText = rawText,
+        onStatusUpdate = { status -> ndcStatusText = status },
+      )
+      isLookingUpNdc = false
+      res.fold(
+        onSuccess = { parsed -> applyParsedMedicationLabel(parsed) },
+        onFailure = { err -> ndcErrorText = err.localizedMessage ?: "Failed to analyze label text." },
+      )
+    }
+  }
+
   val cameraLabelLauncher = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.TakePicture()
   ) { success ->
     val uri = pendingLabelPhotoUri
     if (success && uri != null) {
-      isLookingUpNdc = true
-      ndcErrorText = null
-      ndcStatusText = "Reading printed label text..."
-      DrugBarcodeScanner.recognizeLabelFromImageUri(
-        context = context,
-        imageUri = uri,
-        onResult = { parsed ->
-          isLookingUpNdc = false
-          applyParsedMedicationLabel(parsed)
-        },
-        onError = { errMsg ->
-          isLookingUpNdc = false
-          ndcErrorText = errMsg
-        },
-      )
+      runGeminiLabelImageAnalysis(uri)
     }
   }
 
@@ -1289,21 +1310,7 @@ private fun MedicationEditorDialog(
     contract = ActivityResultContracts.GetContent()
   ) { uri: Uri? ->
     if (uri != null) {
-      isLookingUpNdc = true
-      ndcErrorText = null
-      ndcStatusText = "Reading printed label text from photo..."
-      DrugBarcodeScanner.recognizeLabelFromImageUri(
-        context = context,
-        imageUri = uri,
-        onResult = { parsed ->
-          isLookingUpNdc = false
-          applyParsedMedicationLabel(parsed)
-        },
-        onError = { errMsg ->
-          isLookingUpNdc = false
-          ndcErrorText = errMsg
-        },
-      )
+      runGeminiLabelImageAnalysis(uri)
     }
   }
 
@@ -1333,7 +1340,8 @@ private fun MedicationEditorDialog(
   } ?: false
 
   val hasInitialOptionalDetails = initialMedication?.let {
-    !it.manufacturer.isNullOrBlank() ||
+    !it.ndc11.isNullOrBlank() ||
+      !it.manufacturer.isNullOrBlank() ||
       it.prescriberId != null ||
       !it.prescribedDateIso.isNullOrBlank() ||
       !it.notes.isNullOrBlank()
@@ -1429,158 +1437,106 @@ private fun MedicationEditorDialog(
             .padding(20.dp),
           verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-          // 1. Top Barcode / NDC-11 Scanner & Lookup + Core Medication Identity
-          OutlinedTextField(
-            value = ndc11,
-            onValueChange = {
-              ndc11 = it
-              ndcErrorText = null
-              ndcStatusText = null
-              ndcMatched = false
-            },
-            label = { Text("NDC-11 or Barcode (Optional)") },
-            placeholder = { Text("Scan 2D/UPC or enter 00009-0085-10") },
-            singleLine = true,
-            isError = ndcErrorText != null,
-            supportingText = (ndcErrorText ?: ndcStatusText)?.let { msg -> { Text(msg) } },
-            trailingIcon = {
-              when {
-                isLookingUpNdc -> {
-                  CircularProgressIndicator(
-                    modifier = Modifier
-                      .padding(end = 12.dp)
-                      .size(18.dp),
-                    strokeWidth = 2.dp,
+          // 1. Top Label OCR Scanner & OpenFDA Cross-Reference Bar + Core Medication Identity
+          Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+              verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+              ) {
+                FilledTonalButton(
+                  onClick = {
+                    val uri = runCatching { DrugBarcodeScanner.createTempLabelPhotoUri(context) }.getOrNull()
+                    if (uri != null) {
+                      pendingLabelPhotoUri = uri
+                      runCatching {
+                        cameraLabelLauncher.launch(uri)
+                      }.onFailure {
+                        showLabelScanDialog = true
+                      }
+                    } else {
+                      showLabelScanDialog = true
+                    }
+                  },
+                  enabled = isGeminiNanoSupported && !isLookingUpNdc,
+                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                  Icon(
+                    Icons.Default.DocumentScanner,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
                   )
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text("Scan Label")
                 }
-                ndc11.isNotBlank() -> {
-                  Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                      onClick = {
-                        DrugBarcodeScanner.startScan(
-                          context = context,
-                          onScanned = { rawBarcode ->
-                            runNdcOrBarcodeLookup(rawBarcode)
-                          },
-                          onUnavailable = { reason ->
-                            manualBarcodeNote = reason
-                            showManualBarcodeDialog = true
-                          },
-                        )
-                      }
-                    ) {
-                      Icon(
-                        Icons.Default.QrCodeScanner,
-                        contentDescription = "Scan Drug Barcode or 2D DataMatrix",
-                        modifier = Modifier.size(20.dp),
-                      )
-                    }
-                    TextButton(
-                      onClick = { runNdcOrBarcodeLookup(ndc11) }
-                    ) {
-                      if (ndcMatched) {
-                        Icon(
-                          Icons.Default.Check,
-                          contentDescription = null,
-                          modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                      }
-                      Text("Autofill")
-                    }
-                  }
+                OutlinedButton(
+                  onClick = { showLabelScanDialog = true },
+                  enabled = isGeminiNanoSupported && !isLookingUpNdc,
+                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                  Icon(
+                    Icons.Default.PhotoLibrary,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                  )
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text("Label Photo")
                 }
-                else -> {
-                  TextButton(
-                    onClick = {
-                      DrugBarcodeScanner.startScan(
-                        context = context,
-                        onScanned = { rawBarcode ->
-                          runNdcOrBarcodeLookup(rawBarcode)
-                        },
-                        onUnavailable = { reason ->
-                          manualBarcodeNote = reason
-                          showManualBarcodeDialog = true
-                        },
+                OutlinedButton(
+                  onClick = {
+                    runCrossReferenceLookup(
+                      DrugCrossReferenceCriteria(
+                        ndc = ndc11.takeIf { it.isNotBlank() },
+                        formulaName = formulaName.takeIf { it.isNotBlank() },
+                        brandName = brandName.takeIf { it.isNotBlank() },
+                        strength = strength.takeIf { it.isNotBlank() },
+                        form = form,
+                        manufacturer = manufacturer.takeIf { it.isNotBlank() },
                       )
-                    }
-                  ) {
-                    Icon(
-                      Icons.Default.QrCodeScanner,
-                      contentDescription = null,
-                      modifier = Modifier.size(18.dp),
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Scan")
+                  },
+                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                ) {
+                  if (isLookingUpNdc) {
+                    CircularProgressIndicator(
+                      modifier = Modifier.size(14.dp),
+                      strokeWidth = 2.dp,
+                    )
+                  } else {
+                    Icon(
+                      Icons.Default.Search,
+                      contentDescription = null,
+                      modifier = Modifier.size(16.dp),
+                    )
                   }
+                  Spacer(modifier = Modifier.width(6.dp))
+                  Text("Match FDA")
                 }
               }
-            },
-            modifier = Modifier.fillMaxWidth(),
-          )
 
-          // Quick-Action Row: Scan Label Text (for pharmacy vials, OTCs & compounds) + Cross-Reference FDA
-          FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-          ) {
-            AssistChip(
-              onClick = {
-                val uri = runCatching { DrugBarcodeScanner.createTempLabelPhotoUri(context) }.getOrNull()
-                if (uri != null) {
-                  pendingLabelPhotoUri = uri
-                  runCatching {
-                    cameraLabelLauncher.launch(uri)
-                  }.onFailure {
-                    showLabelScanDialog = true
-                  }
-                } else {
-                  showLabelScanDialog = true
-                }
-              },
-              leadingIcon = {
-                Icon(
-                  Icons.Default.DocumentScanner,
-                  contentDescription = null,
-                  modifier = Modifier.size(16.dp),
+              val activeFeedback = ndcErrorText ?: ndcStatusText
+              if (!activeFeedback.isNullOrBlank()) {
+                Text(
+                  text = activeFeedback,
+                  style = MaterialTheme.typography.labelSmall,
+                  color = if (ndcErrorText != null) {
+                    MaterialTheme.colorScheme.error
+                  } else {
+                    MaterialTheme.colorScheme.primary
+                  },
                 )
-              },
-              label = { Text("Scan Label Text") },
-            )
-            AssistChip(
-              onClick = { showLabelScanDialog = true },
-              leadingIcon = {
-                Icon(
-                  Icons.Default.PhotoLibrary,
-                  contentDescription = null,
-                  modifier = Modifier.size(16.dp),
-                )
-              },
-              label = { Text("Label Photo / Paste") },
-            )
-            AssistChip(
-              onClick = {
-                runCrossReferenceLookup(
-                  DrugCrossReferenceCriteria(
-                    ndc = ndc11.takeIf { it.isNotBlank() },
-                    formulaName = formulaName.takeIf { it.isNotBlank() },
-                    brandName = brandName.takeIf { it.isNotBlank() },
-                    strength = strength.takeIf { it.isNotBlank() },
-                    form = form,
-                    manufacturer = manufacturer.takeIf { it.isNotBlank() },
-                  )
-                )
-              },
-              leadingIcon = {
-                Icon(
-                  Icons.Default.Search,
-                  contentDescription = null,
-                  modifier = Modifier.size(16.dp),
-                )
-              },
-              label = { Text("Cross-Reference FDA") },
-            )
+              }
+            }
           }
 
           OutlinedTextField(
@@ -1941,17 +1897,49 @@ private fun MedicationEditorDialog(
             )
           }
 
-          // 5. Collapsible Optional Rx & Drug Details Section
+          // 5. Collapsible Optional Rx & Drug Details Section (NDC-11, Manufacturer, Prescriber, Notes)
           val optionalSummary = listOfNotNull(
+            ndc11.takeIf { it.isNotBlank() }?.let { "NDC $it" },
             manufacturer.takeIf { it.isNotBlank() },
             prescribers.find { it.id == selectedPrescriberId }?.name,
-          ).joinToString(" • ").ifEmpty { "Manufacturer, prescriber, prescribed date & notes" }
+          ).joinToString(" • ").ifEmpty { "NDC-11, manufacturer, prescriber, prescribed date & notes" }
 
           CollapsibleFormSection(
             title = "Optional Rx & Drug Details",
             subtitle = optionalSummary,
             initiallyExpanded = hasInitialOptionalDetails,
           ) {
+            OutlinedTextField(
+              value = ndc11,
+              onValueChange = {
+                ndc11 = it
+                ndcErrorText = null
+                ndcStatusText = null
+                ndcMatched = false
+              },
+              label = { Text("NDC-11 (Optional)") },
+              placeholder = { Text("e.g. 00009-0085-10") },
+              singleLine = true,
+              trailingIcon = {
+                if (ndc11.isNotBlank()) {
+                  TextButton(
+                    onClick = { runNdcOrBarcodeLookup(ndc11) }
+                  ) {
+                    if (ndcMatched) {
+                      Icon(
+                        Icons.Default.Check,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                      )
+                      Spacer(modifier = Modifier.width(4.dp))
+                    }
+                    Text("Lookup")
+                  }
+                }
+              },
+              modifier = Modifier.fillMaxWidth(),
+            )
+
             OutlinedTextField(
               value = manufacturer,
               onValueChange = { manufacturer = it },
@@ -2000,77 +1988,6 @@ private fun MedicationEditorDialog(
         }
       }
     }
-  }
-
-  if (showManualBarcodeDialog) {
-    AlertDialog(
-      onDismissRequest = { showManualBarcodeDialog = false },
-      title = { Text("Scan or Paste Drug Barcode") },
-      text = {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          manualBarcodeNote?.let { note ->
-            Text(
-              text = note,
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-          }
-          Text(
-            text = "Supports 2D GS1 DataMatrix ((01) GTIN + (17) Exp + (10) Lot), 1D UPC-A, or 10/11-digit NDC:",
-            style = MaterialTheme.typography.bodySmall,
-          )
-          OutlinedTextField(
-            value = manualBarcodeInput,
-            onValueChange = { manualBarcodeInput = it },
-            label = { Text("Raw Barcode / GS1 DataMatrix / UPC") },
-            placeholder = { Text("(01)00300090085106(17)271231(10)PFZ882") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-          )
-          Text(
-            text = "Quick Test Barcodes:",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary,
-          )
-          FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-          ) {
-            AssistChip(
-              onClick = {
-                manualBarcodeInput = "(01)00300090085106(17)271231(10)PFZ882"
-              },
-              label = { Text("2D DataMatrix (Depo-Testosterone)") },
-            )
-            AssistChip(
-              onClick = {
-                manualBarcodeInput = "3594170104105"
-              },
-              label = { Text("UPC-A (Vyvanse)") },
-            )
-          }
-        }
-      },
-      confirmButton = {
-        Button(
-          onClick = {
-            val code = manualBarcodeInput.trim()
-            showManualBarcodeDialog = false
-            if (code.isNotEmpty()) {
-              runNdcOrBarcodeLookup(code)
-            }
-          },
-          enabled = manualBarcodeInput.isNotBlank(),
-        ) {
-          Text("Decode & Autofill")
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = { showManualBarcodeDialog = false }) {
-          Text("Cancel")
-        }
-      },
-    )
   }
 
   // Label OCR Photo / Paste Dialog (for pharmacy vials, compounded bottles, and OTC labels)
@@ -2193,7 +2110,7 @@ private fun MedicationEditorDialog(
             val raw = manualLabelInput.trim()
             showLabelScanDialog = false
             if (raw.isNotEmpty()) {
-              applyParsedMedicationLabel(DrugLabelParser.parseLabelText(raw))
+              runGeminiLabelTextAnalysis(raw)
             }
           },
           enabled = manualLabelInput.isNotBlank(),
