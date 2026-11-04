@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -116,12 +117,32 @@ fun SettingsScreen(
   onPermissionsChanged: () -> Unit,
 ) {
   val context = LocalContext.current
+  val lifecycleOwner = LocalLifecycleOwner.current
+  val coroutineScope = rememberCoroutineScope()
   var statusMessage by remember { mutableStateOf<String?>(null) }
   var showImport by rememberSaveable { mutableStateOf(false) }
   var importText by rememberSaveable { mutableStateOf("") }
   var confirmResetWindows by remember { mutableStateOf(false) }
   var confirmClear by remember { mutableStateOf(false) }
   var confirmDemo by remember { mutableStateOf(false) }
+  var nanoStatus by remember { mutableStateOf<Int?>(null) }
+  var nanoProgressMessage by remember { mutableStateOf<String?>(null) }
+
+  LaunchedEffect(Unit) {
+    nanoStatus = DrugBarcodeScanner.checkNanoStatus()
+  }
+
+  DisposableEffect(lifecycleOwner) {
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_RESUME) {
+        coroutineScope.launch {
+          nanoStatus = DrugBarcodeScanner.checkNanoStatus()
+        }
+      }
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
 
   Scaffold(
     topBar = {
@@ -281,10 +302,84 @@ fun SettingsScreen(
 
       item(key = "scanning") {
         SectionHeader("Label scanning")
-        PatientNameField(
-          savedName = settings.patientName,
-          onSave = { onSaveSettings(settings.copy(patientName = it)) },
-        )
+        if (nanoStatus == FeatureStatus.UNAVAILABLE) {
+          Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Row(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Icon(
+                imageVector = Icons.Default.Info,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+              )
+              Spacer(modifier = Modifier.width(12.dp))
+              Text(
+                text = "This device does not support on-device Gemini Nano label scanning capabilities.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+          }
+        } else {
+          Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            val isNanoReady = nanoStatus == FeatureStatus.AVAILABLE
+            val nanoSubtitle = when (nanoStatus) {
+              FeatureStatus.AVAILABLE -> "Gemini Nano is downloaded and ready for on-device label parsing"
+              FeatureStatus.DOWNLOADING -> nanoProgressMessage ?: "Downloading model via AICore (~1.5 GB)..."
+              FeatureStatus.DOWNLOADABLE ->
+                nanoProgressMessage ?: "Ready for download (~1.5 GB) — requires Wi-Fi and power/charging"
+              else -> "Checking on-device AI status..."
+            }
+            val nanoActionLabel = when (nanoStatus) {
+              FeatureStatus.DOWNLOADING -> "AICore Settings"
+              FeatureStatus.DOWNLOADABLE -> "Download"
+              else -> null
+            }
+
+            PermissionItemCard(
+              title = "On-Device AI (Gemini Nano / AICore)",
+              subtitle = nanoSubtitle,
+              isGranted = isNanoReady,
+              actionLabel = nanoActionLabel,
+              onActionClick = if (nanoActionLabel != null) {
+                {
+                  if (nanoStatus == FeatureStatus.DOWNLOADING) {
+                    DrugBarcodeScanner.openAiCoreSettings(context)
+                  } else if (nanoStatus == FeatureStatus.DOWNLOADABLE) {
+                    coroutineScope.launch {
+                      nanoProgressMessage = "Initiating download via AICore..."
+                      DrugBarcodeScanner.startNanoDownload(
+                        onProgress = { msg -> nanoProgressMessage = msg }
+                      ).fold(
+                        onSuccess = {
+                          nanoStatus = DrugBarcodeScanner.checkNanoStatus()
+                          onPermissionsChanged()
+                        },
+                        onFailure = { err ->
+                          nanoProgressMessage = err.localizedMessage ?: "Download failed"
+                          DrugBarcodeScanner.openAiCoreSettings(context)
+                        }
+                      )
+                    }
+                  }
+                }
+              } else null,
+            )
+
+            PatientNameField(
+              savedName = settings.patientName,
+              onSave = { onSaveSettings(settings.copy(patientName = it)) },
+            )
+          }
+        }
       }
 
       item(key = "diagnostics") {
@@ -452,7 +547,9 @@ private fun PatientNameField(savedName: String, onSave: (String) -> Unit) {
       value = text,
       onValueChange = { text = it },
       label = { Text("Your name as printed on labels") },
-      supportingText = { Text("The label scanner ignores it so it's never read as a drug name.") },
+      supportingText = {
+        Text("Used by on-device Gemini Nano as a filter so your printed name is never misread as a medication brand or generic name. Stays entirely on-device; only required if you plan to use label scanning.")
+      },
       singleLine = true,
       keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
       keyboardActions = KeyboardActions(onDone = {
@@ -635,8 +732,21 @@ fun StartupPermissionsDialog(
     DoseNotificationManager.isIgnoringBatteryOptimizations(context)
   }
 
+  var nanoStatus by remember { mutableStateOf<Int?>(null) }
+  LaunchedEffect(refreshTick) {
+    nanoStatus = DrugBarcodeScanner.checkNanoStatus()
+  }
+  val isNanoSupported = nanoStatus != null && nanoStatus != FeatureStatus.UNAVAILABLE
+
+  var patientNameText by rememberSaveable(settings.patientName) {
+    mutableStateOf(settings.patientName)
+  }
+
   AlertDialog(
-    onDismissRequest = onDismiss,
+    onDismissRequest = {
+      onSaveSettings(settings.copy(patientName = patientNameText.trim()))
+      onDismiss()
+    },
     title = { Text("Permissions & System Setup") },
     text = {
       Column(
@@ -656,10 +766,49 @@ fun StartupPermissionsDialog(
             onPermissionsChanged()
           },
         )
+        if (isNanoSupported) {
+          Surface(
+            shape = MaterialTheme.shapes.small,
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+              verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+              Text(
+                text = "Prescription Label Name (Optional)",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+              )
+              Text(
+                text = "Used by on-device Gemini Nano as a filter so your printed name is never misread as a medication brand or generic name. This stays entirely on your device and is only required if you plan to use label scanning.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              OutlinedTextField(
+                value = patientNameText,
+                onValueChange = {
+                  patientNameText = it
+                  onSaveSettings(settings.copy(patientName = it.trim()))
+                },
+                label = { Text("Your name as printed on labels") },
+                placeholder = { Text("e.g. Jane Doe") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+              )
+            }
+          }
+        }
       }
     },
     confirmButton = {
-      Button(onClick = onDismiss) {
+      Button(onClick = {
+        onSaveSettings(settings.copy(patientName = patientNameText.trim()))
+        onDismiss()
+      }) {
         Text(
           if (allCoreGranted && batteryUnrestricted) {
             "All Set"
