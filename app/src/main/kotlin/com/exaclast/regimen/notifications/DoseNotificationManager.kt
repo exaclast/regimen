@@ -170,18 +170,25 @@ object DoseNotificationManager {
 
   fun cancelSnoozeAlarm(context: Context, itemKey: String, bucketId: String?) {
     val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-    val intent = Intent(context, DoseActionReceiver::class.java).apply {
-      action = DoseActionReceiver.ACTION_TRIGGER_WINDOW_END_ALARM
-      putExtra(DoseActionReceiver.EXTRA_ITEM_KEY, itemKey)
-      putExtra(DoseActionReceiver.EXTRA_BUCKET_ID, bucketId)
+    // PendingIntent identity is (action, requestCode, component); extras are irrelevant. Cancel the
+    // current snooze action and the legacy END_ALARM-based snooze scheduled by older app versions.
+    listOf(
+      DoseActionReceiver.ACTION_TRIGGER_SNOOZE_EXPIRED,
+      DoseActionReceiver.ACTION_TRIGGER_WINDOW_END_ALARM,
+    ).forEach { snoozeAction ->
+      val intent = Intent(context, DoseActionReceiver::class.java).apply {
+        action = snoozeAction
+        putExtra(DoseActionReceiver.EXTRA_ITEM_KEY, itemKey)
+        putExtra(DoseActionReceiver.EXTRA_BUCKET_ID, bucketId)
+      }
+      val pendingIntent = PendingIntent.getBroadcast(
+        context,
+        itemKey.hashCode(),
+        intent,
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+      )
+      runCatching { alarmManager.cancel(pendingIntent) }
     }
-    val pendingIntent = PendingIntent.getBroadcast(
-      context,
-      itemKey.hashCode(),
-      intent,
-      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-    )
-    runCatching { alarmManager.cancel(pendingIntent) }
   }
 
   /**
@@ -340,13 +347,25 @@ object DoseNotificationManager {
 
   /**
    * Schedules an exact snooze wake-up alarm using setAlarmClock / setExactAndAllowWhileIdle.
+   *
+   * The dose's scheduled date travels with the alarm: a snooze can expire after midnight (or
+   * belong to an overnight window), so the receiver must not infer the date from the clock.
    */
-  fun scheduleSnoozeAlarm(context: Context, itemKey: String, bucketId: String?, triggerAtMillis: Long) {
+  fun scheduleSnoozeAlarm(
+    context: Context,
+    itemKey: String,
+    bucketId: String?,
+    scheduledDateIso: String,
+    triggerAtMillis: Long,
+  ) {
     val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+    // Replace any snooze scheduled by an older app version under the legacy action.
+    cancelSnoozeAlarm(context, itemKey, bucketId)
     val intent = Intent(context, DoseActionReceiver::class.java).apply {
-      action = DoseActionReceiver.ACTION_TRIGGER_WINDOW_END_ALARM
+      action = DoseActionReceiver.ACTION_TRIGGER_SNOOZE_EXPIRED
       putExtra(DoseActionReceiver.EXTRA_ITEM_KEY, itemKey)
       putExtra(DoseActionReceiver.EXTRA_BUCKET_ID, bucketId)
+      putExtra(DoseActionReceiver.EXTRA_DATE_ISO, scheduledDateIso)
     }
     val pendingIntent = PendingIntent.getBroadcast(
       context,

@@ -103,6 +103,8 @@ internal data class OpenFdaPackaging(
 
 object FdaNdcLookupService {
 
+  private val BARE_PER_ONE_REGEX = Regex("""/\s*1(?![\d.])(?!\s*[A-Za-z\[])""")
+
   private val json = Json {
     ignoreUnknownKeys = true
     isLenient = true
@@ -416,8 +418,12 @@ object FdaNdcLookupService {
       val ndcResult = lookupByNdc(criteria.ndc).getOrNull()
       if (ndcResult != null) {
         val scored = scoreCandidateAgainstCriteria(ndcResult, criteria)
-        // Conclusive if no conflicting name was scanned, or if the scanned name also matches this NDC
-        if (!hasOtherNameSignal || scored.matchesName) {
+        // A misread NDC digit commonly lands on a sibling strength of the same product, so a scanned
+        // strength that disagrees with the NDC record makes the NDC inconclusive.
+        val strengthConflict = !criteria.strength.isNullOrBlank() && !scored.matchesStrength
+        // Conclusive if no conflicting name was scanned (or the scanned name also matches this NDC)
+        // and the scanned strength (if any) agrees.
+        if ((!hasOtherNameSignal || scored.matchesName) && !strengthConflict) {
           val withNdcSignal = scored.copy(
             score = scored.score + 100,
             matchedSignals = listOf("NDC (${ndcResult.ndc11})") + scored.matchedSignals,
@@ -635,9 +641,8 @@ object FdaNdcLookupService {
     val qStrength = criteria.strength?.trim().orEmpty()
     var matchesStrength = false
     if (qStrength.isNotEmpty()) {
-      val qNorm = normalizeStrengthNumbers(qStrength)
-      val cNorm = normalizeStrengthNumbers(candidate.strength)
-      if (qNorm.isNotEmpty() && (qNorm == cNorm || cNorm.contains(qNorm) || qNorm.contains(cNorm))) {
+      // Numeric comparison only — substring matching would equate 5 mg with 0.5 / 2.5 / 25 mg.
+      if (DrugStrength.equivalent(qStrength, candidate.strength)) {
         matchesStrength = true
         score += 45
         matched.add("Strength (${candidate.strength})")
@@ -892,7 +897,8 @@ object FdaNdcLookupService {
     return raw
       .replace("/1mL", "/mL", ignoreCase = true)
       .replace("/1L", "/L", ignoreCase = true)
-      .replace("/1", "")
+      // Only drop a bare "/1" (per dose unit); "/1.5mL" and "/10mL" are real denominators.
+      .replace(BARE_PER_ONE_REGEX, "")
       .trim()
   }
 

@@ -259,7 +259,13 @@ class RegimenRepository private constructor(context: Context) {
       val itemKey = "${scheduleId}_${bucketId}_$scheduledDateIso"
       DoseNotificationManager.cancelNotificationForItem(appContext, itemKey)
       if (status == DoseStatus.SNOOZED && snoozedUntilMillis != null) {
-        DoseNotificationManager.scheduleSnoozeAlarm(appContext, itemKey, bucketId, snoozedUntilMillis)
+        DoseNotificationManager.scheduleSnoozeAlarm(
+          context = appContext,
+          itemKey = itemKey,
+          bucketId = bucketId,
+          scheduledDateIso = scheduledDateIso,
+          triggerAtMillis = snoozedUntilMillis,
+        )
       } else {
         DoseNotificationManager.cancelSnoozeAlarm(appContext, itemKey, bucketId)
       }

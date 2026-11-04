@@ -243,7 +243,7 @@ object DoseEngine {
       ScheduleFrequencyType.DAILY -> true
 
       ScheduleFrequencyType.EVERY_N_DAYS -> {
-        val anchor = runCatching { LocalDate.parse(schedule.anchorDateIso) }.getOrDefault(targetDate)
+        val anchor = anchorDateOf(schedule, zoneId)
         val daysBetween = ChronoUnit.DAYS.between(anchor, targetDate)
         val interval = schedule.intervalDays.coerceAtLeast(1)
         daysBetween >= 0 && (daysBetween % interval == 0L)
@@ -269,7 +269,7 @@ object DoseEngine {
         val latestPrior = priorLogs.maxByOrNull { it.actionTimestampMillis }
         val interval = schedule.intervalDays.coerceAtLeast(1).toLong()
         if (latestPrior == null) {
-          val anchor = runCatching { LocalDate.parse(schedule.anchorDateIso) }.getOrDefault(targetDate)
+          val anchor = anchorDateOf(schedule, zoneId)
           val daysFromAnchor = ChronoUnit.DAYS.between(anchor, targetDate)
           daysFromAnchor >= 0 && (daysFromAnchor % interval == 0L)
         } else {
@@ -282,6 +282,17 @@ object DoseEngine {
       }
 
       ScheduleFrequencyType.AS_NEEDED -> false
+    }
+  }
+
+  /**
+   * Resolves a schedule's cycle anchor. An unparseable anchor (legacy data or imports) falls back to
+   * the date the schedule was created, never to the date being evaluated. Falling back to the
+   * evaluated date would make an every-N-days schedule due on every day.
+   */
+  internal fun anchorDateOf(schedule: MedicationSchedule, zoneId: ZoneId = ZoneId.systemDefault()): LocalDate {
+    return runCatching { LocalDate.parse(schedule.anchorDateIso.trim()) }.getOrElse {
+      Instant.ofEpochMilli(schedule.createdAtEpochMillis).atZone(zoneId).toLocalDate()
     }
   }
 
@@ -308,6 +319,10 @@ object DoseEngine {
       it.deletedAtEpochMillis == null && it.enabled && activeMedMap.containsKey(it.medicationId)
     }
 
+    val activeScheduleIdsByMed = activeSchedules
+      .groupBy { it.medicationId }
+      .mapValues { (_, list) -> list.map { it.id }.toSet() }
+
     val logsForDate = logs.filter {
       it.deletedAtEpochMillis == null && it.scheduledDateIso == dateIso
     }
@@ -321,11 +336,9 @@ object DoseEngine {
 
       val items = matchingSchedules.mapNotNull { schedule ->
         val med = activeMedMap[schedule.medicationId] ?: return@mapNotNull null
+        val activeScheduleIdsForMed = activeScheduleIdsByMed[med.id].orEmpty()
         val existingLog = logsForDate
-          .filter {
-            it.medicationId == med.id &&
-              (it.scheduleId == schedule.id || it.bucketId == bucket.id)
-          }
+          .filter { logMatchesItem(it, schedule, bucket, activeScheduleIdsForMed) }
           .maxByOrNull { it.actionTimestampMillis }
 
         val suggestedSite = existingLog?.siteUsed ?: computeNextSite(med, logs)
@@ -382,6 +395,38 @@ object DoseEngine {
       totalTakenCount = allScheduledItems.count { it.isTaken },
       totalSkippedCount = allScheduledItems.count { it.isSkipped },
     )
+  }
+
+  /**
+   * Decides whether [log] records the dose for one specific (schedule, window) item.
+   *
+   * A schedule may span several windows (e.g. Morning + Evening), so a log must match on BOTH the
+   * schedule and the window; matching on either alone would let the Morning dose complete the
+   * Evening dose too.
+   *
+   * Logs whose schedule is no longer active for this medication (deleted or replaced) still count
+   * for the same window, so a dose that was already taken is never re-prompted.
+   */
+  internal fun logMatchesItem(
+    log: DoseLog,
+    schedule: MedicationSchedule,
+    bucket: TimeOfDayBucket,
+    activeScheduleIdsForMed: Set<String>,
+  ): Boolean {
+    if (log.medicationId != schedule.medicationId) return false
+    val logScheduleId = log.scheduleId
+    val logBucketId = log.bucketId
+    return when {
+      logScheduleId != null && logBucketId != null ->
+        logBucketId == bucket.id &&
+          (logScheduleId == schedule.id || logScheduleId !in activeScheduleIdsForMed)
+      // Legacy log without a window: only unambiguous when the schedule has a single window.
+      logScheduleId != null -> logScheduleId == schedule.id && schedule.bucketIds.size == 1
+      // Legacy/imported log without a schedule: match by window.
+      logBucketId != null -> logBucketId == bucket.id
+      // PRN / quick-log entries never complete a scheduled item.
+      else -> false
+    }
   }
 
   fun formatDurationMinutes(minutes: Int): String {

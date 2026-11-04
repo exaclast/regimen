@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -49,14 +50,16 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -68,6 +71,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -81,6 +85,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -106,10 +111,17 @@ import com.exaclast.regimen.model.Prescriber
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.formatNum
+import com.exaclast.regimen.ui.NumberInput
+import com.exaclast.regimen.ui.checkOptionalPositiveDecimal
+import com.exaclast.regimen.ui.checkOptionalPositiveInt
+import com.exaclast.regimen.ui.checkRequiredPositiveDecimal
+import com.exaclast.regimen.ui.checkRequiredPositiveInt
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 @Composable
@@ -1353,6 +1365,36 @@ private fun MedicationEditorDialog(
       !it.notes.isNullOrBlank()
   } ?: false
 
+  // Strict numeric validation: unparseable input blocks Save instead of silently becoming a
+  // default (e.g. "0,5" → 1.0 or "4h" → no interval limit).
+  val doseCheck = checkRequiredPositiveDecimal(defaultDoseAmountText)
+  val concentrationCheck = checkOptionalPositiveDecimal(concentrationText)
+  val vialVolumeCheck = checkOptionalPositiveDecimal(vialVolumeText)
+  val syringeVolumeCheck = checkOptionalPositiveDecimal(syringeVolumeText)
+  val drawGaugeCheck = checkOptionalPositiveInt(drawGaugeText)
+  val drawLengthCheck = checkOptionalPositiveDecimal(drawLengthText)
+  val injectGaugeCheck = checkOptionalPositiveInt(injectGaugeText)
+  val injectLengthCheck = checkOptionalPositiveDecimal(injectLengthText)
+  val minIntervalCheck = checkOptionalPositiveDecimal(minIntervalHoursText)
+  val maxDailyDosesCheck = checkOptionalPositiveDecimal(maxDailyDosesText)
+  val maxDailyAmountCheck = checkOptionalPositiveDecimal(maxDailyAmountText)
+
+  val invalidFieldLabels = buildList {
+    if (!doseCheck.isValid) add("Default Dose")
+    if (form.isInjectable) {
+      if (!concentrationCheck.isValid) add("Concentration")
+      if (!vialVolumeCheck.isValid) add("Vial Size")
+      if (!syringeVolumeCheck.isValid) add("Syringe")
+      if (!drawGaugeCheck.isValid) add("Draw Gauge")
+      if (!drawLengthCheck.isValid) add("Draw Length")
+      if (!injectGaugeCheck.isValid) add("Inject Gauge")
+      if (!injectLengthCheck.isValid) add("Inject Length")
+    }
+    if (!minIntervalCheck.isValid) add("Min Interval")
+    if (!maxDailyDosesCheck.isValid) add("Max Daily Doses")
+    if (!maxDailyAmountCheck.isValid) add("Max Daily Amount")
+  }
+
   Dialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -1384,19 +1426,21 @@ private fun MedicationEditorDialog(
             }
             Button(
               onClick = {
-                val doseAmt = defaultDoseAmountText.toDoubleOrNull() ?: 1.0
-                val minIntervalMins = minIntervalHoursText.toDoubleOrNull()?.let { (it * 60.0).toInt() }
+                // Save is disabled unless every check is valid, so these are the user's exact values.
+                val doseAmt = doseCheck.validOrNull() ?: return@Button
+                val minIntervalMins = minIntervalCheck.validOrNull()
+                  ?.let { (it * 60.0).roundToInt().coerceAtLeast(1) }
                 val injDetails = if (form.isInjectable) {
                   InjectableDetails(
                     route = route,
-                    concentrationMgPerMl = concentrationText.toDoubleOrNull(),
-                    vialVolumeMl = vialVolumeText.toDoubleOrNull(),
-                    syringeVolumeMl = syringeVolumeText.toDoubleOrNull(),
+                    concentrationMgPerMl = concentrationCheck.validOrNull(),
+                    vialVolumeMl = vialVolumeCheck.validOrNull(),
+                    syringeVolumeMl = syringeVolumeCheck.validOrNull(),
                     syringeDescription = syringeDesc.takeIf { it.isNotBlank() },
-                    drawNeedleGauge = drawGaugeText.toIntOrNull(),
-                    drawNeedleLengthInches = drawLengthText.toDoubleOrNull(),
-                    injectNeedleGauge = injectGaugeText.toIntOrNull(),
-                    injectNeedleLengthInches = injectLengthText.toDoubleOrNull(),
+                    drawNeedleGauge = drawGaugeCheck.validOrNull(),
+                    drawNeedleLengthInches = drawLengthCheck.validOrNull(),
+                    injectNeedleGauge = injectGaugeCheck.validOrNull(),
+                    injectNeedleLengthInches = injectLengthCheck.validOrNull(),
                   )
                 } else null
 
@@ -1414,8 +1458,8 @@ private fun MedicationEditorDialog(
                     rotationSites.toList()
                   } else emptyList(),
                   minIntervalMinutes = minIntervalMins,
-                  maxDailyDoses = maxDailyDosesText.toDoubleOrNull(),
-                  maxDailyAmount = maxDailyAmountText.toDoubleOrNull(),
+                  maxDailyDoses = maxDailyDosesCheck.validOrNull(),
+                  maxDailyAmount = maxDailyAmountCheck.validOrNull(),
                   indicationConditionId = selectedConditionId,
                   indicationText = indicationText.trim(),
                   prescriberId = selectedPrescriberId,
@@ -1427,11 +1471,20 @@ private fun MedicationEditorDialog(
                 )
                 onSave(savedMed)
               },
-              enabled = formulaName.isNotBlank() && strength.isNotBlank(),
+              enabled = formulaName.isNotBlank() && strength.isNotBlank() && invalidFieldLabels.isEmpty(),
             ) {
               Text("Save")
             }
           }
+        }
+
+        if (invalidFieldLabels.isNotEmpty()) {
+          Text(
+            text = "Fix to save: ${invalidFieldLabels.joinToString(", ")}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+          )
         }
 
         HorizontalDivider()
@@ -1602,7 +1655,9 @@ private fun MedicationEditorDialog(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
           ) {
-            OutlinedTextField(
+            ValidatedNumberField(
+              check = doseCheck,
+              keyboardType = KeyboardType.Decimal,
               value = defaultDoseAmountText,
               onValueChange = { defaultDoseAmountText = it },
               label = { Text("Default Dose") },
@@ -1658,7 +1713,9 @@ private fun MedicationEditorDialog(
                 )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                  OutlinedTextField(
+                  ValidatedNumberField(
+                    check = concentrationCheck,
+                    keyboardType = KeyboardType.Decimal,
                     value = concentrationText,
                     onValueChange = { concentrationText = it },
                     label = { Text("Conc. (mg/mL)") },
@@ -1666,7 +1723,9 @@ private fun MedicationEditorDialog(
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                   )
-                  OutlinedTextField(
+                  ValidatedNumberField(
+                    check = vialVolumeCheck,
+                    keyboardType = KeyboardType.Decimal,
                     value = vialVolumeText,
                     onValueChange = { vialVolumeText = it },
                     label = { Text("Vial Size (mL)") },
@@ -1677,7 +1736,9 @@ private fun MedicationEditorDialog(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                  OutlinedTextField(
+                  ValidatedNumberField(
+                    check = syringeVolumeCheck,
+                    keyboardType = KeyboardType.Decimal,
                     value = syringeVolumeText,
                     onValueChange = { syringeVolumeText = it },
                     label = { Text("Syringe (mL)") },
@@ -1696,7 +1757,9 @@ private fun MedicationEditorDialog(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                  OutlinedTextField(
+                  ValidatedNumberField(
+                    check = drawGaugeCheck,
+                    keyboardType = KeyboardType.Number,
                     value = drawGaugeText,
                     onValueChange = { drawGaugeText = it },
                     label = { Text("Draw Gauge (G)") },
@@ -1704,7 +1767,9 @@ private fun MedicationEditorDialog(
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                   )
-                  OutlinedTextField(
+                  ValidatedNumberField(
+                    check = drawLengthCheck,
+                    keyboardType = KeyboardType.Decimal,
                     value = drawLengthText,
                     onValueChange = { drawLengthText = it },
                     label = { Text("Draw Length (in)") },
@@ -1715,7 +1780,9 @@ private fun MedicationEditorDialog(
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                  OutlinedTextField(
+                  ValidatedNumberField(
+                    check = injectGaugeCheck,
+                    keyboardType = KeyboardType.Number,
                     value = injectGaugeText,
                     onValueChange = { injectGaugeText = it },
                     label = { Text("Inject Gauge (G)") },
@@ -1723,7 +1790,9 @@ private fun MedicationEditorDialog(
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                   )
-                  OutlinedTextField(
+                  ValidatedNumberField(
+                    check = injectLengthCheck,
+                    keyboardType = KeyboardType.Decimal,
                     value = injectLengthText,
                     onValueChange = { injectLengthText = it },
                     label = { Text("Inject Length (in)") },
@@ -1876,7 +1945,9 @@ private fun MedicationEditorDialog(
             initiallyExpanded = hasInitialPacing,
           ) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-              OutlinedTextField(
+              ValidatedNumberField(
+                check = minIntervalCheck,
+                keyboardType = KeyboardType.Decimal,
                 value = minIntervalHoursText,
                 onValueChange = { minIntervalHoursText = it },
                 label = { Text("Min Interval (Hours)") },
@@ -1884,7 +1955,9 @@ private fun MedicationEditorDialog(
                 singleLine = true,
                 modifier = Modifier.weight(1f),
               )
-              OutlinedTextField(
+              ValidatedNumberField(
+                check = maxDailyDosesCheck,
+                keyboardType = KeyboardType.Decimal,
                 value = maxDailyDosesText,
                 onValueChange = { maxDailyDosesText = it },
                 label = { Text("Max Daily Doses") },
@@ -1893,7 +1966,9 @@ private fun MedicationEditorDialog(
                 modifier = Modifier.weight(1f),
               )
             }
-            OutlinedTextField(
+            ValidatedNumberField(
+              check = maxDailyAmountCheck,
+              keyboardType = KeyboardType.Decimal,
               value = maxDailyAmountText,
               onValueChange = { maxDailyAmountText = it },
               label = { Text("Max Daily Amount (${defaultDoseUnit.symbol})") },
@@ -2246,7 +2321,7 @@ private fun CrossReferenceDisambiguationDialog(
 /**
  * Dedicated Schedule Editor Dialog separated from Medication entry.
  */
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun ScheduleEditorDialog(
   medication: Medication,
@@ -2282,6 +2357,59 @@ private fun ScheduleEditorDialog(
       addAll(initialSchedule?.daysOfWeek ?: setOf(1, 2, 3, 4, 5, 6, 7))
     }
   }
+  var showAnchorDatePicker by remember { mutableStateOf(false) }
+
+  // Strict validation: invalid input blocks Save rather than silently becoming a default.
+  // (An unparseable start date used to make an every-N-days schedule due every day.)
+  val usesInterval = frequencyType == ScheduleFrequencyType.EVERY_N_DAYS ||
+    frequencyType == ScheduleFrequencyType.RELATIVE_TO_LAST_DOSE
+  val validBucketIds = selectedBucketIds.filter { id -> buckets.any { it.id == id } }
+  val doseCheck = checkRequiredPositiveDecimal(doseAmountText)
+  val intervalCheck = checkRequiredPositiveInt(intervalDaysText)
+  val anchorDate = NumberInput.parseIsoDate(anchorDateIso)
+  val anchorError = if (anchorDate == null) "Use YYYY-MM-DD or pick a date" else null
+  val bucketError = if (frequencyType != ScheduleFrequencyType.AS_NEEDED && validBucketIds.isEmpty()) {
+    "Select at least one dose window"
+  } else {
+    null
+  }
+  val daysError = if (frequencyType == ScheduleFrequencyType.DAYS_OF_WEEK && selectedDaysOfWeek.isEmpty()) {
+    "Select at least one day"
+  } else {
+    null
+  }
+  val canSave = doseCheck.isValid &&
+    (!usesInterval || (intervalCheck.isValid && anchorError == null)) &&
+    bucketError == null &&
+    daysError == null
+
+  if (showAnchorDatePicker) {
+    val pickerState = rememberDatePickerState(
+      // DatePicker works in UTC-midnight millis; convert via the epoch day to avoid zone shifts.
+      initialSelectedDateMillis = (anchorDate ?: LocalDate.now()).toEpochDay() * 86_400_000L,
+    )
+    DatePickerDialog(
+      onDismissRequest = { showAnchorDatePicker = false },
+      confirmButton = {
+        TextButton(
+          onClick = {
+            pickerState.selectedDateMillis?.let { millis ->
+              anchorDateIso = java.time.Instant.ofEpochMilli(millis)
+                .atZone(ZoneOffset.UTC)
+                .toLocalDate()
+                .toString()
+            }
+            showAnchorDatePicker = false
+          },
+        ) { Text("OK") }
+      },
+      dismissButton = {
+        TextButton(onClick = { showAnchorDatePicker = false }) { Text("Cancel") }
+      },
+    ) {
+      DatePicker(state = pickerState)
+    }
+  }
 
   AlertDialog(
     onDismissRequest = onDismiss,
@@ -2311,7 +2439,8 @@ private fun ScheduleEditorDialog(
         )
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-          OutlinedTextField(
+          ValidatedNumberField(
+            check = doseCheck,
             value = doseAmountText,
             onValueChange = { doseAmountText = it },
             label = { Text("Dose Amount") },
@@ -2346,14 +2475,17 @@ private fun ScheduleEditorDialog(
                 modifier = Modifier.fillMaxWidth(),
               )
             }
+            bucketError?.let {
+              Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+            }
           }
         }
 
-        if (frequencyType == ScheduleFrequencyType.EVERY_N_DAYS ||
-          frequencyType == ScheduleFrequencyType.RELATIVE_TO_LAST_DOSE
-        ) {
+        if (usesInterval) {
           Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedTextField(
+            ValidatedNumberField(
+              check = intervalCheck,
+              keyboardType = KeyboardType.Number,
               value = intervalDaysText,
               onValueChange = { intervalDaysText = it },
               label = { Text("Every N Days") },
@@ -2367,6 +2499,13 @@ private fun ScheduleEditorDialog(
               label = { Text("Start Date") },
               placeholder = { Text("YYYY-MM-DD") },
               singleLine = true,
+              isError = anchorError != null,
+              supportingText = anchorError?.let { msg -> { Text(msg) } },
+              trailingIcon = {
+                IconButton(onClick = { showAnchorDatePicker = true }) {
+                  Icon(Icons.Default.CalendarMonth, contentDescription = "Pick start date")
+                }
+              },
               modifier = Modifier.weight(0.55f),
             )
           }
@@ -2395,31 +2534,35 @@ private fun ScheduleEditorDialog(
               )
             }
           }
+          daysError?.let {
+            Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+          }
         }
       }
     },
     confirmButton = {
       Button(
         onClick = {
-          val doseAmt = doseAmountText.toDoubleOrNull() ?: medication.defaultDoseAmount
+          // Save is disabled unless every check is valid, so these are the user's exact values.
+          val doseAmt = doseCheck.validOrNull() ?: return@Button
           val saved = MedicationSchedule(
             id = initialSchedule?.id ?: java.util.UUID.randomUUID().toString(),
             medicationId = medication.id,
             frequencyType = frequencyType,
-            bucketIds = if (frequencyType == ScheduleFrequencyType.AS_NEEDED) {
-              emptyList()
-            } else {
-              selectedBucketIds.toList().ifEmpty { listOf(TimeOfDayBucket.BUCKET_MORNING) }
-            },
-            intervalDays = intervalDaysText.toIntOrNull()?.coerceAtLeast(1) ?: 7,
-            anchorDateIso = anchorDateIso.trim().ifBlank { LocalDate.now().toString() },
+            bucketIds = if (frequencyType == ScheduleFrequencyType.AS_NEEDED) emptyList() else validBucketIds,
+            // Interval/anchor only matter for interval schedules; keep prior values otherwise.
+            intervalDays = intervalCheck.validOrNull() ?: initialSchedule?.intervalDays ?: 7,
+            anchorDateIso = anchorDate?.toString()
+              ?: initialSchedule?.anchorDateIso
+              ?: LocalDate.now().toString(),
             daysOfWeek = selectedDaysOfWeek.toSet().ifEmpty { setOf(1, 2, 3, 4, 5, 6, 7) },
             doseAmount = doseAmt,
             doseUnit = doseUnit,
             enabled = true,
           )
           onSave(saved)
-        }
+        },
+        enabled = canSave,
       ) {
         Text("Save Schedule")
       }

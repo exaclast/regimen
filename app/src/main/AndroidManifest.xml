@@ -61,6 +61,7 @@
                 <action android:name="com.exaclast.regimen.action.SKIP_DOSE" />
                 <action android:name="com.exaclast.regimen.action.TRIGGER_WINDOW_START" />
                 <action android:name="com.exaclast.regimen.action.TRIGGER_WINDOW_END_ALARM" />
+                <action android:name="com.exaclast.regimen.action.TRIGGER_SNOOZE_EXPIRED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.TIME_SET" />
