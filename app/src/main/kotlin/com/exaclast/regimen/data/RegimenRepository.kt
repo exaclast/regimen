@@ -184,6 +184,35 @@ class RegimenRepository private constructor(context: Context) {
     reloadSnapshot()
   }
 
+  fun deleteBucket(bucketId: String) {
+    db.deleteBucket(bucketId)
+    DoseNotificationManager.cancelBucketAlarms(appContext, bucketId)
+    val now = System.currentTimeMillis()
+    // For any schedules that had this bucket, remove the bucketId or reassign to remaining bucket
+    val remainingBuckets = _snapshot.value.buckets.filter { it.id != bucketId }
+    val fallbackBucketId = remainingBuckets.firstOrNull()?.id ?: TimeOfDayBucket.BUCKET_MORNING
+    _snapshot.value.schedules.filter { it.bucketIds.contains(bucketId) }.forEach { sched ->
+      val updatedBucketIds = sched.bucketIds.filter { it != bucketId }.ifEmpty { listOf(fallbackBucketId) }
+      db.upsertSchedule(sched.copy(bucketIds = updatedBucketIds, updatedAtEpochMillis = now))
+    }
+    reloadSnapshot()
+  }
+
+  fun reorderBuckets(buckets: List<TimeOfDayBucket>) {
+    buckets.forEachIndexed { index, b ->
+      db.upsertBucket(b.copy(sortOrder = index))
+    }
+    reloadSnapshot()
+  }
+
+  fun resetBucketsToDefault() {
+    val currentBuckets = db.getAllBuckets()
+    currentBuckets.forEach { DoseNotificationManager.cancelBucketAlarms(appContext, it.id) }
+    currentBuckets.forEach { db.deleteBucket(it.id) }
+    TimeOfDayBucket.defaultBuckets().forEach { db.upsertBucket(it) }
+    reloadSnapshot()
+  }
+
   fun logDose(
     medicationId: String,
     scheduleId: String? = null,

@@ -5,12 +5,14 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,15 +23,24 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Warning
+import java.util.UUID
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -43,8 +54,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,9 +68,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -74,6 +89,13 @@ import com.exaclast.regimen.notifications.DoseNotificationManager
 import com.google.mlkit.genai.common.FeatureStatus
 import kotlinx.coroutines.launch
 
+enum class SettingsTab(val label: String, val icon: ImageVector) {
+  WINDOWS("Windows", Icons.Default.Schedule),
+  ALARMS("Alarms", Icons.Default.NotificationsActive),
+  GENERAL("Preferences", Icons.Default.Tune),
+  DATA("Backup", Icons.Default.Storage),
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsDialog(
@@ -81,6 +103,9 @@ fun SettingsDialog(
   buckets: List<TimeOfDayBucket>,
   onSaveSettings: (AppSettings) -> Unit,
   onSaveBucket: (TimeOfDayBucket) -> Unit,
+  onDeleteBucket: (String) -> Unit = {},
+  onReorderBuckets: (List<TimeOfDayBucket>) -> Unit = {},
+  onResetBucketsToDefault: () -> Unit = {},
   onExportJson: () -> String,
   onImportJson: (String) -> Result<Int>,
   onClearAllData: () -> Unit,
@@ -88,11 +113,24 @@ fun SettingsDialog(
   onDismiss: () -> Unit,
 ) {
   val context = LocalContext.current
+  var selectedTab by rememberSaveable { mutableStateOf(SettingsTab.WINDOWS) }
   var statusMessage by remember { mutableStateOf<String?>(null) }
   var importJsonInput by remember { mutableStateOf("") }
   var showImportField by remember { mutableStateOf(false) }
   var showConfirmClearDialog by remember { mutableStateOf(false) }
   var showConfirmResetSampleDialog by remember { mutableStateOf(false) }
+  var editingBucket by remember { mutableStateOf<TimeOfDayBucket?>(null) }
+  var isAddingBucket by remember { mutableStateOf(false) }
+  var bucketToDelete by remember { mutableStateOf<TimeOfDayBucket?>(null) }
+  var showResetBucketsConfirm by remember { mutableStateOf(false) }
+
+  if (editingBucket != null) {
+    BackHandler { editingBucket = null }
+  } else if (isAddingBucket) {
+    BackHandler { isAddingBucket = false }
+  } else if (showImportField) {
+    BackHandler { showImportField = false }
+  }
 
   Dialog(
     onDismissRequest = onDismiss,
@@ -133,6 +171,20 @@ fun SettingsDialog(
 
         HorizontalDivider()
 
+        PrimaryTabRow(
+          selectedTabIndex = selectedTab.ordinal,
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          SettingsTab.entries.forEach { tab ->
+            Tab(
+              selected = selectedTab == tab,
+              onClick = { selectedTab = tab },
+              text = { Text(tab.label) },
+              icon = { Icon(tab.icon, contentDescription = null, modifier = Modifier.size(18.dp)) },
+            )
+          }
+        }
+
         Column(
           modifier = Modifier
             .fillMaxSize()
@@ -140,451 +192,553 @@ fun SettingsDialog(
             .padding(20.dp),
           verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-          // 1. Global Notifications & Alarms Section
-          Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-              containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            ),
-          ) {
-            Column(
-              modifier = Modifier.padding(16.dp),
-              verticalArrangement = Arrangement.spacedBy(12.dp),
+          when (selectedTab) {
+            SettingsTab.WINDOWS -> {
+            // 4. Time-of-Day Dose Windows Section
+            Card(
+              modifier = Modifier.fillMaxWidth(),
+              colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+              ),
             ) {
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                  imageVector = if (settings.notificationsEnabled) {
-                    Icons.Default.NotificationsActive
-                  } else {
-                    Icons.Default.NotificationsOff
-                  },
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.primary,
-                  modifier = Modifier.size(20.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+              Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                  Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f),
+                  ) {
+                    Icon(
+                      imageVector = Icons.Default.Schedule,
+                      contentDescription = null,
+                      tint = MaterialTheme.colorScheme.primary,
+                      modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                      text = "Time-of-Day Dose Windows",
+                      style = MaterialTheme.typography.titleMedium,
+                      fontWeight = FontWeight.Bold,
+                      color = MaterialTheme.colorScheme.primary,
+                    )
+                  }
+                  FilledTonalButton(
+                    onClick = { isAddingBucket = true },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                  ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Add Window")
+                  }
+                }
+
                 Text(
-                  text = "Notifications & Escalating Alarms",
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold,
-                  color = MaterialTheme.colorScheme.primary,
-                )
-              }
-
-              // System Permissions Checklist (Notifications, Exact Alarms & Battery)
-              PermissionsChecklistSection()
-
-              // Master Notifications Toggle
-              SettingToggleRow(
-                title = "Enable Dose Window Notifications",
-                subtitle = "Master switch for all persistent window-start notifications and alarms",
-                checked = settings.notificationsEnabled,
-                onCheckedChange = {
-                  onSaveSettings(settings.copy(notificationsEnabled = it))
-                },
-              )
-
-              // Master End-of-Window Alarm Toggle
-              SettingToggleRow(
-                title = "Enable End-of-Window Ringing Alarms",
-                subtitle = "Ring an insistent alarm at the end of a window if no action was taken",
-                checked = settings.alarmsEnabled,
-                enabled = settings.notificationsEnabled,
-                onCheckedChange = {
-                  onSaveSettings(settings.copy(alarmsEnabled = it))
-                },
-              )
-
-              // Discreet Notifications Toggle
-              SettingToggleRow(
-                title = "Discreet Notifications (Hide Drug Names)",
-                subtitle = "Hide medication names and injection sites on the lock screen and notification shade",
-                checked = settings.discreetNotifications,
-                enabled = settings.notificationsEnabled,
-                onCheckedChange = {
-                  onSaveSettings(settings.copy(discreetNotifications = it))
-                },
-              )
-
-              HorizontalDivider()
-
-              // Snooze Duration Selector
-              Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                  text = "Default Snooze Duration",
-                  style = MaterialTheme.typography.bodyMedium,
-                  fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                  text = "Used by the 1-tap Snooze button on notifications and Today dose cards",
+                  text = "Group medications into flexible morning, midday, evening, or custom windows. Tap edit to customize hours, or use arrows to reorder:",
                   style = MaterialTheme.typography.bodySmall,
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                FlowRow(
-                  horizontalArrangement = Arrangement.spacedBy(8.dp),
-                  verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                  AppSettings.SNOOZE_PRESETS.forEach { mins ->
-                    FilterChip(
-                      selected = settings.snoozeMinutes == mins,
-                      onClick = { onSaveSettings(settings.copy(snoozeMinutes = mins)) },
-                      label = { Text("$mins min") },
-                    )
-                  }
-                }
-              }
-            }
-          }
 
-          // 2. Dose Logging & Appearance Section
-          Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-              containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            ),
-          ) {
-            Column(
-              modifier = Modifier.padding(16.dp),
-              verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                  imageVector = Icons.Default.Palette,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.primary,
-                  modifier = Modifier.size(20.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                  text = "Workflow & Appearance",
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold,
-                  color = MaterialTheme.colorScheme.primary,
-                )
-              }
-
-              SettingToggleRow(
-                title = "Confirm Before Taking Scheduled Doses",
-                subtitle = "Ask for confirmation (or site selection) instead of logging immediately on 1 tap",
-                checked = settings.confirmBeforeTake,
-                onCheckedChange = {
-                  onSaveSettings(settings.copy(confirmBeforeTake = it))
-                },
-              )
-
-              HorizontalDivider()
-
-              Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                  text = "Theme Mode",
-                  style = MaterialTheme.typography.bodyMedium,
-                  fontWeight = FontWeight.SemiBold,
-                )
-                FlowRow(
-                  horizontalArrangement = Arrangement.spacedBy(8.dp),
-                  verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                  ThemeMode.entries.forEach { mode ->
-                    FilterChip(
-                      selected = settings.themeMode == mode,
-                      onClick = { onSaveSettings(settings.copy(themeMode = mode)) },
-                      label = { Text(mode.displayName) },
-                    )
-                  }
-                }
-              }
-
-              SettingToggleRow(
-                title = "Material You Dynamic Color",
-                subtitle = "Adapt app palette to your Android system wallpaper (Android 12+)",
-                checked = settings.dynamicColor,
-                onCheckedChange = {
-                  onSaveSettings(settings.copy(dynamicColor = it))
-                },
-              )
-            }
-          }
-
-          // 3. Time-of-Day Dose Windows Section
-          Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-              containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            ),
-          ) {
-            Column(
-              modifier = Modifier.padding(16.dp),
-              verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                  imageVector = Icons.Default.Schedule,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.primary,
-                  modifier = Modifier.size(20.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                  text = "Time-of-Day Dose Windows",
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold,
-                  color = MaterialTheme.colorScheme.primary,
-                )
-              }
-
-              Text(
-                text = "Configure start and end times (24-hour 0–23) for each daily dose window:",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-
-              buckets.sortedBy { it.sortOrder }.forEach { bucket ->
-                var startHourText by remember(bucket) { mutableStateOf(bucket.hour.toString()) }
-                var startMinText by remember(bucket) {
-                  mutableStateOf(bucket.minute.toString().padStart(2, '0'))
-                }
-                var endHourText by remember(bucket) { mutableStateOf(bucket.endHour.toString()) }
-                var endMinText by remember(bucket) {
-                  mutableStateOf(bucket.endMinute.toString().padStart(2, '0'))
-                }
-                var notifEnabled by remember(bucket) { mutableStateOf(bucket.notificationsEnabled) }
-                var alarmAtEnd by remember(bucket) { mutableStateOf(bucket.alarmAtWindowEnd) }
-
-                Surface(
-                  shape = MaterialTheme.shapes.small,
-                  color = MaterialTheme.colorScheme.surface,
-                  modifier = Modifier.fillMaxWidth(),
-                ) {
-                  Column(
-                    modifier = Modifier.padding(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                val sortedBuckets = buckets.sortedBy { it.sortOrder }
+                sortedBuckets.forEachIndexed { index, bucket ->
+                  Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.fillMaxWidth(),
                   ) {
-                    Row(
-                      modifier = Modifier.fillMaxWidth(),
-                      verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.SpaceBetween,
+                    Column(
+                      modifier = Modifier.padding(12.dp),
+                      verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                      Column(modifier = Modifier.weight(1f)) {
+                      Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                      ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                          Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                          ) {
+                            Text(
+                              text = bucket.name,
+                              style = MaterialTheme.typography.bodyLarge,
+                              fontWeight = FontWeight.Bold,
+                            )
+                            if (bucket.crossesMidnight) {
+                              Surface(
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                shape = MaterialTheme.shapes.extraSmall,
+                              ) {
+                                Text(
+                                  text = "🌙 Overnight",
+                                  style = MaterialTheme.typography.labelSmall,
+                                  color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                  modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                              }
+                            }
+                          }
+                          Text(
+                            text = bucket.formattedTime(),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold,
+                          )
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                          IconButton(
+                            onClick = {
+                              if (index > 0) {
+                                val reordered = sortedBuckets.toMutableList()
+                                val prev = reordered[index - 1]
+                                reordered[index - 1] = bucket
+                                reordered[index] = prev
+                                onReorderBuckets(reordered)
+                              }
+                            },
+                            enabled = index > 0,
+                          ) {
+                            Icon(Icons.Default.ArrowUpward, contentDescription = "Move Up", modifier = Modifier.size(18.dp))
+                          }
+                          IconButton(
+                            onClick = {
+                              if (index < sortedBuckets.size - 1) {
+                                val reordered = sortedBuckets.toMutableList()
+                                val next = reordered[index + 1]
+                                reordered[index + 1] = bucket
+                                reordered[index] = next
+                                onReorderBuckets(reordered)
+                              }
+                            },
+                            enabled = index < sortedBuckets.size - 1,
+                          ) {
+                            Icon(Icons.Default.ArrowDownward, contentDescription = "Move Down", modifier = Modifier.size(18.dp))
+                          }
+                          IconButton(onClick = { editingBucket = bucket }) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit Window", modifier = Modifier.size(18.dp))
+                          }
+                          IconButton(
+                            onClick = { bucketToDelete = bucket },
+                            enabled = sortedBuckets.size > 1,
+                          ) {
+                            Icon(
+                              Icons.Default.Delete,
+                              contentDescription = "Delete Window",
+                              tint = if (sortedBuckets.size > 1) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline,
+                              modifier = Modifier.size(18.dp),
+                            )
+                          }
+                        }
+                      }
+
+                      HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+
+                      Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                      ) {
                         Text(
-                          text = bucket.name,
-                          style = MaterialTheme.typography.bodyLarge,
-                          fontWeight = FontWeight.Bold,
+                          text = "Window start notification",
+                          style = MaterialTheme.typography.bodySmall,
+                          color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Text(
-                          text = bucket.formattedTime(),
-                          style = MaterialTheme.typography.labelSmall,
-                          color = MaterialTheme.colorScheme.primary,
+                        Switch(
+                          checked = bucket.notificationsEnabled,
+                          enabled = settings.notificationsEnabled,
+                          onCheckedChange = {
+                            onSaveBucket(bucket.copy(notificationsEnabled = it))
+                          },
                         )
                       }
-                      Switch(
-                        checked = notifEnabled,
-                        enabled = settings.notificationsEnabled,
-                        onCheckedChange = {
-                          notifEnabled = it
-                          onSaveBucket(bucket.copy(notificationsEnabled = it))
-                        },
-                      )
-                    }
 
-                    Row(
-                      modifier = Modifier.fillMaxWidth(),
-                      verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                      OutlinedTextField(
-                        value = startHourText,
-                        onValueChange = {
-                          startHourText = it
-                          val h = it.toIntOrNull()?.coerceIn(0, 23)
-                          if (h != null) onSaveBucket(bucket.copy(hour = h))
-                        },
-                        label = { Text("Start Hr") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                      )
-                      OutlinedTextField(
-                        value = startMinText,
-                        onValueChange = {
-                          startMinText = it
-                          val m = it.toIntOrNull()?.coerceIn(0, 59)
-                          if (m != null) onSaveBucket(bucket.copy(minute = m))
-                        },
-                        label = { Text("Min") },
-                        singleLine = true,
-                        modifier = Modifier.weight(0.85f),
-                      )
-                      OutlinedTextField(
-                        value = endHourText,
-                        onValueChange = {
-                          endHourText = it
-                          val h = it.toIntOrNull()?.coerceIn(0, 23)
-                          if (h != null) onSaveBucket(bucket.copy(endHour = h))
-                        },
-                        label = { Text("End Hr") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f),
-                      )
-                      OutlinedTextField(
-                        value = endMinText,
-                        onValueChange = {
-                          endMinText = it
-                          val m = it.toIntOrNull()?.coerceIn(0, 59)
-                          if (m != null) onSaveBucket(bucket.copy(endMinute = m))
-                        },
-                        label = { Text("Min") },
-                        singleLine = true,
-                        modifier = Modifier.weight(0.85f),
-                      )
+                      Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                      ) {
+                        Text(
+                          text = "Urgent alarm at ${bucket.formattedEndTime()} if unlogged",
+                          style = MaterialTheme.typography.bodySmall,
+                          color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Switch(
+                          checked = bucket.alarmAtWindowEnd,
+                          enabled = settings.notificationsEnabled && settings.alarmsEnabled && bucket.notificationsEnabled,
+                          onCheckedChange = {
+                            onSaveBucket(bucket.copy(alarmAtWindowEnd = it))
+                          },
+                        )
+                      }
                     }
+                  }
+                }
 
-                    Row(
-                      modifier = Modifier.fillMaxWidth(),
-                      verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                      Text(
-                        text = "Ring alarm at ${bucket.formattedEndTime()} if unlogged",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                      )
-                      Switch(
-                        checked = alarmAtEnd,
-                        enabled = settings.notificationsEnabled && settings.alarmsEnabled && notifEnabled,
-                        onCheckedChange = {
-                          alarmAtEnd = it
-                          onSaveBucket(bucket.copy(alarmAtWindowEnd = it))
-                        },
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.End,
+                ) {
+                  TextButton(onClick = { showResetBucketsConfirm = true }) {
+                    Icon(Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Reset Windows to Clinical Presets")
+                  }
+                }
+              }
+            }
+
+            }
+            SettingsTab.ALARMS -> {
+            // 1. Global Notifications & Alarms Section
+            Card(
+              modifier = Modifier.fillMaxWidth(),
+              colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+              ),
+            ) {
+              Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(
+                    imageVector = if (settings.notificationsEnabled) {
+                      Icons.Default.NotificationsActive
+                    } else {
+                      Icons.Default.NotificationsOff
+                    },
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                  )
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text(
+                    text = "Notifications & Escalating Alarms",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                  )
+                }
+
+                // System Permissions Checklist (Notifications, Exact Alarms & Battery)
+                PermissionsChecklistSection()
+
+                // Master Notifications Toggle
+                SettingToggleRow(
+                  title = "Enable Dose Window Notifications",
+                  subtitle = "Master switch for all persistent window-start notifications and alarms",
+                  checked = settings.notificationsEnabled,
+                  onCheckedChange = {
+                    onSaveSettings(settings.copy(notificationsEnabled = it))
+                  },
+                )
+
+                // Master End-of-Window Alarm Toggle
+                SettingToggleRow(
+                  title = "Enable End-of-Window Ringing Alarms",
+                  subtitle = "Ring an insistent alarm at the end of a window if no action was taken",
+                  checked = settings.alarmsEnabled,
+                  enabled = settings.notificationsEnabled,
+                  onCheckedChange = {
+                    onSaveSettings(settings.copy(alarmsEnabled = it))
+                  },
+                )
+
+                // Discreet Notifications Toggle
+                SettingToggleRow(
+                  title = "Discreet Notifications (Hide Drug Names)",
+                  subtitle = "Hide medication names and injection sites on the lock screen and notification shade",
+                  checked = settings.discreetNotifications,
+                  enabled = settings.notificationsEnabled,
+                  onCheckedChange = {
+                    onSaveSettings(settings.copy(discreetNotifications = it))
+                  },
+                )
+
+                HorizontalDivider()
+
+                // Snooze Duration Selector
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                  Text(
+                    text = "Default Snooze Duration",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                  )
+                  Text(
+                    text = "Used by the 1-tap Snooze button on notifications and Today dose cards",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                  FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                  ) {
+                    AppSettings.SNOOZE_PRESETS.forEach { mins ->
+                      FilterChip(
+                        selected = settings.snoozeMinutes == mins,
+                        onClick = { onSaveSettings(settings.copy(snoozeMinutes = mins)) },
+                        label = { Text("$mins min") },
                       )
                     }
                   }
                 }
               }
             }
-          }
 
-          // 4. Data Backup & Reset Section
-          Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-              containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            ),
-          ) {
-            Column(
-              modifier = Modifier.padding(16.dp),
-              verticalArrangement = Arrangement.spacedBy(12.dp),
+            }
+            SettingsTab.GENERAL -> {
+            // 2. Patient Profile & Label Scanning Section
+            Card(
+              modifier = Modifier.fillMaxWidth(),
+              colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+              ),
             ) {
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                  imageVector = Icons.Default.Storage,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.primary,
-                  modifier = Modifier.size(20.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                  text = "Backup, Restore & Database Reset",
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold,
-                  color = MaterialTheme.colorScheme.primary,
-                )
-              }
-
-              Text(
-                text = "Export all medications, schedules, dose history, and settings as JSON, or clear sample data to start fresh.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-
-              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                  onClick = {
-                    val jsonStr = onExportJson()
-                    val clipboard =
-                      context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("Regimen Backup JSON", jsonStr))
-                    statusMessage = "Copied full JSON backup to clipboard (${jsonStr.length} chars)."
-                  },
-                ) {
-                  Text("Copy Backup JSON")
-                }
-
-                OutlinedButton(
-                  onClick = { showImportField = !showImportField },
-                ) {
-                  Text(if (showImportField) "Hide Import" else "Import JSON")
-                }
-              }
-
-              if (showImportField) {
-                OutlinedTextField(
-                  value = importJsonInput,
-                  onValueChange = { importJsonInput = it },
-                  label = { Text("Paste Regimen Backup JSON") },
-                  modifier = Modifier.fillMaxWidth(),
-                  maxLines = 5,
-                )
-                Button(
-                  onClick = {
-                    val res = onImportJson(importJsonInput)
-                    statusMessage = res.fold(
-                      onSuccess = { count ->
-                        showImportField = false
-                        importJsonInput = ""
-                        "Successfully imported $count medications & settings."
-                      },
-                      onFailure = { err -> "Import failed: ${err.message}" },
-                    )
-                  },
-                  enabled = importJsonInput.isNotBlank(),
-                ) {
-                  Text("Restore from JSON")
-                }
-              }
-
-              HorizontalDivider()
-
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+              Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
               ) {
-                OutlinedButton(
-                  onClick = { showConfirmClearDialog = true },
-                  colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error,
-                  ),
-                  modifier = Modifier.weight(1f),
-                ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                   Icon(
-                    Icons.Default.DeleteForever,
+                    imageVector = Icons.Default.Person,
                     contentDescription = null,
-                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
                   )
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Clear All Meds & Logs")
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text(
+                    text = "Patient Profile & Label Scanning",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                  )
                 }
 
-                OutlinedButton(
-                  onClick = { showConfirmResetSampleDialog = true },
-                  modifier = Modifier.weight(1f),
-                ) {
-                  Icon(
-                    Icons.Default.Restore,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                  )
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Reset Demo Data")
-                }
-              }
-
-              statusMessage?.let { msg ->
                 Text(
-                  text = msg,
-                  style = MaterialTheme.typography.labelMedium,
-                  color = MaterialTheme.colorScheme.primary,
-                  fontWeight = FontWeight.SemiBold,
+                  text = "Enter your name as printed on prescription bottles. The on-device label scanner uses this to ignore your name so it never gets parsed as the drug or brand name.",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                var patientNameInput by remember(settings.patientName) { mutableStateOf(settings.patientName) }
+                OutlinedTextField(
+                  value = patientNameInput,
+                  onValueChange = {
+                    patientNameInput = it
+                    onSaveSettings(settings.copy(patientName = it.trim()))
+                  },
+                  label = { Text("Your Name on Prescriptions") },
+                  placeholder = { Text("e.g. John Doe") },
+                  singleLine = true,
+                  modifier = Modifier.fillMaxWidth(),
                 )
               }
+            }
+
+            // 3. Workflow & Appearance Section
+            Card(
+              modifier = Modifier.fillMaxWidth(),
+              colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+              ),
+            ) {
+              Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(
+                    imageVector = Icons.Default.Palette,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                  )
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text(
+                    text = "Workflow & Appearance",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                  )
+                }
+
+                SettingToggleRow(
+                  title = "Confirm Before Taking Scheduled Doses",
+                  subtitle = "Ask for confirmation (or site selection) instead of logging immediately on 1 tap",
+                  checked = settings.confirmBeforeTake,
+                  onCheckedChange = {
+                    onSaveSettings(settings.copy(confirmBeforeTake = it))
+                  },
+                )
+
+                HorizontalDivider()
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                  Text(
+                    text = "Theme Mode",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                  )
+                  FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                  ) {
+                    ThemeMode.entries.forEach { mode ->
+                      FilterChip(
+                        selected = settings.themeMode == mode,
+                        onClick = { onSaveSettings(settings.copy(themeMode = mode)) },
+                        label = { Text(mode.displayName) },
+                      )
+                    }
+                  }
+                }
+
+                SettingToggleRow(
+                  title = "Material You Dynamic Color",
+                  subtitle = "Adapt app palette to your Android system wallpaper (Android 12+)",
+                  checked = settings.dynamicColor,
+                  onCheckedChange = {
+                    onSaveSettings(settings.copy(dynamicColor = it))
+                  },
+                )
+              }
+            }
+
+            }
+            SettingsTab.DATA -> {
+            // 4. Data Backup & Reset Section
+            Card(
+              modifier = Modifier.fillMaxWidth(),
+              colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+              ),
+            ) {
+              Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+              ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(
+                    imageVector = Icons.Default.Storage,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp),
+                  )
+                  Spacer(modifier = Modifier.width(8.dp))
+                  Text(
+                    text = "Backup, Restore & Database Reset",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                  )
+                }
+
+                Text(
+                  text = "Export all medications, schedules, dose history, and settings as JSON, or clear sample data to start fresh.",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                  Button(
+                    onClick = {
+                      val jsonStr = onExportJson()
+                      val clipboard =
+                        context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                      clipboard.setPrimaryClip(ClipData.newPlainText("Regimen Backup JSON", jsonStr))
+                      statusMessage = "Copied full JSON backup to clipboard (${jsonStr.length} chars)."
+                    },
+                  ) {
+                    Text("Copy Backup JSON")
+                  }
+
+                  OutlinedButton(
+                    onClick = { showImportField = !showImportField },
+                  ) {
+                    Text(if (showImportField) "Hide Import" else "Import JSON")
+                  }
+                }
+
+                if (showImportField) {
+                  OutlinedTextField(
+                    value = importJsonInput,
+                    onValueChange = { importJsonInput = it },
+                    label = { Text("Paste Regimen Backup JSON") },
+                    modifier = Modifier.fillMaxWidth(),
+                    maxLines = 5,
+                  )
+                  Button(
+                    onClick = {
+                      val res = onImportJson(importJsonInput)
+                      statusMessage = res.fold(
+                        onSuccess = { count ->
+                          showImportField = false
+                          importJsonInput = ""
+                          "Successfully imported $count medications & settings."
+                        },
+                        onFailure = { err -> "Import failed: ${err.message}" },
+                      )
+                    },
+                    enabled = importJsonInput.isNotBlank(),
+                  ) {
+                    Text("Restore from JSON")
+                  }
+                }
+
+                HorizontalDivider()
+
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                  OutlinedButton(
+                    onClick = { showConfirmClearDialog = true },
+                    colors = ButtonDefaults.outlinedButtonColors(
+                      contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                    modifier = Modifier.weight(1f),
+                  ) {
+                    Icon(
+                      Icons.Default.DeleteForever,
+                      contentDescription = null,
+                      modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Clear All Meds & Logs")
+                  }
+
+                  OutlinedButton(
+                    onClick = { showConfirmResetSampleDialog = true },
+                    modifier = Modifier.weight(1f),
+                  ) {
+                    Icon(
+                      Icons.Default.Restore,
+                      contentDescription = null,
+                      modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Reset Demo Data")
+                  }
+                }
+
+                statusMessage?.let { msg ->
+                  Text(
+                    text = msg,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                  )
+                }
+              }
+            }
+
             }
           }
         }
@@ -650,6 +804,380 @@ fun SettingsDialog(
       },
     )
   }
+
+  // Add/Edit Dose Window Dialog
+  if (isAddingBucket || editingBucket != null) {
+    val target = editingBucket
+    DoseWindowEditorDialog(
+      initialBucket = target,
+      existingBucketCount = buckets.size,
+      onDismiss = {
+        isAddingBucket = false
+        editingBucket = null
+      },
+      onSave = { savedBucket ->
+        onSaveBucket(savedBucket)
+        isAddingBucket = false
+        editingBucket = null
+      },
+    )
+  }
+
+  // Delete Window Confirmation
+  bucketToDelete?.let { bucket ->
+    AlertDialog(
+      onDismissRequest = { bucketToDelete = null },
+      icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+      title = { Text("Delete Window: ${bucket.name}?") },
+      text = {
+        Text(
+          "Medications scheduled for this window will be safely reassigned to your remaining windows. Any active notifications or alarms for this window will be cancelled."
+        )
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            onDeleteBucket(bucket.id)
+            bucketToDelete = null
+          },
+          colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+        ) {
+          Text("Delete Window")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { bucketToDelete = null }) {
+          Text("Cancel")
+        }
+      },
+    )
+  }
+
+  // Reset Windows to Presets Confirmation
+  if (showResetBucketsConfirm) {
+    AlertDialog(
+      onDismissRequest = { showResetBucketsConfirm = false },
+      title = { Text("Reset Windows to Clinical Presets?") },
+      text = {
+        Text("This will restore the 4 default windows (Morning, Afternoon, Evening, Bedtime) and reassign scheduled doses to them.")
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            showResetBucketsConfirm = false
+            onResetBucketsToDefault()
+          },
+        ) {
+          Text("Reset Windows")
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showResetBucketsConfirm = false }) {
+          Text("Cancel")
+        }
+      },
+    )
+  }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DoseWindowEditorDialog(
+  initialBucket: TimeOfDayBucket?,
+  existingBucketCount: Int,
+  onDismiss: () -> Unit,
+  onSave: (TimeOfDayBucket) -> Unit,
+) {
+  var name by rememberSaveable { mutableStateOf(initialBucket?.name.orEmpty()) }
+  val initStartHour = initialBucket?.hour ?: 8
+  val initStartMinute = initialBucket?.minute ?: 0
+  val initEndHour = initialBucket?.endHour ?: 10
+  val initEndMinute = initialBucket?.endMinute ?: 0
+
+  // 12-hour clock breakdown
+  var startHour12 by rememberSaveable {
+    mutableIntStateOf(
+      when {
+        initStartHour == 0 -> 12
+        initStartHour > 12 -> initStartHour - 12
+        else -> initStartHour
+      }
+    )
+  }
+  var startMinute by rememberSaveable { mutableIntStateOf(initStartMinute) }
+  var startIsPm by rememberSaveable { mutableStateOf(initStartHour >= 12) }
+
+  var endHour12 by rememberSaveable {
+    mutableIntStateOf(
+      when {
+        initEndHour == 0 -> 12
+        initEndHour > 12 -> initEndHour - 12
+        else -> initEndHour
+      }
+    )
+  }
+  var endMinute by rememberSaveable { mutableIntStateOf(initEndMinute) }
+  var endIsPm by rememberSaveable { mutableStateOf(initEndHour >= 12) }
+
+  var notifEnabled by rememberSaveable { mutableStateOf(initialBucket?.notificationsEnabled ?: true) }
+  var alarmAtEnd by rememberSaveable { mutableStateOf(initialBucket?.alarmAtWindowEnd ?: true) }
+
+  fun to24(h12: Int, isPm: Boolean): Int {
+    return when {
+      h12 == 12 && !isPm -> 0
+      h12 == 12 && isPm -> 12
+      isPm -> h12 + 12
+      else -> h12
+    }
+  }
+
+  val computedStart24 = to24(startHour12, startIsPm)
+  val computedEnd24 = to24(endHour12, endIsPm)
+  val formattedStart = TimeOfDayBucket.formatClockTime(computedStart24, startMinute)
+  val formattedEnd = TimeOfDayBucket.formatClockTime(computedEnd24, endMinute)
+  val crossesMidnight = (computedEnd24 * 60 + endMinute) < (computedStart24 * 60 + startMinute)
+
+  val durationMinutes = if (crossesMidnight) {
+    (24 * 60 - (computedStart24 * 60 + startMinute)) + (computedEnd24 * 60 + endMinute)
+  } else {
+    (computedEnd24 * 60 + endMinute) - (computedStart24 * 60 + startMinute)
+  }
+  val durationHours = durationMinutes / 60
+  val durationRemainingMins = durationMinutes % 60
+  val durationStr = buildString {
+    if (durationHours > 0) append("${durationHours}h ")
+    if (durationRemainingMins > 0 || durationHours == 0) append("${durationRemainingMins}m")
+  }.trim()
+
+  val isValid = name.isNotBlank() && durationMinutes > 0
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = {
+      Text(if (initialBucket == null) "Add Dose Window" else "Edit Dose Window")
+    },
+    text = {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+      ) {
+        OutlinedTextField(
+          value = name,
+          onValueChange = { name = it },
+          label = { Text("Window Name") },
+          placeholder = { Text("e.g. Morning, Breakfast, Evening") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+        )
+
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+          Text(
+            text = "Quick Presets:",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            listOf(
+              "Morning", "Breakfast", "Midday", "Lunch",
+              "Afternoon", "Dinner", "Evening", "Bedtime", "Late Night",
+            ).forEach { presetName ->
+              FilterChip(
+                selected = name.equals(presetName, ignoreCase = true),
+                onClick = { name = presetName },
+                label = { Text(presetName, style = MaterialTheme.typography.labelSmall) },
+              )
+            }
+          }
+        }
+
+        HorizontalDivider()
+
+        // Start Time Picker Row
+        Text(
+          text = "Window Start Time:",
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.SemiBold,
+        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          OutlinedTextField(
+            value = startHour12.toString(),
+            onValueChange = { text ->
+              text.toIntOrNull()?.let { startHour12 = it.coerceIn(1, 12) }
+            },
+            label = { Text("Hour (1–12)") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+          )
+          OutlinedTextField(
+            value = startMinute.toString().padStart(2, '0'),
+            onValueChange = { text ->
+              text.toIntOrNull()?.let { startMinute = it.coerceIn(0, 59) }
+            },
+            label = { Text("Min (0–59)") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+          )
+          Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            FilterChip(
+              selected = !startIsPm,
+              onClick = { startIsPm = false },
+              label = { Text("AM") },
+              modifier = Modifier.weight(1f),
+            )
+            FilterChip(
+              selected = startIsPm,
+              onClick = { startIsPm = true },
+              label = { Text("PM") },
+              modifier = Modifier.weight(1f),
+            )
+          }
+        }
+
+        // End Time Picker Row
+        Text(
+          text = "Window End Time:",
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.SemiBold,
+        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          OutlinedTextField(
+            value = endHour12.toString(),
+            onValueChange = { text ->
+              text.toIntOrNull()?.let { endHour12 = it.coerceIn(1, 12) }
+            },
+            label = { Text("Hour (1–12)") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+          )
+          OutlinedTextField(
+            value = endMinute.toString().padStart(2, '0'),
+            onValueChange = { text ->
+              text.toIntOrNull()?.let { endMinute = it.coerceIn(0, 59) }
+            },
+            label = { Text("Min (0–59)") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+          )
+          Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            FilterChip(
+              selected = !endIsPm,
+              onClick = { endIsPm = false },
+              label = { Text("AM") },
+              modifier = Modifier.weight(1f),
+            )
+            FilterChip(
+              selected = endIsPm,
+              onClick = { endIsPm = true },
+              label = { Text("PM") },
+              modifier = Modifier.weight(1f),
+            )
+          }
+        }
+
+        // Window Summary Preview
+        Surface(
+          color = if (crossesMidnight) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+          shape = MaterialTheme.shapes.small,
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          Column(modifier = Modifier.padding(10.dp)) {
+            Text(
+              text = "$formattedStart – $formattedEnd ($durationStr)",
+              style = MaterialTheme.typography.bodyMedium,
+              fontWeight = FontWeight.Bold,
+              color = if (crossesMidnight) MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+            if (crossesMidnight) {
+              Text(
+                text = "🌙 Overnight window — crosses midnight into the next morning.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer,
+              )
+            }
+          }
+        }
+
+        HorizontalDivider()
+
+        // Notification & Alarm Preferences
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Text(
+            text = "Pin notification at $formattedStart",
+            style = MaterialTheme.typography.bodySmall,
+          )
+          Switch(
+            checked = notifEnabled,
+            onCheckedChange = { notifEnabled = it },
+          )
+        }
+
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Text(
+            text = "Sound urgent alarm at $formattedEnd if unlogged",
+            style = MaterialTheme.typography.bodySmall,
+          )
+          Switch(
+            checked = alarmAtEnd,
+            enabled = notifEnabled,
+            onCheckedChange = { alarmAtEnd = it },
+          )
+        }
+      }
+    },
+    confirmButton = {
+      Button(
+        onClick = {
+          val bucket = TimeOfDayBucket(
+            id = initialBucket?.id ?: UUID.randomUUID().toString(),
+            name = name.trim(),
+            hour = computedStart24,
+            minute = startMinute,
+            endHour = computedEnd24,
+            endMinute = endMinute,
+            sortOrder = initialBucket?.sortOrder ?: existingBucketCount,
+            notificationsEnabled = notifEnabled,
+            alarmAtWindowEnd = alarmAtEnd,
+          )
+          onSave(bucket)
+        },
+        enabled = isValid,
+      ) {
+        Text("Save Window")
+      }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss) {
+        Text("Cancel")
+      }
+    },
+  )
 }
 
 @Composable

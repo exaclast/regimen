@@ -1,6 +1,7 @@
 package com.exaclast.regimen
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -54,6 +55,18 @@ fun RegimenApp(
   val selectedConditionId by viewModel.selectedConditionId.collectAsState()
 
   var showSettingsDialog by rememberSaveable { mutableStateOf(false) }
+
+  val hasSubSelection = when (currentDestination) {
+    TopLevelDestination.MEDICATIONS -> selectedMedicationId != null
+    TopLevelDestination.PRESCRIBERS -> selectedPrescriberId != null
+    TopLevelDestination.CONDITIONS -> selectedConditionId != null
+    TopLevelDestination.TODAY -> false
+  }
+
+  // Handle predictive back navigation to Today tab when on a secondary destination
+  BackHandler(enabled = !showSettingsDialog && currentDestination != TopLevelDestination.TODAY && !hasSubSelection) {
+    viewModel.selectDestination(TopLevelDestination.TODAY)
+  }
 
   val settings = uiState.snapshot.settings
   val needsStartupPermissions = settings.permissionsPromptDismissedVersion < AppSettings.CURRENT_PERMISSIONS_VERSION
@@ -241,6 +254,9 @@ fun RegimenApp(
           buckets = uiState.snapshot.buckets,
           onSaveSettings = { viewModel.saveSettings(it) },
           onSaveBucket = { viewModel.saveBucket(it) },
+          onDeleteBucket = { viewModel.deleteBucket(it) },
+          onReorderBuckets = { viewModel.reorderBuckets(it) },
+          onResetBucketsToDefault = { viewModel.resetBucketsToDefault() },
           onExportJson = { viewModel.exportBackupJson() },
           onImportJson = { viewModel.importBackupJson(it) },
           onClearAllData = { viewModel.clearAllUserData() },

@@ -1,5 +1,6 @@
 package com.exaclast.regimen.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -143,6 +144,7 @@ fun PrescribersScreen(
       }
     } else {
       if (activePrescriber != null) {
+        BackHandler { onSelectPrescriber(null) }
         PrescriberDetailPane(
           prescriber = activePrescriber,
           snapshot = snapshot,

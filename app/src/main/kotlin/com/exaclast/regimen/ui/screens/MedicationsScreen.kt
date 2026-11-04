@@ -1,6 +1,7 @@
 package com.exaclast.regimen.ui.screens
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -226,6 +227,7 @@ fun MedicationsScreen(
     } else {
       // Single-pane layout for compact phone screen
       if (activeSelectedMedication != null) {
+        BackHandler { onSelectMedication(null) }
         MedicationDetailPane(
           medication = activeSelectedMedication,
           snapshot = snapshot,
@@ -298,6 +300,7 @@ fun MedicationsScreen(
       initialMedication = existing,
       conditions = snapshot.conditions,
       prescribers = snapshot.prescribers,
+      configuredPatientName = snapshot.settings.patientName,
       onDismiss = {
         isCreatingNew = false
         editingMedication = null
@@ -1049,6 +1052,7 @@ private fun MedicationEditorDialog(
   initialMedication: Medication?,
   conditions: List<Condition>,
   prescribers: List<Prescriber>,
+  configuredPatientName: String = "",
   onDismiss: () -> Unit,
   onSave: (Medication) -> Unit,
 ) {
@@ -1140,7 +1144,7 @@ private fun MedicationEditorDialog(
   fun applyFdaResultToForm(fda: FdaDrugLookupResult, statusSummary: String? = null) {
     ndc11 = fda.ndc11
     formulaName = fda.formulaName
-    fda.brandName?.let { brandName = it }
+    brandName = fda.brandName.orEmpty()
     fda.manufacturer?.let { manufacturer = it }
     strength = fda.strength
     form = fda.form
@@ -1270,6 +1274,7 @@ private fun MedicationEditorDialog(
       val res = DrugBarcodeScanner.analyzeLabelFromImageUri(
         context = context,
         imageUri = imageUri,
+        userConfiguredPatientName = configuredPatientName.takeIf { it.isNotBlank() },
         onStatusUpdate = { status -> ndcStatusText = status },
       )
       isLookingUpNdc = false
@@ -1287,6 +1292,7 @@ private fun MedicationEditorDialog(
     coroutineScope.launch {
       val res = DrugBarcodeScanner.analyzeLabelFromText(
         rawLabelText = rawText,
+        userConfiguredPatientName = configuredPatientName.takeIf { it.isNotBlank() },
         onStatusUpdate = { status -> ndcStatusText = status },
       )
       isLookingUpNdc = false
@@ -2254,7 +2260,7 @@ private fun ScheduleEditorDialog(
   }
   val selectedBucketIds = remember {
     mutableStateListOf<String>().apply {
-      addAll(initialSchedule?.bucketIds ?: listOf(TimeOfDayBucket.BUCKET_MORNING))
+      addAll(initialSchedule?.bucketIds ?: listOf(buckets.firstOrNull()?.id ?: TimeOfDayBucket.BUCKET_MORNING))
     }
   }
   var doseAmountText by rememberSaveable {

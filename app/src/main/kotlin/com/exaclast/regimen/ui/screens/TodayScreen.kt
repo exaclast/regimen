@@ -559,11 +559,29 @@ private fun BucketSectionCard(
           )
           Spacer(modifier = Modifier.width(8.dp))
           Column {
-            Text(
-              text = group.bucket.name,
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold,
-            )
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+              Text(
+                text = group.bucket.name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+              )
+              if (group.bucket.crossesMidnight) {
+                Surface(
+                  color = MaterialTheme.colorScheme.tertiaryContainer,
+                  shape = MaterialTheme.shapes.extraSmall,
+                ) {
+                  Text(
+                    text = "🌙 Overnight",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                  )
+                }
+              }
+            }
             val alarmNote = when {
               !globalNotificationsEnabled || !group.bucket.notificationsEnabled -> " • Notifications off"
               globalAlarmsEnabled && group.bucket.alarmAtWindowEnd ->

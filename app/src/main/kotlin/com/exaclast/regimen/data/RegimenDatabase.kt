@@ -203,6 +203,10 @@ class RegimenDatabase(context: Context) :
     writableDatabase.insertWithOnConflict("time_buckets", null, values, SQLiteDatabase.CONFLICT_REPLACE)
   }
 
+  fun deleteBucket(bucketId: String) {
+    writableDatabase.delete("time_buckets", "id = ?", arrayOf(bucketId))
+  }
+
   fun getAllSchedules(): List<MedicationSchedule> {
     val result = mutableListOf<MedicationSchedule>()
     readableDatabase.rawQuery(

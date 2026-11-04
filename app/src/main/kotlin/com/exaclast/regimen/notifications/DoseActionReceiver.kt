@@ -39,6 +39,7 @@ class DoseActionReceiver : BroadcastReceiver() {
 
       val bucketId = intent.getStringExtra(EXTRA_BUCKET_ID)
       val targetItemKey = intent.getStringExtra(EXTRA_ITEM_KEY)
+      val bucket = s.buckets.find { it.id == bucketId }
       val stage = if (action == ACTION_TRIGGER_WINDOW_END_ALARM) {
         if (!s.settings.alarmsEnabled) return
         DoseNotificationStage.WINDOW_END_ALARM
@@ -46,8 +47,15 @@ class DoseActionReceiver : BroadcastReceiver() {
         DoseNotificationStage.WINDOW_START_PERSISTENT
       }
 
+      val targetDateIso = if (action == ACTION_TRIGGER_WINDOW_END_ALARM && bucket != null && bucket.crossesMidnight) {
+        // When end alarm fires after midnight for an overnight window, the dose was scheduled for yesterday
+        LocalDate.now().minusDays(1).toString()
+      } else {
+        intent.getStringExtra(EXTRA_DATE_ISO) ?: LocalDate.now().toString()
+      }
+
       val board = DoseEngine.buildDailyBoard(
-        dateIso = LocalDate.now().toString(),
+        dateIso = targetDateIso,
         medications = s.medications,
         schedules = s.schedules,
         buckets = s.buckets,

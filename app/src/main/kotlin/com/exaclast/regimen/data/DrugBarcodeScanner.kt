@@ -135,6 +135,7 @@ object DrugBarcodeScanner {
   suspend fun analyzeLabelFromImageUri(
     context: Context,
     imageUri: Uri,
+    userConfiguredPatientName: String? = null,
     onStatusUpdate: (String) -> Unit = {},
   ): Result<ParsedMedicationLabel> = withContext(Dispatchers.IO) {
     runCatching {
@@ -145,15 +146,18 @@ object DrugBarcodeScanner {
         onStatusUpdate("Analyzing label with on-device Gemini Nano...")
         val request = generateContentRequest(
           ImagePart(bitmap),
-          TextPart(DrugLabelParser.buildLabelExtractionPrompt()),
+          TextPart(DrugLabelParser.buildLabelExtractionPrompt(knownPatientName = userConfiguredPatientName)),
         ) {
           temperature = 0.1f
-          maxOutputTokens = 400
+          maxOutputTokens = 650
         }
         val response = model.generateContent(request)
         val outputText = response.candidates.firstOrNull()?.text
           ?: throw IllegalStateException("Gemini Nano returned an empty response.")
-        DrugLabelParser.parseGeminiJsonResponse(outputText)
+        DrugLabelParser.parseGeminiJsonResponse(
+          rawOutput = outputText,
+          userConfiguredPatientName = userConfiguredPatientName,
+        )
       } finally {
         model.close()
       }
@@ -165,6 +169,7 @@ object DrugBarcodeScanner {
    */
   suspend fun analyzeLabelFromText(
     rawLabelText: String,
+    userConfiguredPatientName: String? = null,
     onStatusUpdate: (String) -> Unit = {},
   ): Result<ParsedMedicationLabel> = withContext(Dispatchers.IO) {
     runCatching {
@@ -173,15 +178,23 @@ object DrugBarcodeScanner {
         ensureModelReady(model, onStatusUpdate)
         onStatusUpdate("Analyzing label text with on-device Gemini Nano...")
         val request = generateContentRequest(
-          TextPart(DrugLabelParser.buildLabelExtractionPrompt(rawLabelText)),
+          TextPart(
+            DrugLabelParser.buildLabelExtractionPrompt(
+              additionalLabelText = rawLabelText,
+              knownPatientName = userConfiguredPatientName,
+            )
+          ),
         ) {
           temperature = 0.1f
-          maxOutputTokens = 400
+          maxOutputTokens = 650
         }
         val response = model.generateContent(request)
         val outputText = response.candidates.firstOrNull()?.text
           ?: throw IllegalStateException("Gemini Nano returned an empty response.")
-        DrugLabelParser.parseGeminiJsonResponse(outputText)
+        DrugLabelParser.parseGeminiJsonResponse(
+          rawOutput = outputText,
+          userConfiguredPatientName = userConfiguredPatientName,
+        )
       } finally {
         model.close()
       }

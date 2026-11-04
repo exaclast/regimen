@@ -273,6 +273,18 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     repository.saveBucket(bucket)
   }
 
+  fun deleteBucket(bucketId: String) {
+    repository.deleteBucket(bucketId)
+  }
+
+  fun reorderBuckets(buckets: List<TimeOfDayBucket>) {
+    repository.reorderBuckets(buckets)
+  }
+
+  fun resetBucketsToDefault() {
+    repository.resetBucketsToDefault()
+  }
+
   fun saveSettings(settings: AppSettings) {
     repository.saveSettings(settings)
   }

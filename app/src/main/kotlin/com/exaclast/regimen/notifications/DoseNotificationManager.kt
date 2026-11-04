@@ -134,6 +134,34 @@ object DoseNotificationManager {
     NotificationManagerCompat.from(context).cancel(itemKey.hashCode())
   }
 
+  fun cancelBucketAlarms(context: Context, bucketId: String) {
+    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+    val startIntent = Intent(context, DoseActionReceiver::class.java).apply {
+      action = DoseActionReceiver.ACTION_TRIGGER_WINDOW_START
+      putExtra(DoseActionReceiver.EXTRA_BUCKET_ID, bucketId)
+    }
+    val startPendingIntent = PendingIntent.getBroadcast(
+      context,
+      bucketId.hashCode() * 10 + 1,
+      startIntent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+    val endIntent = Intent(context, DoseActionReceiver::class.java).apply {
+      action = DoseActionReceiver.ACTION_TRIGGER_WINDOW_END_ALARM
+      putExtra(DoseActionReceiver.EXTRA_BUCKET_ID, bucketId)
+    }
+    val endPendingIntent = PendingIntent.getBroadcast(
+      context,
+      bucketId.hashCode() * 10 + 2,
+      endIntent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+    runCatching {
+      alarmManager.cancel(startPendingIntent)
+      alarmManager.cancel(endPendingIntent)
+    }
+  }
+
   fun cancelAllNotifications(context: Context) {
     runCatching {
       NotificationManagerCompat.from(context).cancelAll()
@@ -465,7 +493,29 @@ object DoseNotificationManager {
       }
 
       if (isWithinWindow) {
-        group.items.forEach { item ->
+        val targetDateIso = if (bucket.crossesMidnight && nowMinutes < endMinutes) {
+          // Window began yesterday evening and crosses past midnight
+          LocalDate.now().minusDays(1).toString()
+        } else {
+          LocalDate.now().toString()
+        }
+
+        val targetBoard = if (targetDateIso == LocalDate.now().toString()) {
+          board
+        } else {
+          DoseEngine.buildDailyBoard(
+            dateIso = targetDateIso,
+            medications = snapshot.medications,
+            schedules = snapshot.schedules,
+            buckets = snapshot.buckets,
+            logs = snapshot.doseLogs,
+            conditions = snapshot.conditions,
+            prescribers = snapshot.prescribers,
+          )
+        }
+
+        val targetGroup = targetBoard.bucketGroups.find { it.bucket.id == bucket.id }
+        targetGroup?.items?.forEach { item ->
           val snoozedInFuture = item.existingLog?.status == DoseStatus.SNOOZED &&
             (item.existingLog.snoozedUntilMillis ?: 0L) > nowMillis
           if (!item.isCompleted && !snoozedInFuture) {

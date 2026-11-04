@@ -231,6 +231,9 @@ data class TimeOfDayBucket(
 
   fun formattedTime(): String = "${formattedStartTime()} – ${formattedEndTime()}"
 
+  val crossesMidnight: Boolean
+    get() = (endHour * 60 + endMinute) < (hour * 60 + minute)
+
   companion object {
     const val BUCKET_MORNING = "bucket_morning"
     const val BUCKET_AFTERNOON = "bucket_afternoon"
@@ -357,6 +360,7 @@ data class AppSettings(
   val themeMode: ThemeMode = ThemeMode.SYSTEM,
   val dynamicColor: Boolean = true,
   val permissionsPromptDismissedVersion: Int = 0,
+  val patientName: String = "",
 ) {
   companion object {
     const val CURRENT_PERMISSIONS_VERSION = 1
