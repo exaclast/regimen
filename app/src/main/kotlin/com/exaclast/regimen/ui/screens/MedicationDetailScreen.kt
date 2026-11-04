@@ -71,6 +71,7 @@ import com.exaclast.regimen.ui.components.InfoRow
 import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.groupListItemColors
+import java.time.LocalDate
 
 @Composable
 fun MedicationDetailScreen(
@@ -443,6 +444,12 @@ private fun ScheduleRow(
       schedule.frequencyType == ScheduleFrequencyType.RELATIVE_TO_LAST_DOSE
     ) {
       UiFormat.dateIso(schedule.anchorDateIso)?.let { add("from $it") }
+    }
+    if (schedule.frequencyType == ScheduleFrequencyType.SPECIFIC_DATES && schedule.specificDatesIso.isNotEmpty()) {
+      val nextUpcoming = schedule.specificDatesIso.sorted().firstOrNull { it >= LocalDate.now().toString() }
+      if (nextUpcoming != null) {
+        UiFormat.dateIso(nextUpcoming)?.let { add("Next: $it") }
+      }
     }
     if (!schedule.enabled) add("Paused")
   }.joinToString(" · ")

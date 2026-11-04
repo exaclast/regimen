@@ -34,6 +34,15 @@ class ScheduleTextTest {
       ScheduleText.describe(schedule(ScheduleFrequencyType.DAYS_OF_WEEK, days = setOf(5, 1, 3)), buckets),
     )
     assertEquals("As needed", ScheduleText.describe(schedule(ScheduleFrequencyType.AS_NEEDED, windows = emptyList()), buckets))
+
+    val singleDateSched = schedule(ScheduleFrequencyType.SPECIFIC_DATES).copy(specificDatesIso = setOf("2026-11-04"))
+    assertEquals("On 2026-11-04 · Morning", ScheduleText.describe(singleDateSched, buckets))
+
+    val multiDateSched = schedule(ScheduleFrequencyType.SPECIFIC_DATES).copy(
+      specificDatesIso = setOf("2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06", "2026-11-07"),
+      bucketIds = listOf(TimeOfDayBucket.BUCKET_MORNING, TimeOfDayBucket.BUCKET_EVENING),
+    )
+    assertEquals("7 specific dates · Morning, Evening", ScheduleText.describe(multiDateSched, buckets))
   }
 
   @Test

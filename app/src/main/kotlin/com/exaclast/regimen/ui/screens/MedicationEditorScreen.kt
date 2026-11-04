@@ -4,27 +4,35 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
@@ -49,6 +57,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -67,9 +76,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -93,13 +105,18 @@ import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.model.formatNum
 import com.exaclast.regimen.ui.components.DatePickerField
+import com.exaclast.regimen.ui.components.DateRangePickerDialog
 import com.exaclast.regimen.ui.components.EditorScaffold
+import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.NumberInput
 import com.exaclast.regimen.ui.checkOptionalPositiveDecimal
 import com.exaclast.regimen.ui.checkOptionalPositiveInt
 import com.exaclast.regimen.ui.checkRequiredPositiveDecimal
 import com.exaclast.regimen.ui.checkRequiredPositiveInt
 import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
@@ -1437,6 +1454,192 @@ private fun CrossReferenceDisambiguationDialog(
 }
 
 /**
+ * Interactive month calendar and date-range selector for picking specific dates.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun SpecificDatesPicker(
+  selectedDates: MutableList<String>,
+  modifier: Modifier = Modifier,
+) {
+  var displayedYearMonth by remember { mutableStateOf(YearMonth.now()) }
+  var showRangePicker by rememberSaveable { mutableStateOf(false) }
+
+  Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // Header with navigation and action
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = { displayedYearMonth = displayedYearMonth.minusMonths(1) }) {
+          Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous month")
+        }
+        val monthTitle = remember(displayedYearMonth) {
+          displayedYearMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()))
+        }
+        Text(
+          text = monthTitle,
+          style = MaterialTheme.typography.titleSmall,
+          modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        IconButton(onClick = { displayedYearMonth = displayedYearMonth.plusMonths(1) }) {
+          Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next month")
+        }
+      }
+
+      TextButton(onClick = { showRangePicker = true }) {
+        Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(4.dp))
+        Text("Add range")
+      }
+    }
+
+    // Weekday headers: S M T W T F S
+    val daysOfWeekLabels = remember { listOf("S", "M", "T", "W", "T", "F", "S") }
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+      daysOfWeekLabels.forEach { label ->
+        Text(
+          text = label,
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          textAlign = TextAlign.Center,
+          modifier = Modifier.weight(1f),
+        )
+      }
+    }
+
+    // Month calendar grid
+    val firstDayOfWeek = displayedYearMonth.atDay(1).dayOfWeek.value % 7 // 0 for Sunday
+    val daysInMonth = displayedYearMonth.lengthOfMonth()
+    val todayIso = remember { LocalDate.now().toString() }
+
+    val totalCells = firstDayOfWeek + daysInMonth
+    val numRows = (totalCells + 6) / 7
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+      for (row in 0 until numRows) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+          for (col in 0..6) {
+            val cellIndex = row * 7 + col
+            val dayNum = cellIndex - firstDayOfWeek + 1
+            if (dayNum in 1..daysInMonth) {
+              val date = displayedYearMonth.atDay(dayNum)
+              val dateIso = date.toString()
+              val isSelected = selectedDates.contains(dateIso)
+              val isToday = dateIso == todayIso
+
+              Box(
+                modifier = Modifier
+                  .weight(1f)
+                  .aspectRatio(1f)
+                  .padding(2.dp)
+                  .clip(CircleShape)
+                  .background(
+                    when {
+                      isSelected -> MaterialTheme.colorScheme.primary
+                      isToday -> MaterialTheme.colorScheme.surfaceVariant
+                      else -> Color.Transparent
+                    }
+                  )
+                  .clickable {
+                    if (isSelected) {
+                      selectedDates.remove(dateIso)
+                    } else {
+                      selectedDates.add(dateIso)
+                    }
+                  },
+                contentAlignment = Alignment.Center,
+              ) {
+                Text(
+                  text = dayNum.toString(),
+                  style = MaterialTheme.typography.bodyMedium,
+                  fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
+                  color = when {
+                    isSelected -> MaterialTheme.colorScheme.onPrimary
+                    isToday -> MaterialTheme.colorScheme.primary
+                    else -> MaterialTheme.colorScheme.onSurface
+                  },
+                )
+              }
+            } else {
+              Spacer(modifier = Modifier.weight(1f))
+            }
+          }
+        }
+      }
+    }
+
+    // Selected count and clear button
+    val sortedDates = remember(selectedDates.size, selectedDates.hashCode()) {
+      selectedDates.sorted()
+    }
+
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Text(
+        text = if (sortedDates.isEmpty()) "No dates selected" else "${sortedDates.size} date${if (sortedDates.size == 1) "" else "s"} selected",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      if (sortedDates.isNotEmpty()) {
+        TextButton(onClick = { selectedDates.clear() }) {
+          Text("Clear all")
+        }
+      }
+    }
+
+    if (sortedDates.isNotEmpty()) {
+      FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+      ) {
+        val displayLimit = 14
+        sortedDates.take(displayLimit).forEach { iso ->
+          InputChip(
+            selected = true,
+            onClick = { selectedDates.remove(iso) },
+            label = { Text(UiFormat.dateIso(iso, withWeekday = false) ?: iso) },
+            trailingIcon = {
+              Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp))
+            },
+          )
+        }
+        if (sortedDates.size > displayLimit) {
+          Text(
+            text = "+${sortedDates.size - displayLimit} more",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.align(Alignment.CenterVertically).padding(start = 4.dp),
+          )
+        }
+      }
+    }
+  }
+
+  if (showRangePicker) {
+    DateRangePickerDialog(
+      onDismissRequest = { showRangePicker = false },
+      onRangeSelected = { start, end ->
+        var curr = start
+        while (!curr.isAfter(end)) {
+          val iso = curr.toString()
+          if (!selectedDates.contains(iso)) {
+            selectedDates.add(iso)
+          }
+          curr = curr.plusDays(1)
+        }
+      },
+    )
+  }
+}
+
+/**
  * Full-screen schedule editor (frequency, dose, windows, interval/start date, weekdays).
  */
 @OptIn(ExperimentalLayoutApi::class)
@@ -1468,6 +1671,9 @@ fun ScheduleEditorScreen(
   val selectedDaysOfWeek = remember {
     mutableStateListOf<Int>().apply { addAll(initialSchedule?.daysOfWeek ?: setOf(1, 2, 3, 4, 5, 6, 7)) }
   }
+  val selectedSpecificDates = remember {
+    mutableStateListOf<String>().apply { addAll(initialSchedule?.specificDatesIso?.sorted().orEmpty()) }
+  }
 
   // Strict validation: invalid input blocks Save rather than silently becoming a default.
   // (An unparseable start date used to make an every-N-days schedule due every day.)
@@ -1488,10 +1694,16 @@ fun ScheduleEditorScreen(
   } else {
     null
   }
+  val specificDatesError = if (frequencyType == ScheduleFrequencyType.SPECIFIC_DATES && selectedSpecificDates.isEmpty()) {
+    "Select at least one date"
+  } else {
+    null
+  }
   val canSave = doseCheck.isValid &&
     (!usesInterval || (intervalCheck.isValid && anchorError == null)) &&
     bucketError == null &&
-    daysError == null
+    daysError == null &&
+    specificDatesError == null
 
   fun save() {
     // Save is disabled unless every check is valid, so these are the user's exact values.
@@ -1506,6 +1718,7 @@ fun ScheduleEditorScreen(
         intervalDays = intervalCheck.validOrNull() ?: initialSchedule?.intervalDays ?: 7,
         anchorDateIso = anchorDate?.toString() ?: initialSchedule?.anchorDateIso ?: LocalDate.now().toString(),
         daysOfWeek = selectedDaysOfWeek.toSet().ifEmpty { setOf(1, 2, 3, 4, 5, 6, 7) },
+        specificDatesIso = if (frequencyType == ScheduleFrequencyType.SPECIFIC_DATES) selectedSpecificDates.toSet() else emptySet(),
         doseAmount = doseAmt,
         doseUnit = doseUnit,
         enabled = initialSchedule?.enabled ?: true,
@@ -1589,6 +1802,15 @@ fun ScheduleEditorScreen(
         }
       }
       daysError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+    }
+
+    if (frequencyType == ScheduleFrequencyType.SPECIFIC_DATES) {
+      Text("Dates", style = MaterialTheme.typography.titleSmall)
+      SpecificDatesPicker(
+        selectedDates = selectedSpecificDates,
+        modifier = Modifier.fillMaxWidth(),
+      )
+      specificDatesError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }
 
     if (frequencyType != ScheduleFrequencyType.AS_NEEDED) {

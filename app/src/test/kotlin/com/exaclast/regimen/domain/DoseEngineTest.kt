@@ -171,5 +171,24 @@ class DoseEngineTest {
     val inj = sampleInjectable.injectableDetails!!
     assertEquals(0.5, inj.calculateVolumeMl(100.0, DoseUnit.MG)!!, 0.001)
   }
+
+  @Test
+  fun specificDatesSchedule_isDueOnlyOnSelectedDates() {
+    val sched = MedicationSchedule(
+      id = "sched_specific",
+      medicationId = "med_ointment",
+      frequencyType = ScheduleFrequencyType.SPECIFIC_DATES,
+      specificDatesIso = setOf("2026-11-01", "2026-11-02", "2026-11-03", "2026-12-01"),
+    )
+
+    assertTrue(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-11-01"), emptyList()))
+    assertTrue(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-11-02"), emptyList()))
+    assertTrue(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-11-03"), emptyList()))
+    assertTrue(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-12-01"), emptyList()))
+
+    assertFalse(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-11-04"), emptyList()))
+    assertFalse(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-11-30"), emptyList()))
+    assertFalse(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-12-02"), emptyList()))
+  }
 }
 

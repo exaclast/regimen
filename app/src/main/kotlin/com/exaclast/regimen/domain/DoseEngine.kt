@@ -291,6 +291,10 @@ object DoseEngine {
         }
       }
 
+      ScheduleFrequencyType.SPECIFIC_DATES -> {
+        schedule.specificDatesIso.contains(targetDate.toString())
+      }
+
       ScheduleFrequencyType.AS_NEEDED -> false
     }
   }

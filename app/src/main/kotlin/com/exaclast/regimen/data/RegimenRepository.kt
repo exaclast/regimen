@@ -64,7 +64,7 @@ class RegimenRepository private constructor(context: Context) {
       TimeOfDayBucket.defaultBuckets().forEach { db.upsertBucket(it) }
     }
     if (!prefs.getBoolean(KEY_SEEDED_INITIAL, false)) {
-      seedInitialSampleData()
+      // Don't load demo data by default; leave data empty for initial user setup
       prefs.edit().putBoolean(KEY_SEEDED_INITIAL, true).apply()
     }
     reloadSnapshot()
@@ -361,159 +361,158 @@ class RegimenRepository private constructor(context: Context) {
   private fun seedInitialSampleData() {
     val today = LocalDate.now()
     val todayIso = today.toString()
-    val lastWeekIso = today.minusDays(7).toString()
+    val yesterdayIso = today.minusDays(1).toString()
     val now = System.currentTimeMillis()
 
     // 1. Sample Prescribers
     val pcp = Prescriber(
       id = "prescriber_pcp_1",
       name = "Dr. Elena Rostova, MD",
-      specialty = "Internal Medicine / Primary Care",
-      practice = "Metro Health Primary Care",
+      specialty = "Family Medicine & Primary Care",
+      practice = "Metro Health Family Practice",
       phone = "555-014-8820",
       email = "erostova@metrohealth.example.org",
       isPcp = true,
-      careStartDateIso = "2023-04-15",
-      notes = "Annual wellness & ongoing primary care management",
+      careStartDateIso = today.minusYears(1).toString(),
+      notes = "Annual wellness and primary care",
     )
-    val psychiatrist = Prescriber(
-      id = "prescriber_psych_1",
-      name = "Dr. Marcus Vance, DO",
-      specialty = "Psychiatry & Behavioral Neurobiology",
-      practice = "Clarity Focus Clinic",
+    val endocrinologist = Prescriber(
+      id = "prescriber_endo_1",
+      name = "Dr. Marcus Vance, MD",
+      specialty = "Endocrinology & Diabetes Care",
+      practice = "Valley Endocrine Specialists",
       phone = "555-019-3341",
-      email = "mvance@clarityfocus.example.org",
+      email = "mvance@valleyendocrine.example.org",
       isPcp = false,
-      careStartDateIso = "2024-01-10",
-      notes = "Quarterly ADHD medication review",
+      careStartDateIso = today.minusMonths(6).toString(),
+      notes = "Quarterly diabetic management review",
     )
     db.upsertPrescriber(pcp)
-    db.upsertPrescriber(psychiatrist)
+    db.upsertPrescriber(endocrinologist)
 
     // 2. Sample Conditions
-    val condAdhd = Condition(
-      id = "cond_adhd",
-      name = "ADHD (Combined Presentation)",
-      details = "Executive function, working memory, and task initiation support.",
+    val condDiabetes = Condition(
+      id = "cond_diabetes",
+      name = "Type 2 Diabetes Mellitus",
+      details = "Glycemic control, fasting blood glucose monitoring, and basal insulin regimen.",
       status = ConditionStatus.MANAGED,
-      diagnosedDateIso = "2024-01-10",
+      diagnosedDateIso = today.minusMonths(6).toString(),
     )
-    val condEndo = Condition(
-      id = "cond_hrt",
-      name = "Endocrine / Hormone Replacement Therapy",
-      details = "Weekly intramuscular depot maintenance protocol with left/right site rotation.",
+    val condSinusitis = Condition(
+      id = "cond_sinusitis",
+      name = "Acute Bacterial Sinusitis",
+      details = "10-day oral antibiotic course for acute bacterial sinus infection.",
+      status = ConditionStatus.ACTIVE,
+      diagnosedDateIso = today.minusDays(2).toString(),
+    )
+    val condHeadache = Condition(
+      id = "cond_headache",
+      name = "Tension Headache",
+      details = "Occasional episodic tension headaches and mild musculoskeletal pain.",
       status = ConditionStatus.MANAGED,
-      diagnosedDateIso = "2023-06-01",
+      diagnosedDateIso = today.minusYears(1).toString(),
     )
-    db.upsertCondition(condAdhd)
-    db.upsertCondition(condEndo)
+    db.upsertCondition(condDiabetes)
+    db.upsertCondition(condSinusitis)
+    db.upsertCondition(condHeadache)
 
     // 3. Sample Medications
-    val medInjectableIm = Medication(
-      id = "med_cypionate_im",
-      formulaName = "Testosterone Cypionate",
-      brandName = "Depo-Testosterone",
-      manufacturer = "Pfizer / Hikma",
-      ndc11 = "00009-0085-10",
-      strength = "200 mg/mL",
-      form = MedicationForm.INJECTABLE_VIAL,
-      defaultDoseAmount = 100.0,
-      defaultDoseUnit = DoseUnit.MG,
-      injectableDetails = InjectableDetails(
-        route = InjectionRoute.IM,
-        concentrationMgPerMl = 200.0,
-        vialVolumeMl = 10.0,
-        syringeVolumeMl = 1.0,
-        syringeDescription = "1 mL Luer-Lok Tuberculin",
-        drawNeedleGauge = 18,
-        drawNeedleLengthInches = 1.0,
-        injectNeedleGauge = 25,
-        injectNeedleLengthInches = 1.0,
-      ),
-      siteRotationEnabled = true,
-      rotationSites = listOf("Left Ventrogluteal", "Right Ventrogluteal"),
-      minIntervalMinutes = 5 * 24 * 60, // 5 days minimum safety interval
-      maxDailyDoses = 1.0,
-      maxDailyAmount = 100.0,
-      indicationConditionId = condEndo.id,
-      indicationText = "Weekly IM maintenance — switches sides every week",
-      prescriberId = pcp.id,
-      prescribedDateIso = "2025-11-01",
-      notes = "Warm vial in hand before drawing with 18G needle; switch to 25G 1\" needle for IM injection.",
-    )
-
-    val medVyvanse = Medication(
-      id = "med_vyvanse",
-      formulaName = "Lisdexamfetamine Dimesylate",
-      brandName = "Vyvanse",
-      manufacturer = "Takeda Pharmaceuticals",
-      ndc11 = "59417-0104-10",
-      strength = "40 mg",
-      form = MedicationForm.CAPSULE,
-      defaultDoseAmount = 1.0,
-      defaultDoseUnit = DoseUnit.CAPSULE,
-      siteRotationEnabled = false,
-      minIntervalMinutes = 18 * 60, // 18 hours between morning doses
-      maxDailyDoses = 1.0,
-      maxDailyAmount = 1.0,
-      indicationConditionId = condAdhd.id,
-      indicationText = "Primary daily ADHD symptom management",
-      prescriberId = psychiatrist.id,
-      prescribedDateIso = "2026-01-15",
-      notes = "Take in the morning with protein breakfast.",
-    )
-
-    val medDexPrn = Medication(
-      id = "med_dex_prn",
-      formulaName = "Dextroamphetamine Sulfate",
-      brandName = "Zenzedi",
-      manufacturer = "Azurity",
-      ndc11 = "24338-0853-13",
-      strength = "5 mg",
+    // 3a. Generic Amox-Clav (Oral tablet antibiotic, twice daily)
+    val medAmoxClav = Medication(
+      id = "med_amox_clav",
+      formulaName = "Amoxicillin / Clavulanate Potassium",
+      brandName = "Augmentin",
+      manufacturer = "Sandoz / Teva",
+      ndc11 = "00781-1852-20",
+      strength = "875 mg / 125 mg",
       form = MedicationForm.TABLET,
       defaultDoseAmount = 1.0,
       defaultDoseUnit = DoseUnit.TABLET,
       siteRotationEnabled = false,
-      minIntervalMinutes = 240, // 4 hours minimum between doses
-      maxDailyDoses = 2.0, // Max 2 booster tablets per day
+      minIntervalMinutes = 10 * 60, // 10 hours between twice-daily doses
+      maxDailyDoses = 2.0,
       maxDailyAmount = 2.0,
-      indicationConditionId = condAdhd.id,
-      indicationText = "Afternoon executive function booster as needed",
-      prescriberId = psychiatrist.id,
-      prescribedDateIso = "2026-01-15",
-      notes = "Avoid taking after 4:00 PM to prevent insomnia.",
+      indicationConditionId = condSinusitis.id,
+      indicationText = "Acute bacterial sinusitis — finish entire 10-day course",
+      prescriberId = pcp.id,
+      prescribedDateIso = today.minusDays(2).toString(),
+      notes = "Take with food or a meal to minimize gastrointestinal discomfort.",
     )
 
-    db.upsertMedication(medInjectableIm)
-    db.upsertMedication(medVyvanse)
-    db.upsertMedication(medDexPrn)
+    // 3b. Tylenol / Acetaminophen (Oral OTC tablet, PRN)
+    val medTylenol = Medication(
+      id = "med_tylenol",
+      formulaName = "Acetaminophen",
+      brandName = "Tylenol Extra Strength",
+      manufacturer = "McNeil Consumer Healthcare",
+      ndc11 = "50580-0496-50",
+      strength = "500 mg",
+      form = MedicationForm.TABLET,
+      defaultDoseAmount = 1.0,
+      defaultDoseUnit = DoseUnit.TABLET,
+      siteRotationEnabled = false,
+      minIntervalMinutes = 360, // 6 hours minimum between doses
+      maxDailyDoses = 6.0,
+      maxDailyAmount = 3000.0,
+      indicationConditionId = condHeadache.id,
+      indicationText = "Tension headache or fever as needed",
+      prescriberId = pcp.id,
+      prescribedDateIso = today.minusMonths(2).toString(),
+      notes = "Do not exceed 3,000 mg (6 tablets) in 24 hours. Avoid alcohol.",
+    )
+
+    // 3c. Insulin Glargine (Injectable vial with syringe & site rotation, bedtime basal)
+    val medInsulin = Medication(
+      id = "med_insulin_glargine",
+      formulaName = "Insulin Glargine (rDNA origin)",
+      brandName = "Lantus",
+      manufacturer = "Sanofi-Aventis",
+      ndc11 = "00088-2220-33",
+      strength = "100 units/mL (U-100)",
+      form = MedicationForm.INJECTABLE_VIAL,
+      defaultDoseAmount = 20.0,
+      defaultDoseUnit = DoseUnit.UNITS,
+      injectableDetails = InjectableDetails(
+        route = InjectionRoute.SC,
+        concentrationMgPerMl = 100.0,
+        vialVolumeMl = 10.0,
+        syringeVolumeMl = 0.5,
+        syringeDescription = "0.5 mL U-100 Insulin Syringe (31G 5/16\")",
+        drawNeedleGauge = 31,
+        drawNeedleLengthInches = 0.3125,
+        injectNeedleGauge = 31,
+        injectNeedleLengthInches = 0.3125,
+      ),
+      siteRotationEnabled = true,
+      rotationSites = listOf("Abdomen - Left", "Abdomen - Right", "Thigh - Left", "Thigh - Right"),
+      minIntervalMinutes = 20 * 60, // 20 hours minimum between daily basal doses
+      maxDailyDoses = 1.0,
+      maxDailyAmount = 20.0,
+      indicationConditionId = condDiabetes.id,
+      indicationText = "Type 2 diabetes basal glycemic control at bedtime",
+      prescriberId = endocrinologist.id,
+      prescribedDateIso = today.minusMonths(6).toString(),
+      notes = "Inject subcutaneously once daily at bedtime. Rotate injection sites across abdomen and thighs. Store unopened vials in refrigerator.",
+    )
+
+    db.upsertMedication(medAmoxClav)
+    db.upsertMedication(medTylenol)
+    db.upsertMedication(medInsulin)
 
     // 4. Sample Schedules
-    val schedInjectableWeekly = MedicationSchedule(
-      id = "sched_im_weekly",
-      medicationId = medInjectableIm.id,
-      frequencyType = ScheduleFrequencyType.EVERY_N_DAYS,
-      bucketIds = listOf(TimeOfDayBucket.BUCKET_MORNING),
-      intervalDays = 7,
-      anchorDateIso = lastWeekIso, // Due today!
-      doseAmount = 100.0,
-      doseUnit = DoseUnit.MG,
-      enabled = true,
-    )
-
-    val schedVyvanseDaily = MedicationSchedule(
-      id = "sched_vyvanse_daily",
-      medicationId = medVyvanse.id,
+    val schedAmoxClavDaily = MedicationSchedule(
+      id = "sched_amox_clav",
+      medicationId = medAmoxClav.id,
       frequencyType = ScheduleFrequencyType.DAILY,
-      bucketIds = listOf(TimeOfDayBucket.BUCKET_MORNING),
+      bucketIds = listOf(TimeOfDayBucket.BUCKET_MORNING, TimeOfDayBucket.BUCKET_EVENING),
       doseAmount = 1.0,
-      doseUnit = DoseUnit.CAPSULE,
+      doseUnit = DoseUnit.TABLET,
       enabled = true,
     )
 
-    val schedDexAsNeeded = MedicationSchedule(
-      id = "sched_dex_prn",
-      medicationId = medDexPrn.id,
+    val schedTylenolPrn = MedicationSchedule(
+      id = "sched_tylenol_prn",
+      medicationId = medTylenol.id,
       frequencyType = ScheduleFrequencyType.AS_NEEDED,
       bucketIds = emptyList(),
       doseAmount = 1.0,
@@ -521,25 +520,35 @@ class RegimenRepository private constructor(context: Context) {
       enabled = true,
     )
 
-    db.upsertSchedule(schedInjectableWeekly)
-    db.upsertSchedule(schedVyvanseDaily)
-    db.upsertSchedule(schedDexAsNeeded)
-
-    // 5. Log last week's IM injection on Left Ventrogluteal so today's auto-rotation suggests Right Ventrogluteal!
-    val lastWeekLog = DoseLog(
-      id = "log_im_last_week",
-      medicationId = medInjectableIm.id,
-      scheduleId = schedInjectableWeekly.id,
-      bucketId = TimeOfDayBucket.BUCKET_MORNING,
-      scheduledDateIso = lastWeekIso,
-      actionTimestampMillis = now - (7L * 24L * 3600L * 1000L),
-      status = DoseStatus.TAKEN,
-      amountTaken = 100.0,
-      amountUnit = DoseUnit.MG,
-      siteUsed = "Left Ventrogluteal",
-      notes = "Smooth draw and injection on left side.",
+    val schedInsulinDaily = MedicationSchedule(
+      id = "sched_insulin_bedtime",
+      medicationId = medInsulin.id,
+      frequencyType = ScheduleFrequencyType.DAILY,
+      bucketIds = listOf(TimeOfDayBucket.BUCKET_BEDTIME),
+      doseAmount = 20.0,
+      doseUnit = DoseUnit.UNITS,
+      enabled = true,
     )
-    db.upsertDoseLog(lastWeekLog)
+
+    db.upsertSchedule(schedAmoxClavDaily)
+    db.upsertSchedule(schedTylenolPrn)
+    db.upsertSchedule(schedInsulinDaily)
+
+    // 5. Prior Dose Log: Yesterday evening's insulin dose logged on "Abdomen - Left" so today suggests "Abdomen - Right"!
+    val yesterdayLog = DoseLog(
+      id = "log_insulin_yesterday",
+      medicationId = medInsulin.id,
+      scheduleId = schedInsulinDaily.id,
+      bucketId = TimeOfDayBucket.BUCKET_BEDTIME,
+      scheduledDateIso = yesterdayIso,
+      actionTimestampMillis = now - (24L * 3600L * 1000L),
+      status = DoseStatus.TAKEN,
+      amountTaken = 20.0,
+      amountUnit = DoseUnit.UNITS,
+      siteUsed = "Abdomen - Left",
+      notes = "Taken at bedtime. No bruising.",
+    )
+    db.upsertDoseLog(yesterdayLog)
   }
 
   companion object {

@@ -138,6 +138,7 @@ fun RegimenApp(
                 onOpenMedication = { navigator.navigate(Route.MedicationDetail(it)) },
                 onOpenWindow = { navigator.navigate(Route.DoseWindowEditor(it)) },
                 onAddMedication = { navigator.navigate(Route.MedicationEditor()) },
+                onLoadDemoData = viewModel::resetToSampleData,
               )
             }
 

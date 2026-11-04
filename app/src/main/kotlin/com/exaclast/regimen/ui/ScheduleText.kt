@@ -29,6 +29,14 @@ object ScheduleText {
     }
     ScheduleFrequencyType.RELATIVE_TO_LAST_DOSE ->
       if (schedule.intervalDays == 1) "Daily after last dose" else "Every ${schedule.intervalDays} days after last dose"
+    ScheduleFrequencyType.SPECIFIC_DATES -> {
+      val count = schedule.specificDatesIso.size
+      when (count) {
+        0 -> "Specific dates"
+        1 -> "On ${schedule.specificDatesIso.first()}"
+        else -> "$count specific dates"
+      }
+    }
     ScheduleFrequencyType.AS_NEEDED -> "As needed"
   }
 

@@ -320,6 +320,7 @@ enum class ScheduleFrequencyType(val displayName: String) {
   EVERY_N_DAYS("Every N Days (Fixed Cycle)"),
   DAYS_OF_WEEK("Specific Days of Week"),
   RELATIVE_TO_LAST_DOSE("Every N Days From Last Taken Dose"),
+  SPECIFIC_DATES("Specific Dates"),
   AS_NEEDED("As Needed (PRN)"),
 }
 
@@ -332,6 +333,7 @@ data class MedicationSchedule(
   val intervalDays: Int = 7,
   val anchorDateIso: String = LocalDate.now().toString(),
   val daysOfWeek: Set<Int> = setOf(1, 2, 3, 4, 5, 6, 7),
+  val specificDatesIso: Set<String> = emptySet(),
   val doseAmount: Double = 1.0,
   val doseUnit: DoseUnit = DoseUnit.TABLET,
   val enabled: Boolean = true,

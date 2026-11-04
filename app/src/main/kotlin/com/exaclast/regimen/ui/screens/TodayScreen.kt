@@ -86,11 +86,13 @@ import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.formatNum
 import com.exaclast.regimen.ui.RegimenUiState
 import com.exaclast.regimen.ui.components.AppSnackbarHost
+import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.GroupedColumn
 import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.groupListItemColors
+import androidx.compose.ui.text.style.TextAlign
 import java.time.LocalDate
 
 @Composable
@@ -110,6 +112,7 @@ fun TodayScreen(
   onOpenMedication: (String) -> Unit,
   onOpenWindow: (String) -> Unit,
   onAddMedication: () -> Unit,
+  onLoadDemoData: (() -> Unit)? = null,
 ) {
   val board = uiState.dailyBoard
   val settings = uiState.snapshot.settings
@@ -193,7 +196,13 @@ fun TodayScreen(
       }
 
       if (board.bucketGroups.isEmpty() && board.prnItems.isEmpty()) {
-        item(key = "empty") { EmptyDayCard(onAddMedication) }
+        item(key = "empty") {
+          EmptyDayCard(
+            hasAnyMedications = uiState.snapshot.medications.isNotEmpty(),
+            onAddMedication = onAddMedication,
+            onLoadDemoData = onLoadDemoData,
+          )
+        }
       }
 
       items(board.bucketGroups, key = { "window-${it.bucket.id}" }) { group ->
@@ -802,23 +811,61 @@ private fun NoticeCard(text: String, actionLabel: String, onAction: () -> Unit) 
 }
 
 @Composable
-private fun EmptyDayCard(onAddMedication: () -> Unit) {
+private fun EmptyDayCard(
+  hasAnyMedications: Boolean,
+  onAddMedication: () -> Unit,
+  onLoadDemoData: (() -> Unit)?,
+) {
+  var confirmDemo by remember { mutableStateOf(false) }
+
   Surface(
     color = MaterialTheme.colorScheme.surfaceContainerLow,
     shape = MaterialTheme.shapes.extraLarge,
     modifier = Modifier.fillMaxWidth(),
   ) {
-    Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-      Text("Nothing scheduled", style = MaterialTheme.typography.titleMedium)
+    Column(
+      modifier = Modifier.padding(24.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+      Text(
+        text = if (hasAnyMedications) "Nothing scheduled" else "No medications yet",
+        style = MaterialTheme.typography.titleMedium,
+      )
       Spacer(Modifier.height(4.dp))
       Text(
-        "Add a medication and give it a schedule to see doses here.",
+        text = if (hasAnyMedications) {
+          "Add a medication and give it a schedule to see doses here."
+        } else {
+          "Add your medications and schedules to start tracking doses, or load demo data to explore."
+        },
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
       )
-      Spacer(Modifier.height(12.dp))
-      Button(onClick = onAddMedication) { Text("Add medication") }
+      Spacer(Modifier.height(16.dp))
+      Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Button(onClick = onAddMedication) { Text("Add medication") }
+        if (!hasAnyMedications && onLoadDemoData != null) {
+          OutlinedButton(onClick = { confirmDemo = true }) { Text("Load demo data") }
+        }
+      }
     }
+  }
+
+  if (confirmDemo && onLoadDemoData != null) {
+    ConfirmDialog(
+      title = "Load demo data?",
+      text = "This populates sample medications, conditions, prescribers, and schedules.",
+      confirmLabel = "Load demo data",
+      onConfirm = {
+        confirmDemo = false
+        onLoadDemoData()
+      },
+      onDismiss = { confirmDemo = false },
+    )
   }
 }
 

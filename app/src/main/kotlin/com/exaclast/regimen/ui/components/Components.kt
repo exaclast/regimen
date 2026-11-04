@@ -27,6 +27,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -329,6 +331,56 @@ fun DatePickerField(
     ) {
       DatePicker(state = state)
     }
+  }
+}
+
+/**
+ * Dialog for selecting a date range (start to end inclusive).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DateRangePickerDialog(
+  onDismissRequest: () -> Unit,
+  onRangeSelected: (LocalDate, LocalDate) -> Unit,
+) {
+  val state = rememberDateRangePickerState()
+  DatePickerDialog(
+    onDismissRequest = onDismissRequest,
+    confirmButton = {
+      TextButton(
+        onClick = {
+          val start = state.selectedStartDateMillis?.let {
+            Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
+          }
+          val end = state.selectedEndDateMillis?.let {
+            Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
+          } ?: start
+          if (start != null && end != null) {
+            onRangeSelected(start, end)
+          }
+          onDismissRequest()
+        },
+        enabled = state.selectedStartDateMillis != null,
+      ) {
+        Text("Add range")
+      }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismissRequest) {
+        Text("Cancel")
+      }
+    },
+  ) {
+    DateRangePicker(
+      state = state,
+      title = {
+        Text(
+          text = "Select date range",
+          modifier = Modifier.padding(start = 24.dp, top = 16.dp, bottom = 8.dp),
+          style = MaterialTheme.typography.titleMedium,
+        )
+      },
+    )
   }
 }
 
