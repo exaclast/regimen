@@ -385,10 +385,11 @@ data class AppSettings(
   val themeMode: ThemeMode = ThemeMode.SYSTEM,
   val dynamicColor: Boolean = true,
   val permissionsPromptDismissedVersion: Int = 0,
+  val allowFdaLookup: Boolean = false,
   val patientName: String = "",
 ) {
   companion object {
-    const val CURRENT_PERMISSIONS_VERSION = 1
+    const val CURRENT_PERMISSIONS_VERSION = 2
     val SNOOZE_PRESETS = listOf(15, 30, 45, 60)
   }
 }

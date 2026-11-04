@@ -9,6 +9,7 @@ import android.content.Context
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -35,6 +36,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -229,7 +231,11 @@ fun SettingsScreen(
 
       item(key = "permissions") {
         SectionHeader("Permissions")
-        PermissionsChecklistSection(onPermissionStateChanged = onPermissionsChanged)
+        PermissionsChecklistSection(
+          allowFdaLookup = settings.allowFdaLookup,
+          onAllowFdaLookupChange = { onSaveSettings(settings.copy(allowFdaLookup = it)) },
+          onPermissionStateChanged = onPermissionsChanged,
+        )
       }
 
       item(key = "appearance") {
@@ -602,6 +608,8 @@ fun DoseWindowEditorScreen(
 
 @Composable
 fun StartupPermissionsDialog(
+  settings: AppSettings,
+  onSaveSettings: (AppSettings) -> Unit,
   onDismiss: () -> Unit,
   onPermissionsChanged: () -> Unit,
 ) {
@@ -636,11 +644,13 @@ fun StartupPermissionsDialog(
         verticalArrangement = Arrangement.spacedBy(10.dp),
       ) {
         Text(
-          text = "Configure notification reliability and on-device AI features. If you skip any optional permissions now, you will not be nagged again on future launches (accessible anytime in Settings):",
+          text = "Configure notification reliability, on-device AI features, and optional online drug lookup. If you skip any optional permissions now, you will not be nagged again on future launches (accessible anytime in Settings):",
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         PermissionsChecklistSection(
+          allowFdaLookup = settings.allowFdaLookup,
+          onAllowFdaLookupChange = { onSaveSettings(settings.copy(allowFdaLookup = it)) },
           onPermissionStateChanged = {
             refreshTick++
             onPermissionsChanged()
@@ -666,6 +676,8 @@ fun StartupPermissionsDialog(
 
 @Composable
 fun PermissionsChecklistSection(
+  allowFdaLookup: Boolean = false,
+  onAllowFdaLookupChange: (Boolean) -> Unit = {},
   onPermissionStateChanged: () -> Unit = {},
 ) {
   val context = LocalContext.current
@@ -804,6 +816,52 @@ fun PermissionsChecklistSection(
         }
       } else null,
     )
+
+    Surface(
+      shape = MaterialTheme.shapes.small,
+      color = if (allowFdaLookup) {
+        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+      } else {
+        MaterialTheme.colorScheme.surface
+      },
+      modifier = Modifier
+        .fillMaxWidth()
+        .clickable { onAllowFdaLookupChange(!allowFdaLookup) },
+    ) {
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Checkbox(
+          checked = allowFdaLookup,
+          onCheckedChange = onAllowFdaLookupChange,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = "5. OpenFDA Medication Lookup",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = if (allowFdaLookup) {
+              MaterialTheme.colorScheme.onSecondaryContainer
+            } else {
+              MaterialTheme.colorScheme.onSurface
+            },
+          )
+          Text(
+            text = "Allow medication lookup via FDA API. Medication data (such as drug name, strength, or NDC) will be sent to official OpenFDA servers for autofill and verification. No personally identifiable information (PII) is included.",
+            style = MaterialTheme.typography.bodySmall,
+            color = if (allowFdaLookup) {
+              MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
+            } else {
+              MaterialTheme.colorScheme.onSurfaceVariant
+            },
+          )
+        }
+      }
+    }
   }
 }
 

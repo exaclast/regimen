@@ -241,6 +241,7 @@ fun MedicationEditorScreen(
   conditions: List<Condition>,
   prescribers: List<Prescriber>,
   configuredPatientName: String = "",
+  allowFdaLookup: Boolean = false,
   onDismiss: () -> Unit,
   onSave: (Medication) -> Unit,
 ) {
@@ -360,6 +361,7 @@ fun MedicationEditorScreen(
   }
 
   fun runCrossReferenceLookup(criteria: DrugCrossReferenceCriteria) {
+    if (!allowFdaLookup) return
     isLookingUpNdc = true
     ndcErrorText = null
     coroutineScope.launch {
@@ -439,7 +441,7 @@ fun MedicationEditorScreen(
     if (parsedLabel.isCompound) {
       ndcMatched = true
       ndcStatusText = "Parsed compounded medication label (no FDA NDC applicable)"
-    } else {
+    } else if (allowFdaLookup) {
       ndcStatusText = "Parsed label text — cross-referencing OpenFDA..."
       runCrossReferenceLookup(
         DrugCrossReferenceCriteria(
@@ -451,6 +453,8 @@ fun MedicationEditorScreen(
           manufacturer = parsedLabel.manufacturer ?: manufacturer.takeIf { it.isNotBlank() },
         )
       )
+    } else {
+      ndcStatusText = "Parsed label text on-device"
     }
   }
 
@@ -509,6 +513,7 @@ fun MedicationEditorScreen(
   }
 
   fun runNdcOrBarcodeLookup(rawQuery: String) {
+    if (!allowFdaLookup) return
     val query = rawQuery.trim()
     if (query.isEmpty()) return
     isLookingUpNdc = true
@@ -691,35 +696,37 @@ fun MedicationEditorScreen(
                   Spacer(modifier = Modifier.width(6.dp))
                   Text("Label Photo")
                 }
-                OutlinedButton(
-                  onClick = {
-                    runCrossReferenceLookup(
-                      DrugCrossReferenceCriteria(
-                        ndc = ndc11.takeIf { it.isNotBlank() },
-                        formulaName = formulaName.takeIf { it.isNotBlank() },
-                        brandName = brandName.takeIf { it.isNotBlank() },
-                        strength = strength.takeIf { it.isNotBlank() },
-                        form = form,
-                        manufacturer = manufacturer.takeIf { it.isNotBlank() },
+                if (allowFdaLookup) {
+                  OutlinedButton(
+                    onClick = {
+                      runCrossReferenceLookup(
+                        DrugCrossReferenceCriteria(
+                          ndc = ndc11.takeIf { it.isNotBlank() },
+                          formulaName = formulaName.takeIf { it.isNotBlank() },
+                          brandName = brandName.takeIf { it.isNotBlank() },
+                          strength = strength.takeIf { it.isNotBlank() },
+                          form = form,
+                          manufacturer = manufacturer.takeIf { it.isNotBlank() },
+                        )
                       )
-                    )
-                  },
-                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                ) {
-                  if (isLookingUpNdc) {
-                    CircularProgressIndicator(
-                      modifier = Modifier.size(14.dp),
-                      strokeWidth = 2.dp,
-                    )
-                  } else {
-                    Icon(
-                      Icons.Default.Search,
-                      contentDescription = null,
-                      modifier = Modifier.size(16.dp),
-                    )
+                    },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                  ) {
+                    if (isLookingUpNdc) {
+                      CircularProgressIndicator(
+                        modifier = Modifier.size(14.dp),
+                        strokeWidth = 2.dp,
+                      )
+                    } else {
+                      Icon(
+                        Icons.Default.Search,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                      )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Match FDA")
                   }
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Match FDA")
                 }
               }
 
@@ -1142,7 +1149,7 @@ fun MedicationEditorScreen(
               placeholder = { Text("e.g. 00009-0085-10") },
               singleLine = true,
               trailingIcon = {
-                if (ndc11.isNotBlank()) {
+                if (allowFdaLookup && ndc11.isNotBlank()) {
                   TextButton(
                     onClick = { runNdcOrBarcodeLookup(ndc11) }
                   ) {

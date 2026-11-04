@@ -182,6 +182,7 @@ fun RegimenApp(
                   conditions = snapshot.conditions,
                   prescribers = snapshot.prescribers,
                   configuredPatientName = settings.patientName,
+                  allowFdaLookup = settings.allowFdaLookup,
                   onDismiss = navigator::back,
                   onSave = { med ->
                     viewModel.saveMedication(med)
@@ -348,6 +349,8 @@ fun RegimenApp(
       val needsStartupPermissions = settings.permissionsPromptDismissedVersion < AppSettings.CURRENT_PERMISSIONS_VERSION
       if (needsStartupPermissions && current !is Route.Settings) {
         StartupPermissionsDialog(
+          settings = settings,
+          onSaveSettings = viewModel::saveSettings,
           onDismiss = {
             viewModel.saveSettings(
               settings.copy(permissionsPromptDismissedVersion = AppSettings.CURRENT_PERMISSIONS_VERSION)
