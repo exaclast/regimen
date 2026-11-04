@@ -253,8 +253,6 @@ fun SettingsScreen(
       item(key = "permissions") {
         SectionHeader("Permissions")
         PermissionsChecklistSection(
-          allowFdaLookup = settings.allowFdaLookup,
-          onAllowFdaLookupChange = { onSaveSettings(settings.copy(allowFdaLookup = it)) },
           onPermissionStateChanged = onPermissionsChanged,
         )
       }
@@ -330,48 +328,34 @@ fun SettingsScreen(
           }
         } else {
           Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            val isNanoReady = nanoStatus == FeatureStatus.AVAILABLE
-            val nanoSubtitle = when (nanoStatus) {
-              FeatureStatus.AVAILABLE -> "Gemini Nano is downloaded and ready for on-device label parsing"
-              FeatureStatus.DOWNLOADING -> nanoProgressMessage ?: "Downloading model via AICore (~1.5 GB)..."
-              FeatureStatus.DOWNLOADABLE ->
-                nanoProgressMessage ?: "Ready for download (~1.5 GB) — requires Wi-Fi and power/charging"
-              else -> "Checking on-device AI status..."
-            }
-            val nanoActionLabel = when (nanoStatus) {
-              FeatureStatus.DOWNLOADING -> "AICore Settings"
-              FeatureStatus.DOWNLOADABLE -> "Download"
-              else -> null
-            }
-
-            PermissionItemCard(
-              title = "On-Device AI (Gemini Nano / AICore)",
-              subtitle = nanoSubtitle,
-              isGranted = isNanoReady,
-              actionLabel = nanoActionLabel,
-              onActionClick = if (nanoActionLabel != null) {
-                {
-                  if (nanoStatus == FeatureStatus.DOWNLOADING) {
-                    DrugBarcodeScanner.openAiCoreSettings(context)
-                  } else if (nanoStatus == FeatureStatus.DOWNLOADABLE) {
-                    coroutineScope.launch {
-                      nanoProgressMessage = "Initiating download via AICore..."
-                      DrugBarcodeScanner.startNanoDownload(
-                        onProgress = { msg -> nanoProgressMessage = msg }
-                      ).fold(
-                        onSuccess = {
-                          nanoStatus = DrugBarcodeScanner.checkNanoStatus()
-                          onPermissionsChanged()
-                        },
-                        onFailure = { err ->
-                          nanoProgressMessage = err.localizedMessage ?: "Download failed"
-                          DrugBarcodeScanner.openAiCoreSettings(context)
-                        }
-                      )
+            NanoAiCard(
+              nanoStatus = nanoStatus,
+              nanoProgressMessage = nanoProgressMessage,
+              onDownloadClick = {
+                coroutineScope.launch {
+                  nanoProgressMessage = "Initiating download via AICore..."
+                  DrugBarcodeScanner.startNanoDownload(
+                    onProgress = { msg -> nanoProgressMessage = msg }
+                  ).fold(
+                    onSuccess = {
+                      nanoStatus = DrugBarcodeScanner.checkNanoStatus()
+                      onPermissionsChanged()
+                    },
+                    onFailure = { err ->
+                      nanoProgressMessage = err.localizedMessage ?: "Download failed"
+                      DrugBarcodeScanner.openAiCoreSettings(context)
                     }
-                  }
+                  )
                 }
-              } else null,
+              },
+              onSettingsClick = {
+                DrugBarcodeScanner.openAiCoreSettings(context)
+              },
+            )
+
+            FdaLookupCard(
+              allowFdaLookup = settings.allowFdaLookup,
+              onAllowFdaLookupChange = { onSaveSettings(settings.copy(allowFdaLookup = it)) },
             )
 
             PatientNameField(
@@ -712,7 +696,9 @@ fun StartupPermissionsDialog(
 ) {
   val context = LocalContext.current
   val lifecycleOwner = LocalLifecycleOwner.current
+  val coroutineScope = rememberCoroutineScope()
   var refreshTick by remember { mutableIntStateOf(0) }
+  var nanoProgressMessage by remember { mutableStateOf<String?>(null) }
 
   DisposableEffect(lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event ->
@@ -751,54 +737,111 @@ fun StartupPermissionsDialog(
     text = {
       Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
       ) {
         Text(
-          text = "Configure notification reliability, on-device AI features, and optional online drug lookup. If you skip any optional permissions now, you will not be nagged again on future launches (accessible anytime in Settings):",
+          text = if (isNanoSupported) {
+            "Configure notification reliability and optional label scanning features. You can change these anytime in Settings:"
+          } else {
+            "Configure notification reliability for your dose reminders and alarms. You can change these anytime in Settings:"
+          },
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        PermissionsChecklistSection(
-          allowFdaLookup = settings.allowFdaLookup,
-          onAllowFdaLookupChange = { onSaveSettings(settings.copy(allowFdaLookup = it)) },
-          onPermissionStateChanged = {
-            refreshTick++
-            onPermissionsChanged()
-          },
-        )
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text(
+            text = "Dose Reminders & Timing",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+          )
+          PermissionsChecklistSection(
+            onPermissionStateChanged = {
+              refreshTick++
+              onPermissionsChanged()
+            },
+          )
+        }
+
         if (isNanoSupported) {
-          Surface(
-            shape = MaterialTheme.shapes.small,
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier.fillMaxWidth(),
-          ) {
-            Column(
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
-              verticalArrangement = Arrangement.spacedBy(6.dp),
+          Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+              text = "Label Scanning Setup (Optional)",
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+              text = "On-device AI extracts medication details from prescription bottle labels without sending images to the cloud.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            NanoAiCard(
+              nanoStatus = nanoStatus,
+              nanoProgressMessage = nanoProgressMessage,
+              onDownloadClick = {
+                coroutineScope.launch {
+                  nanoProgressMessage = "Initiating download via AICore..."
+                  DrugBarcodeScanner.startNanoDownload(
+                    onProgress = { msg -> nanoProgressMessage = msg }
+                  ).fold(
+                    onSuccess = {
+                      nanoStatus = DrugBarcodeScanner.checkNanoStatus()
+                      refreshTick++
+                      onPermissionsChanged()
+                    },
+                    onFailure = { err ->
+                      nanoProgressMessage = err.localizedMessage ?: "Download failed"
+                      DrugBarcodeScanner.openAiCoreSettings(context)
+                    }
+                  )
+                }
+              },
+              onSettingsClick = {
+                DrugBarcodeScanner.openAiCoreSettings(context)
+              },
+            )
+
+            FdaLookupCard(
+              allowFdaLookup = settings.allowFdaLookup,
+              onAllowFdaLookupChange = { onSaveSettings(settings.copy(allowFdaLookup = it)) },
+            )
+
+            Surface(
+              shape = MaterialTheme.shapes.small,
+              color = MaterialTheme.colorScheme.surface,
+              modifier = Modifier.fillMaxWidth(),
             ) {
-              Text(
-                text = "Prescription Label Name (Optional)",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
-              )
-              Text(
-                text = "Used by on-device Gemini Nano as a filter so your printed name is never misread as a medication brand or generic name. This stays entirely on your device and is only required if you plan to use label scanning.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-              OutlinedTextField(
-                value = patientNameText,
-                onValueChange = {
-                  patientNameText = it
-                  onSaveSettings(settings.copy(patientName = it.trim()))
-                },
-                label = { Text("Your name as printed on labels") },
-                placeholder = { Text("e.g. Jane Doe") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-              )
+              Column(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+              ) {
+                Text(
+                  text = "Prescription Label Name (Optional)",
+                  style = MaterialTheme.typography.labelLarge,
+                  fontWeight = FontWeight.Bold,
+                )
+                Text(
+                  text = "Used by on-device Gemini Nano as a filter so your printed name is never misread as a medication brand or generic name. This stays entirely on your device and is only required if you plan to use label scanning.",
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(
+                  value = patientNameText,
+                  onValueChange = {
+                    patientNameText = it
+                    onSaveSettings(settings.copy(patientName = it.trim()))
+                  },
+                  label = { Text("Your name as printed on labels") },
+                  placeholder = { Text("e.g. Jane Doe") },
+                  singleLine = true,
+                  modifier = Modifier.fillMaxWidth(),
+                )
+              }
             }
           }
         }
@@ -825,15 +868,12 @@ fun StartupPermissionsDialog(
 
 @Composable
 fun PermissionsChecklistSection(
-  allowFdaLookup: Boolean = false,
-  onAllowFdaLookupChange: (Boolean) -> Unit = {},
   onPermissionStateChanged: () -> Unit = {},
 ) {
   val context = LocalContext.current
   val lifecycleOwner = LocalLifecycleOwner.current
   val coroutineScope = rememberCoroutineScope()
   var refreshTick by remember { mutableIntStateOf(0) }
-  var nanoStatus by remember { mutableStateOf<Int?>(null) }
   var nanoProgressMessage by remember { mutableStateOf<String?>(null) }
 
   DisposableEffect(lifecycleOwner) {
@@ -845,10 +885,6 @@ fun PermissionsChecklistSection(
     }
     lifecycleOwner.lifecycle.addObserver(observer)
     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-  }
-
-  LaunchedEffect(refreshTick) {
-    nanoStatus = DrugBarcodeScanner.checkNanoStatus()
   }
 
   val notifGranted = remember(refreshTick) {
@@ -917,98 +953,98 @@ fun PermissionsChecklistSection(
         DoseNotificationManager.requestIgnoreBatteryOptimizations(context)
       },
     )
+  }
+}
 
-    val isNanoReady = nanoStatus == FeatureStatus.AVAILABLE
-    val nanoSubtitle = when (nanoStatus) {
-      FeatureStatus.AVAILABLE ->
-        "Active — Gemini Nano is downloaded and ready for on-device label parsing"
-      FeatureStatus.DOWNLOADING ->
-        nanoProgressMessage ?: "Downloading via AICore... (Connect to unmetered Wi-Fi and charger if paused)"
-      FeatureStatus.DOWNLOADABLE ->
-        nanoProgressMessage ?: "Ready for download (~1.5 GB) — requires Wi-Fi and power/charging"
-      FeatureStatus.UNAVAILABLE ->
-        "Not supported on this hardware (manual OpenFDA search works everywhere)"
-      else -> "Checking on-device AI status..."
-    }
-    val nanoActionLabel = when (nanoStatus) {
-      FeatureStatus.DOWNLOADING -> "AICore Settings"
-      FeatureStatus.DOWNLOADABLE -> "Download"
-      else -> null
-    }
+@Composable
+private fun NanoAiCard(
+  nanoStatus: Int?,
+  nanoProgressMessage: String?,
+  onDownloadClick: () -> Unit,
+  onSettingsClick: () -> Unit,
+) {
+  val isNanoReady = nanoStatus == FeatureStatus.AVAILABLE
+  val nanoSubtitle = when (nanoStatus) {
+    FeatureStatus.AVAILABLE ->
+      "Gemini Nano is downloaded and ready for on-device label parsing"
+    FeatureStatus.DOWNLOADING ->
+      nanoProgressMessage ?: "Downloading model via AICore (~1.5 GB)..."
+    FeatureStatus.DOWNLOADABLE ->
+      nanoProgressMessage ?: "Ready for download (~1.5 GB) — requires Wi-Fi and power/charging"
+    FeatureStatus.UNAVAILABLE ->
+      "Not supported on this hardware (manual OpenFDA search works everywhere)"
+    else -> "Checking on-device AI status..."
+  }
+  val nanoActionLabel = when (nanoStatus) {
+    FeatureStatus.DOWNLOADING -> "AICore Settings"
+    FeatureStatus.DOWNLOADABLE -> "Download"
+    else -> null
+  }
 
-    PermissionItemCard(
-      title = "4. On-Device AI (Gemini Nano / AICore)",
-      subtitle = nanoSubtitle,
-      isGranted = isNanoReady,
-      actionLabel = nanoActionLabel,
-      onActionClick = if (nanoActionLabel != null) {
-        {
-          if (nanoStatus == FeatureStatus.DOWNLOADING) {
-            DrugBarcodeScanner.openAiCoreSettings(context)
-          } else if (nanoStatus == FeatureStatus.DOWNLOADABLE) {
-            coroutineScope.launch {
-              nanoProgressMessage = "Initiating download via AICore..."
-              DrugBarcodeScanner.startNanoDownload(
-                onProgress = { msg -> nanoProgressMessage = msg }
-              ).fold(
-                onSuccess = {
-                  nanoStatus = DrugBarcodeScanner.checkNanoStatus()
-                  onPermissionStateChanged()
-                },
-                onFailure = { err ->
-                  nanoProgressMessage = err.localizedMessage ?: "Download failed"
-                  DrugBarcodeScanner.openAiCoreSettings(context)
-                }
-              )
-            }
-          }
+  PermissionItemCard(
+    title = "On-Device AI (Gemini Nano / AICore)",
+    subtitle = nanoSubtitle,
+    isGranted = isNanoReady,
+    actionLabel = nanoActionLabel,
+    onActionClick = if (nanoActionLabel != null) {
+      {
+        if (nanoStatus == FeatureStatus.DOWNLOADING) {
+          onSettingsClick()
+        } else if (nanoStatus == FeatureStatus.DOWNLOADABLE) {
+          onDownloadClick()
         }
-      } else null,
-    )
+      }
+    } else null,
+  )
+}
 
-    Surface(
-      shape = MaterialTheme.shapes.small,
-      color = if (allowFdaLookup) {
-        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
-      } else {
-        MaterialTheme.colorScheme.surface
-      },
+@Composable
+private fun FdaLookupCard(
+  allowFdaLookup: Boolean,
+  onAllowFdaLookupChange: (Boolean) -> Unit,
+) {
+  Surface(
+    shape = MaterialTheme.shapes.small,
+    color = if (allowFdaLookup) {
+      MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f)
+    } else {
+      MaterialTheme.colorScheme.surface
+    },
+    modifier = Modifier
+      .fillMaxWidth()
+      .clickable { onAllowFdaLookupChange(!allowFdaLookup) },
+  ) {
+    Row(
       modifier = Modifier
         .fillMaxWidth()
-        .clickable { onAllowFdaLookupChange(!allowFdaLookup) },
+        .padding(horizontal = 12.dp, vertical = 10.dp),
+      verticalAlignment = Alignment.CenterVertically,
     ) {
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Checkbox(
-          checked = allowFdaLookup,
-          onCheckedChange = onAllowFdaLookupChange,
+      Checkbox(
+        checked = allowFdaLookup,
+        onCheckedChange = onAllowFdaLookupChange,
+      )
+      Spacer(modifier = Modifier.width(8.dp))
+      Column(modifier = Modifier.weight(1f)) {
+        Text(
+          text = "OpenFDA Medication Lookup",
+          style = MaterialTheme.typography.labelLarge,
+          fontWeight = FontWeight.Bold,
+          color = if (allowFdaLookup) {
+            MaterialTheme.colorScheme.onSecondaryContainer
+          } else {
+            MaterialTheme.colorScheme.onSurface
+          },
         )
-        Spacer(modifier = Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-          Text(
-            text = "5. OpenFDA Medication Lookup",
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-            color = if (allowFdaLookup) {
-              MaterialTheme.colorScheme.onSecondaryContainer
-            } else {
-              MaterialTheme.colorScheme.onSurface
-            },
-          )
-          Text(
-            text = "Allow medication lookup via FDA API. Medication data (such as drug name, strength, or NDC) will be sent to official OpenFDA servers for autofill and verification. No personally identifiable information (PII) is included.",
-            style = MaterialTheme.typography.bodySmall,
-            color = if (allowFdaLookup) {
-              MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
-            } else {
-              MaterialTheme.colorScheme.onSurfaceVariant
-            },
-          )
-        }
+        Text(
+          text = "Allow medication lookup via FDA API. Medication data (such as drug name, strength, or NDC) will be sent to official OpenFDA servers for autofill and verification. No personally identifiable information (PII) is included.",
+          style = MaterialTheme.typography.bodySmall,
+          color = if (allowFdaLookup) {
+            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
+          } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+          },
+        )
       }
     }
   }

@@ -14,20 +14,20 @@ class FdaNdcLookupServiceTest {
   @Test
   fun canonicalNdc11_converts10DigitAnd11DigitInputs() {
     // 4-4-2 -> 5-4-2
-    assertEquals("00009-0085-10", FdaNdcLookupService.toCanonicalNdc11("0009-0085-10"))
+    assertEquals("00517-0031-25", FdaNdcLookupService.toCanonicalNdc11("0517-0031-25"))
     // 5-3-2 -> 5-4-2
-    assertEquals("59417-0104-10", FdaNdcLookupService.toCanonicalNdc11("59417-104-10"))
+    assertEquals("50580-0496-50", FdaNdcLookupService.toCanonicalNdc11("50580-496-50"))
     // 5-4-1 -> 5-4-2
     assertEquals("12345-6789-01", FdaNdcLookupService.toCanonicalNdc11("12345-6789-1"))
     // Unhyphenated 11 digits -> 5-4-2
-    assertEquals("00009-0085-10", FdaNdcLookupService.toCanonicalNdc11("00009008510"))
+    assertEquals("00517-0031-25", FdaNdcLookupService.toCanonicalNdc11("00517003125"))
   }
 
   @Test
   fun buildOpenFdaSearchQuery_includesUnpaddedOpenFdaCandidates() {
-    val query = FdaNdcLookupService.buildOpenFdaSearchQuery("00009-0085-10")
-    assertTrue(query.contains("packaging.package_ndc:\"0009-0085-10\""))
-    assertTrue(query.contains("product_ndc:\"0009-0085\""))
+    val query = FdaNdcLookupService.buildOpenFdaSearchQuery("00517-0031-25")
+    assertTrue(query.contains("packaging.package_ndc:\"0517-0031-25\""))
+    assertTrue(query.contains("product_ndc:\"0517-0031\""))
   }
 
   @Test
@@ -36,22 +36,22 @@ class FdaNdcLookupServiceTest {
       {
         "results": [
           {
-            "product_ndc": "0009-0085",
-            "generic_name": "TESTOSTERONE CYPIONATE",
-            "brand_name": "DEPO-TESTOSTERONE",
-            "labeler_name": "Pharmacia & Upjohn Company LLC",
+            "product_ndc": "0517-0031",
+            "generic_name": "CYANOCOBALAMIN",
+            "brand_name": "CYANOCOBALAMIN",
+            "labeler_name": "American Regent, Inc.",
             "dosage_form": "INJECTION, SOLUTION",
             "route": ["INTRAMUSCULAR"],
             "active_ingredients": [
               {
-                "name": "TESTOSTERONE CYPIONATE",
-                "strength": "200 mg/mL"
+                "name": "CYANOCOBALAMIN",
+                "strength": "1 mg/mL"
               }
             ],
             "packaging": [
               {
-                "package_ndc": "0009-0085-10",
-                "description": "10 mL in 1 VIAL, MULTI-DOSE"
+                "package_ndc": "0517-0031-25",
+                "description": "30 mL in 1 VIAL, MULTI-DOSE"
               }
             ]
           }
@@ -59,17 +59,17 @@ class FdaNdcLookupServiceTest {
       }
     """.trimIndent()
 
-    val result = FdaNdcLookupService.parseOpenFdaJson(sampleOpenFdaResponse, "00009-0085-10")
+    val result = FdaNdcLookupService.parseOpenFdaJson(sampleOpenFdaResponse, "00517-0031-25")
     assertNotNull(result)
-    assertEquals("Testosterone Cypionate", result!!.formulaName)
-    assertEquals("Depo-testosterone", result.brandName)
-    assertEquals("Pharmacia & Upjohn Company LLC", result.manufacturer)
-    assertEquals("200 mg/mL", result.strength)
+    assertEquals("Cyanocobalamin", result!!.formulaName)
+    assertEquals("Cyanocobalamin", result.brandName)
+    assertEquals("American Regent, Inc.", result.manufacturer)
+    assertEquals("1 mg/mL", result.strength)
     assertEquals(MedicationForm.INJECTABLE_VIAL, result.form)
     assertEquals(DoseUnit.MG, result.defaultDoseUnit)
     assertEquals(InjectionRoute.IM, result.route)
-    assertEquals(200.0, result.concentrationMgPerMl!!, 0.001)
-    assertEquals(10.0, result.vialVolumeMl!!, 0.001)
+    assertEquals(1.0, result.concentrationMgPerMl!!, 0.001)
+    assertEquals(30.0, result.vialVolumeMl!!, 0.001)
   }
 
   @Test
@@ -88,24 +88,24 @@ class FdaNdcLookupServiceTest {
   @Test
   fun parseDrugBarcode_extractsNdcExpAndLotFromGs1DataMatrixAndUpc() {
     // 1. Parenthesized GS1 DataMatrix
-    val gs1Paren = FdaNdcLookupService.parseDrugBarcode("(01)00300090085106(17)271231(10)PFZ882")
-    assertEquals("0009008510", gs1Paren.extractedNdc)
+    val gs1Paren = FdaNdcLookupService.parseDrugBarcode("(01)00305170031252(17)271231(10)LOT882")
+    assertEquals("0517003125", gs1Paren.extractedNdc)
     assertEquals("2027-12-31", gs1Paren.expirationDateIso)
-    assertEquals("PFZ882", gs1Paren.lotNumber)
+    assertEquals("LOT882", gs1Paren.lotNumber)
 
     // 2. Raw GS1 DataMatrix with AIM identifier "]d2"
-    val gs1Raw = FdaNdcLookupService.parseDrugBarcode("]d201003594170104151728063010LOT42")
-    assertEquals("5941701041", gs1Raw.extractedNdc)
+    val gs1Raw = FdaNdcLookupService.parseDrugBarcode("]d201003505800496511728063010LOT42")
+    assertEquals("5058004965", gs1Raw.extractedNdc)
     assertEquals("2028-06-30", gs1Raw.expirationDateIso)
     assertEquals("LOT42", gs1Raw.lotNumber)
 
     // 3. 12-digit UPC-A starting with '3' (3 + 10-digit NDC + check digit)
-    val upcA = FdaNdcLookupService.parseDrugBarcode("300090085106")
-    assertEquals("0009008510", upcA.extractedNdc)
+    val upcA = FdaNdcLookupService.parseDrugBarcode("305170031252")
+    assertEquals("0517003125", upcA.extractedNdc)
 
     // 4. Candidate NDC-11s for a 10-digit unhyphenated barcode cover 4-4-2, 5-3-2, and 5-4-1
-    val candidates = FdaNdcLookupService.candidateNdc11s("(01)00359417104105")
-    assertTrue(candidates.contains("59417-0104-10"))
+    val candidates = FdaNdcLookupService.candidateNdc11s("(01)00350580496502")
+    assertTrue(candidates.contains("50580-0496-50"))
 
     // 5. Short OTC packaging code (e.g. "824208" on Allegra label corner) gives non-NDC hint
     val shortCode = FdaNdcLookupService.parseDrugBarcode("824208")
@@ -115,32 +115,32 @@ class FdaNdcLookupServiceTest {
 
   @Test
   fun drugLabelParser_parsesGeminiNanoStructuredJsonOutputs() {
-    // 1. Zydus Anastrozole 1mg Pharmacy Vial JSON from Gemini Nano
-    val zydusVial = DrugLabelParser.parseGeminiJsonResponse(
+    // 1. Teva Amoxicillin-Clavulanate Rx Bottle JSON from Gemini Nano
+    val amoxVial = DrugLabelParser.parseGeminiJsonResponse(
       """
       ```json
       {
         "ndc": null,
-        "formulaName": "Anastrozole",
+        "formulaName": "Amoxicillin and Clavulanate Potassium",
         "brandName": null,
-        "strength": "1 mg",
+        "strength": "875 mg / 125 mg",
         "form": "TABLET",
         "defaultDoseAmount": 1.0,
-        "manufacturer": "Zydus",
+        "manufacturer": "Teva",
         "prescriberName": null,
         "lotNumber": null,
         "expirationDateIso": null,
-        "instructions": "Take 1 tablet by mouth 1 time a week",
+        "instructions": "Take 1 tablet by mouth twice daily with food",
         "isCompound": false
       }
       ```
       """.trimIndent()
     )
-    assertEquals("Anastrozole", zydusVial.formulaName)
-    assertEquals("1 mg", zydusVial.strength)
-    assertEquals(MedicationForm.TABLET, zydusVial.form)
-    assertEquals("Zydus", zydusVial.manufacturer)
-    assertEquals(1.0, zydusVial.defaultDoseAmount!!, 0.001)
+    assertEquals("Amoxicillin and Clavulanate Potassium", amoxVial.formulaName)
+    assertEquals("875 mg / 125 mg", amoxVial.strength)
+    assertEquals(MedicationForm.TABLET, amoxVial.form)
+    assertEquals("Teva", amoxVial.manufacturer)
+    assertEquals(1.0, amoxVial.defaultDoseAmount!!, 0.001)
 
     // 2. Allegra Allergy 24HR OTC Bottle JSON (including canonical NDC-11 normalization from 41167-4122-2)
     val allegra = DrugLabelParser.parseGeminiJsonResponse(
@@ -168,19 +168,19 @@ class FdaNdcLookupServiceTest {
     assertEquals("43336", allegra.lotNumber)
     assertEquals("2027-10-28", allegra.expirationDateIso)
 
-    // 3. XeCare Multi-Ingredient Compound Bottle JSON
+    // 3. Multi-Ingredient Compound Bottle JSON
     val compound = DrugLabelParser.parseGeminiJsonResponse(
       """
       {
         "ndc": null,
-        "formulaName": "Finasteride / Minoxidil / Biotin / Vitamin B5 / Vitamin B6 / Vitamin C",
+        "formulaName": "Ascorbic Acid / Biotin / Vitamin B5 / Vitamin B6",
         "brandName": null,
-        "strength": "1.2 mg / 3 mg / 2.5 mg / 11 mg / 2.5 mg / 100 mg",
+        "strength": "100 mg / 2.5 mg / 11 mg / 2.5 mg",
         "form": "TABLET",
         "defaultDoseAmount": 1.0,
-        "manufacturer": "XeCare LLC",
-        "prescriberName": "Jeffrey Vacek",
-        "lotNumber": "DPTSESKSLIEE",
+        "manufacturer": "Town Compound Pharmacy",
+        "prescriberName": "Robert Smith",
+        "lotNumber": "LOT123456",
         "expirationDateIso": "2026-11-07",
         "instructions": "Chew or swallow 1 tablet by mouth daily",
         "isCompound": true
@@ -188,74 +188,74 @@ class FdaNdcLookupServiceTest {
       """.trimIndent()
     )
     assertTrue(compound.isCompound)
-    assertTrue(compound.formulaName!!.contains("Finasteride"))
-    assertTrue(compound.formulaName.contains("Minoxidil"))
-    assertTrue(compound.strength!!.contains("1.2 mg"))
-    assertEquals("Jeffrey Vacek", compound.prescriberName)
-    assertEquals("DPTSESKSLIEE", compound.lotNumber)
-    assertEquals("XeCare LLC", compound.manufacturer)
+    assertTrue(compound.formulaName!!.contains("Ascorbic Acid"))
+    assertTrue(compound.formulaName.contains("Biotin"))
+    assertTrue(compound.strength!!.contains("100 mg"))
+    assertEquals("Robert Smith", compound.prescriberName)
+    assertEquals("LOT123456", compound.lotNumber)
+    assertEquals("Town Compound Pharmacy", compound.manufacturer)
   }
 
   @Test
   fun crossReferenceDisambiguation_neverGuessesWithLimitedDataAndResolvesExactMfgMatch() {
     val pool = listOf(
       FdaDrugLookupResult(
-        ndc11 = "68382-0205-05",
-        formulaName = "Anastrozole",
+        ndc11 = "00781-1852-20",
+        formulaName = "Amoxicillin / Clavulanate Potassium",
         brandName = null,
-        manufacturer = "Zydus Pharmaceuticals (USA) Inc.",
-        strength = "1 mg",
+        manufacturer = "Sandoz Inc.",
+        strength = "875 mg / 125 mg",
         form = MedicationForm.TABLET,
         defaultDoseUnit = DoseUnit.TABLET,
       ),
       FdaDrugLookupResult(
-        ndc11 = "16729-0035-10",
-        formulaName = "Anastrozole",
+        ndc11 = "00093-2274-34",
+        formulaName = "Amoxicillin / Clavulanate Potassium",
         brandName = null,
-        manufacturer = "Accord Healthcare, Inc.",
-        strength = "1 mg",
+        manufacturer = "Teva Pharmaceuticals USA, Inc.",
+        strength = "875 mg / 125 mg",
         form = MedicationForm.TABLET,
         defaultDoseUnit = DoseUnit.TABLET,
       ),
       FdaDrugLookupResult(
-        ndc11 = "59417-0103-10",
-        formulaName = "Lisdexamfetamine Dimesylate",
-        brandName = "Vyvanse",
-        manufacturer = "Takeda Pharmaceuticals America, Inc.",
-        strength = "30 mg",
-        form = MedicationForm.CAPSULE,
-        defaultDoseUnit = DoseUnit.CAPSULE,
+        ndc11 = "00573-0150-20",
+        formulaName = "Ibuprofen",
+        brandName = "Advil",
+        manufacturer = "GlaxoSmithKline Consumer Healthcare",
+        strength = "200 mg",
+        form = MedicationForm.TABLET,
+        defaultDoseUnit = DoseUnit.TABLET,
       ),
       FdaDrugLookupResult(
-        ndc11 = "59417-0104-10",
-        formulaName = "Lisdexamfetamine Dimesylate",
-        brandName = "Vyvanse",
-        manufacturer = "Takeda Pharmaceuticals America, Inc.",
-        strength = "40 mg",
-        form = MedicationForm.CAPSULE,
-        defaultDoseUnit = DoseUnit.CAPSULE,
+        ndc11 = "00573-0160-20",
+        formulaName = "Ibuprofen",
+        brandName = "Advil",
+        manufacturer = "GlaxoSmithKline Consumer Healthcare",
+        strength = "400 mg",
+        form = MedicationForm.TABLET,
+        defaultDoseUnit = DoseUnit.TABLET,
       ),
     )
 
-    // Case 1: Name + Strength + Form + Manufacturer ("ZYDUS") -> UnambiguousMatch for Zydus
+    // Case 1: Name + Strength + Form + Manufacturer ("SANDOZ") -> UnambiguousMatch for Sandoz
     val fullCriteria = DrugCrossReferenceCriteria(
-      formulaName = "Anastrozole",
-      strength = "1 mg",
+      formulaName = "Amoxicillin / Clavulanate Potassium",
+      strength = "875 mg / 125 mg",
       form = MedicationForm.TABLET,
-      manufacturer = "ZYDUS",
+      manufacturer = "SANDOZ",
     )
     val scoredFull = FdaNdcLookupService.scoreAndFilterCandidates(pool, fullCriteria)
     val outcomeFull = FdaNdcLookupService.evaluateDisambiguation(scoredFull, fullCriteria)
     assertTrue(outcomeFull is CrossReferenceOutcome.UnambiguousMatch)
     assertEquals(
-      "68382-0205-05",
+      "00781-1852-20",
       (outcomeFull as CrossReferenceOutcome.UnambiguousMatch).candidate.result.ndc11
     )
 
     // Case 2: Name + Strength WITHOUT Manufacturer when multiple manufacturers exist -> NeedsUserSelection
     val noMfgCriteria = DrugCrossReferenceCriteria(
-      formulaName = "Anastrozole",
-      strength = "1 mg",
+      formulaName = "Amoxicillin / Clavulanate Potassium",
+      strength = "875 mg / 125 mg",
       form = MedicationForm.TABLET,
       manufacturer = null,
     )
@@ -263,27 +263,27 @@ class FdaNdcLookupServiceTest {
     val outcomeNoMfg = FdaNdcLookupService.evaluateDisambiguation(scoredNoMfg, noMfgCriteria)
     assertTrue(outcomeNoMfg is CrossReferenceOutcome.NeedsUserSelection)
 
-    // Case 3: Brand Name ("Vyvanse") WITHOUT Strength when multiple strengths exist -> NeedsUserSelection
+    // Case 3: Brand Name ("Advil") WITHOUT Strength when multiple strengths exist -> NeedsUserSelection
     val noStrengthCriteria = DrugCrossReferenceCriteria(
-      brandName = "Vyvanse",
+      brandName = "Advil",
       strength = null,
     )
     val scoredNoStrength = FdaNdcLookupService.scoreAndFilterCandidates(pool, noStrengthCriteria)
     val outcomeNoStrength = FdaNdcLookupService.evaluateDisambiguation(scoredNoStrength, noStrengthCriteria)
     assertTrue(outcomeNoStrength is CrossReferenceOutcome.NeedsUserSelection)
 
-    // Case 4: Fuzzy / OCR-corrupted name ("Anastroz0le" or "Anastrazole") + Strength + Mfg -> UnambiguousMatch
+    // Case 4: Fuzzy / OCR-corrupted name ("Amox1cillin / Clavulanate") + Strength + Mfg -> UnambiguousMatch
     val fuzzyOcrCriteria = DrugCrossReferenceCriteria(
-      formulaName = "Anastroz0le",
-      strength = "1 mg",
+      formulaName = "Amox1cillin / Clavulanate",
+      strength = "875 mg / 125 mg",
       form = MedicationForm.TABLET,
-      manufacturer = "ZYDU5",
+      manufacturer = "5AND0Z",
     )
     val scoredFuzzy = FdaNdcLookupService.scoreAndFilterCandidates(pool, fuzzyOcrCriteria)
     val outcomeFuzzy = FdaNdcLookupService.evaluateDisambiguation(scoredFuzzy, fuzzyOcrCriteria)
     assertTrue(outcomeFuzzy is CrossReferenceOutcome.UnambiguousMatch)
     assertEquals(
-      "68382-0205-05",
+      "00781-1852-20",
       (outcomeFuzzy as CrossReferenceOutcome.UnambiguousMatch).candidate.result.ndc11
     )
   }

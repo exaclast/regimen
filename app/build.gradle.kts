@@ -33,14 +33,14 @@ val hasReleaseSigning = !resolvedKeystorePath.isNullOrBlank() &&
 
 android {
   namespace = "com.exaclast.regimen"
-  // Material 3 1.5 requires compiling against API 37; use the installed 37.2 platform. targetSdk stays 36.
+  // Material 3 1.5 requires compiling against API 37; use the installed 37.2 platform.
   compileSdk {
     version = release(37) { minorApiLevel = 2 }
   }
   defaultConfig {
     applicationId = "com.exaclast.regimen"
     minSdk = 26
-    targetSdk = 36
+    targetSdk = 37
     versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
     versionName = System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.0.0"
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

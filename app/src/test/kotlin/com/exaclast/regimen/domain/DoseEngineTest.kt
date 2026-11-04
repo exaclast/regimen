@@ -19,7 +19,7 @@ class DoseEngineTest {
 
   private val sampleInjectable = Medication(
     id = "med_im",
-    formulaName = "Testosterone Cypionate",
+    formulaName = "Cyanocobalamin (Vitamin B12)",
     strength = "200 mg/mL",
     form = MedicationForm.INJECTABLE_VIAL,
     defaultDoseAmount = 100.0,

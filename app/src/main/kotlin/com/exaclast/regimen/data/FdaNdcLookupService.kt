@@ -380,15 +380,6 @@ object FdaNdcLookupService {
         }
       }
 
-      for (candidate in candidates) {
-        offlineCatalog[candidate]?.let {
-          return@runCatching it.copy(
-            expirationDateIso = parsedBarcode.expirationDateIso,
-            lotNumber = parsedBarcode.lotNumber,
-          )
-        }
-      }
-
       throw IllegalStateException(
         parsedBarcode.nonNdcHint
           ?: "No matching FDA NDC record found for $primaryNdc11. Tap 'Scan Label' to read the printed drug name & strength."
@@ -490,13 +481,6 @@ object FdaNdcLookupService {
     val responseBody = runCatching { fetchHttpUrl(urlString) }.getOrNull()
     if (responseBody != null) {
       apiResults.addAll(parseAllOpenFdaItems(responseBody))
-    }
-
-    // Also include matching entries from our offline fallback catalog
-    offlineCatalog.values.forEach { item ->
-      if (apiResults.none { it.ndc11 == item.ndc11 }) {
-        apiResults.add(item)
-      }
     }
 
     val scoredCandidates = scoreAndFilterCandidates(apiResults, criteria)
@@ -711,7 +695,7 @@ object FdaNdcLookupService {
    * - Normalizes OCR lookalike digits (`0`->`o`, `1`->`i`, `5`->`s`, `8`->`b`, `2`->`z`) and `l`/`i` equivalence.
    * - Accepts exact or substring matches (for tokens >= 4 chars).
    * - Accepts Levenshtein edit distance <= 1 for 5..7 char tokens, and <= 2 for 8+ char tokens
-   *   (e.g., "anastroz0le" or "anastrazole" -> "anastrozole").
+   *   (e.g., "amoxicill1n" or "amoxicilin" -> "amoxicillin").
    */
   internal fun tokensMatchFuzzy(queryToken: String, candidateToken: String): Boolean {
     val q = DrugLabelParser.deobfuscateOcrWord(queryToken).lowercase()
@@ -924,68 +908,4 @@ object FdaNdcLookupService {
       }
     }
   }
-
-  private val offlineCatalog = mapOf(
-    "00009-0085-10" to FdaDrugLookupResult(
-      ndc11 = "00009-0085-10",
-      formulaName = "Testosterone Cypionate",
-      brandName = "Depo-Testosterone",
-      manufacturer = "Pharmacia & Upjohn / Pfizer",
-      strength = "200 mg/mL",
-      form = MedicationForm.INJECTABLE_VIAL,
-      defaultDoseUnit = DoseUnit.MG,
-      route = InjectionRoute.IM,
-      concentrationMgPerMl = 200.0,
-      vialVolumeMl = 10.0,
-      packageDescription = "10 mL in 1 VIAL, MULTI-DOSE",
-    ),
-    "59417-0104-10" to FdaDrugLookupResult(
-      ndc11 = "59417-0104-10",
-      formulaName = "Lisdexamfetamine Dimesylate",
-      brandName = "Vyvanse",
-      manufacturer = "Takeda Pharmaceuticals America, Inc.",
-      strength = "40 mg",
-      form = MedicationForm.CAPSULE,
-      defaultDoseUnit = DoseUnit.CAPSULE,
-    ),
-    "24338-0853-13" to FdaDrugLookupResult(
-      ndc11 = "24338-0853-13",
-      formulaName = "Dextroamphetamine Sulfate",
-      brandName = "Zenzedi",
-      manufacturer = "Azurity Pharmaceuticals, Inc.",
-      strength = "5 mg",
-      form = MedicationForm.TABLET,
-      defaultDoseUnit = DoseUnit.TABLET,
-    ),
-    "00169-7501-11" to FdaDrugLookupResult(
-      ndc11 = "00169-7501-11",
-      formulaName = "Semaglutide",
-      brandName = "Ozempic",
-      manufacturer = "Novo Nordisk Inc.",
-      strength = "1.34 mg/mL",
-      form = MedicationForm.INJECTABLE_PEN,
-      defaultDoseUnit = DoseUnit.MG,
-      route = InjectionRoute.SC,
-      concentrationMgPerMl = 1.34,
-      vialVolumeMl = 3.0,
-    ),
-    "68382-0205-05" to FdaDrugLookupResult(
-      ndc11 = "68382-0205-05",
-      formulaName = "Anastrozole",
-      brandName = null,
-      manufacturer = "Zydus Pharmaceuticals (USA) Inc.",
-      strength = "1 mg",
-      form = MedicationForm.TABLET,
-      defaultDoseUnit = DoseUnit.TABLET,
-    ),
-    "41167-4122-02" to FdaDrugLookupResult(
-      ndc11 = "41167-4122-02",
-      formulaName = "Fexofenadine HCl",
-      brandName = "Allegra Allergy",
-      manufacturer = "Chattem, Inc. / Sanofi",
-      strength = "180 mg",
-      form = MedicationForm.TABLET,
-      defaultDoseUnit = DoseUnit.TABLET,
-    ),
-  )
 }

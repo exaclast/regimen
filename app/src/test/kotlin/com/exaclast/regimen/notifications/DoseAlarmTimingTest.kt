@@ -16,7 +16,7 @@ class DoseAlarmTimingTest {
   fun dateIsoFromItemKey_handlesUnderscoredBucketIdsAndUuids() {
     assertEquals(
       "2026-11-03",
-      DoseAlarmTiming.dateIsoFromItemKey("sched_vyvanse_daily_bucket_morning_2026-11-03"),
+      DoseAlarmTiming.dateIsoFromItemKey("sched_med_daily_bucket_morning_2026-11-03"),
     )
     assertEquals(
       "2026-12-31",

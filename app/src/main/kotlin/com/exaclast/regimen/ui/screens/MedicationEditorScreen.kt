@@ -41,7 +41,6 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -642,105 +641,112 @@ fun MedicationEditorScreen(
     },
   ) {
           // 1. Top Label OCR Scanner & OpenFDA Cross-Reference Bar + Core Medication Identity
-          Surface(
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            modifier = Modifier.fillMaxWidth(),
-          ) {
-            Column(
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-              verticalArrangement = Arrangement.spacedBy(8.dp),
+          val activeFeedback = ndcErrorText ?: ndcStatusText
+          val showActionHeader = isGeminiNanoSupported || allowFdaLookup || !activeFeedback.isNullOrBlank()
+          if (showActionHeader) {
+            Surface(
+              shape = MaterialTheme.shapes.medium,
+              color = MaterialTheme.colorScheme.surfaceContainerLow,
+              modifier = Modifier.fillMaxWidth(),
             ) {
-              FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+              Column(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
               ) {
-                FilledTonalButton(
-                  onClick = {
-                    val uri = runCatching { DrugBarcodeScanner.createTempLabelPhotoUri(context) }.getOrNull()
-                    if (uri != null) {
-                      pendingLabelPhotoUri = uri
-                      runCatching {
-                        cameraLabelLauncher.launch(uri)
-                      }.onFailure {
-                        showLabelScanDialog = true
-                      }
-                    } else {
-                      showLabelScanDialog = true
-                    }
-                  },
-                  enabled = isGeminiNanoSupported && !isLookingUpNdc,
-                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                ) {
-                  Icon(
-                    Icons.Default.DocumentScanner,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                  )
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Scan Label")
-                }
-                OutlinedButton(
-                  onClick = { showLabelScanDialog = true },
-                  enabled = isGeminiNanoSupported && !isLookingUpNdc,
-                  contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                ) {
-                  Icon(
-                    Icons.Default.PhotoLibrary,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                  )
-                  Spacer(modifier = Modifier.width(6.dp))
-                  Text("Label Photo")
-                }
-                if (allowFdaLookup) {
-                  OutlinedButton(
-                    onClick = {
-                      runCrossReferenceLookup(
-                        DrugCrossReferenceCriteria(
-                          ndc = ndc11.takeIf { it.isNotBlank() },
-                          formulaName = formulaName.takeIf { it.isNotBlank() },
-                          brandName = brandName.takeIf { it.isNotBlank() },
-                          strength = strength.takeIf { it.isNotBlank() },
-                          form = form,
-                          manufacturer = manufacturer.takeIf { it.isNotBlank() },
-                        )
-                      )
-                    },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                if (isGeminiNanoSupported || allowFdaLookup) {
+                  FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                   ) {
-                    if (isLookingUpNdc) {
-                      CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
-                        strokeWidth = 2.dp,
-                      )
-                    } else {
-                      Icon(
-                        Icons.Default.Search,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                      )
+                    if (isGeminiNanoSupported) {
+                      FilledTonalButton(
+                        onClick = {
+                          val uri = runCatching { DrugBarcodeScanner.createTempLabelPhotoUri(context) }.getOrNull()
+                          if (uri != null) {
+                            pendingLabelPhotoUri = uri
+                            runCatching {
+                              cameraLabelLauncher.launch(uri)
+                            }.onFailure {
+                              showLabelScanDialog = true
+                            }
+                          } else {
+                            showLabelScanDialog = true
+                          }
+                        },
+                        enabled = !isLookingUpNdc,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                      ) {
+                        Icon(
+                          Icons.Default.DocumentScanner,
+                          contentDescription = null,
+                          modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Scan Label")
+                      }
+                      OutlinedButton(
+                        onClick = { showLabelScanDialog = true },
+                        enabled = !isLookingUpNdc,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                      ) {
+                        Icon(
+                          Icons.Default.PhotoLibrary,
+                          contentDescription = null,
+                          modifier = Modifier.size(16.dp),
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Label Photo")
+                      }
                     }
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Match FDA")
+                    if (allowFdaLookup) {
+                      OutlinedButton(
+                        onClick = {
+                          runCrossReferenceLookup(
+                            DrugCrossReferenceCriteria(
+                              ndc = ndc11.takeIf { it.isNotBlank() },
+                              formulaName = formulaName.takeIf { it.isNotBlank() },
+                              brandName = brandName.takeIf { it.isNotBlank() },
+                              strength = strength.takeIf { it.isNotBlank() },
+                              form = form,
+                              manufacturer = manufacturer.takeIf { it.isNotBlank() },
+                            )
+                          )
+                        },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                      ) {
+                        if (isLookingUpNdc) {
+                          CircularProgressIndicator(
+                            modifier = Modifier.size(14.dp),
+                            strokeWidth = 2.dp,
+                          )
+                        } else {
+                          Icon(
+                            Icons.Default.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                          )
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Match FDA")
+                      }
+                    }
                   }
                 }
-              }
 
-              val activeFeedback = ndcErrorText ?: ndcStatusText
-              if (!activeFeedback.isNullOrBlank()) {
-                Text(
-                  text = activeFeedback,
-                  style = MaterialTheme.typography.labelSmall,
-                  color = if (ndcErrorText != null) {
-                    MaterialTheme.colorScheme.error
-                  } else {
-                    MaterialTheme.colorScheme.primary
-                  },
-                )
+                if (!activeFeedback.isNullOrBlank()) {
+                  Text(
+                    text = activeFeedback,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (ndcErrorText != null) {
+                      MaterialTheme.colorScheme.error
+                    } else {
+                      MaterialTheme.colorScheme.primary
+                    },
+                  )
+                }
               }
             }
           }
@@ -749,7 +755,7 @@ fun MedicationEditorScreen(
             value = brandName,
             onValueChange = { brandName = it },
             label = { Text("Brand Name (Optional)") },
-            placeholder = { Text("e.g. Depo-Testosterone, Vyvanse") },
+            placeholder = { Text("e.g. Augmentin, Tylenol, Advil") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
           )
@@ -758,7 +764,7 @@ fun MedicationEditorScreen(
             value = formulaName,
             onValueChange = { formulaName = it },
             label = { Text("Formula / Generic Name *") },
-            placeholder = { Text("e.g. Testosterone Cypionate") },
+            placeholder = { Text("e.g. Amoxicillin / Clavulanate, Acetaminophen") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
           )
@@ -1146,7 +1152,7 @@ fun MedicationEditorScreen(
                 ndcMatched = false
               },
               label = { Text("NDC-11 (Optional)") },
-              placeholder = { Text("e.g. 00009-0085-10") },
+              placeholder = { Text("e.g. 00781-1852-20") },
               singleLine = true,
               trailingIcon = {
                 if (allowFdaLookup && ndc11.isNotBlank()) {
@@ -1214,7 +1220,7 @@ fun MedicationEditorScreen(
   }
 
   // Label OCR Photo / Paste Dialog (for pharmacy vials, compounded bottles, and OTC labels)
-  if (showLabelScanDialog) {
+  if (isGeminiNanoSupported && showLabelScanDialog) {
     AlertDialog(
       onDismissRequest = { showLabelScanDialog = false },
       title = { Text("Scan or Paste Medication Label Text") },
@@ -1263,68 +1269,14 @@ fun MedicationEditorScreen(
           OutlinedTextField(
             value = manualLabelInput,
             onValueChange = { manualLabelInput = it },
-            label = { Text("Or Paste / Test Printed Label Text") },
+            label = { Text("Or Paste Printed Label Text") },
             placeholder = {
-              Text("ANASTROZOLE 1MG TABLET\nMFG ZYDUS\nTAKE 1 TABLET BY MOUTH")
+              Text("Paste text copied from a prescription label or pharmacy portal...")
             },
             minLines = 3,
             maxLines = 6,
             modifier = Modifier.fillMaxWidth(),
           )
-          Text(
-            text = "Sample Real Bottle Labels:",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.primary,
-          )
-          FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-          ) {
-            AssistChip(
-              onClick = {
-                manualLabelInput = """
-                  CASEY BROWN
-                  ANASTROZOLE 1MG TABLET
-                  MFG ZYDUS
-                  TAKE 1 TABLET BY MOUTH 1 TIME A WEEK
-                  2 REFILLS BEFORE 04/05/27 QTY 12
-                """.trimIndent()
-              },
-              label = { Text("Pharmacy Vial (Anastrozole Zydus)") },
-            )
-            AssistChip(
-              onClick = {
-                manualLabelInput = """
-                  CASEY BROWN
-                  Finasteride 1.2mg Minoxidil 3mg Biotin 2.5mg
-                  Vitamin B5 11mg Vitamin B6 2.5mg Vitamin C 100mg Chewable Tablet
-                  Chew or swallow 1 tablet by mouth daily
-                  USE BY: 11/07/2026
-                  PRESCRIBED BY: Vacek, Jeffrey
-                  LOT #: DPTSESKSLIEE
-                  XeCare LLC
-                  THIS IS A COMPOUND PRODUCT
-                """.trimIndent()
-              },
-              label = { Text("Compound (XeCare)") },
-            )
-            AssistChip(
-              onClick = {
-                manualLabelInput = """
-                  NDC 41167-4122-2
-                  NON-DROWSY
-                  Allegra ALLERGY 24HR
-                  fexofenadine HCl tablet
-                  180 mg antihistamine
-                  90 GELCAPS
-                  Dist. By Chattem, Inc.
-                  LOT 43336
-                  EXP 10/2027
-                """.trimIndent()
-              },
-              label = { Text("OTC (Allegra 180mg)") },
-            )
-          }
         }
       },
       confirmButton = {
