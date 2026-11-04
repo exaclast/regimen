@@ -10,99 +10,92 @@ import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.ScheduledDoseItem
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.Condition
+import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Prescriber
 import com.exaclast.regimen.model.TimeOfDayBucket
+import com.exaclast.regimen.model.formatNum
 import com.exaclast.regimen.notifications.DoseNotificationManager
 import com.exaclast.regimen.notifications.DoseNotificationStage
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.stateIn
 
-enum class TopLevelDestination(val label: String) {
-  TODAY("Today"),
-  MEDICATIONS("Medications"),
-  PRESCRIBERS("Prescribers"),
-  CONDITIONS("Conditions"),
+data class RegimenUiState(
+  val selectedDateIso: String,
+  val todayIso: String,
+  val nowMillis: Long,
+  val snapshot: RegimenSnapshot,
+  val dailyBoard: DailyDoseBoard,
+  /** Pending scheduled doses for *today*, regardless of which date is being viewed. */
+  val todayPendingCount: Int,
+) {
+  val isToday: Boolean
+    get() = selectedDateIso == todayIso
+
+  val isFuture: Boolean
+    get() = selectedDateIso > todayIso
 }
 
-data class RegimenUiState(
-  val selectedDateIso: String = LocalDate.now().toString(),
-  val snapshot: RegimenSnapshot = RegimenSnapshot(),
-  val dailyBoard: DailyDoseBoard = DailyDoseBoard(
-    dateIso = LocalDate.now().toString(),
-    bucketGroups = emptyList(),
-    prnItems = emptyList(),
-    totalScheduledCount = 0,
-    totalTakenCount = 0,
-    totalSkippedCount = 0,
-  ),
+/** An action that reverses a previous change. */
+sealed interface UndoAction {
+  /** Each entry: the log state before the change (null = there was none) and the id of the log that was written. */
+  data class RestoreLogs(val entries: List<Pair<DoseLog?, String>>) : UndoAction
+
+  data class RestoreDeletedLog(val log: DoseLog) : UndoAction
+
+  data class RestoreSchedule(val schedule: MedicationSchedule) : UndoAction
+}
+
+data class UiMessage(
+  val text: String,
+  val undo: UndoAction? = null,
+  val id: Long = System.nanoTime(),
 )
 
 class RegimenViewModel(application: Application) : AndroidViewModel(application) {
 
   private val repository = RegimenRepository.getInstance(application)
 
-  private val _selectedDateIso = MutableStateFlow(LocalDate.now().toString())
-  val selectedDateIso: StateFlow<String> = _selectedDateIso.asStateFlow()
+  /** Null = follow the current day (rolls over at midnight). */
+  private val selectedDateOverride = MutableStateFlow<String?>(null)
 
-  private val _selectedDestination = MutableStateFlow(TopLevelDestination.TODAY)
-  val selectedDestination: StateFlow<TopLevelDestination> = _selectedDestination.asStateFlow()
+  private val _messages = MutableSharedFlow<UiMessage>(extraBufferCapacity = 8)
+  val messages: SharedFlow<UiMessage> = _messages.asSharedFlow()
 
-  private val _selectedMedicationId = MutableStateFlow<String?>(null)
-  val selectedMedicationId: StateFlow<String?> = _selectedMedicationId.asStateFlow()
-
-  private val _selectedPrescriberId = MutableStateFlow<String?>(null)
-  val selectedPrescriberId: StateFlow<String?> = _selectedPrescriberId.asStateFlow()
-
-  private val _selectedConditionId = MutableStateFlow<String?>(null)
-  val selectedConditionId: StateFlow<String?> = _selectedConditionId.asStateFlow()
+  /** Ticks at each minute boundary so window phases, pacing, and "today" stay current. */
+  private val clock: Flow<Long> = flow {
+    while (true) {
+      val now = System.currentTimeMillis()
+      emit(now)
+      delay(60_000L - now % 60_000L)
+    }
+  }
 
   val uiState: StateFlow<RegimenUiState> = combine(
     repository.snapshot,
-    _selectedDateIso,
-  ) { snapshot, dateIso ->
-    val board = DoseEngine.buildDailyBoard(
-      dateIso = dateIso,
-      medications = snapshot.medications,
-      schedules = snapshot.schedules,
-      buckets = snapshot.buckets,
-      logs = snapshot.doseLogs,
-      conditions = snapshot.conditions,
-      prescribers = snapshot.prescribers,
-    )
-    RegimenUiState(
-      selectedDateIso = dateIso,
-      snapshot = snapshot,
-      dailyBoard = board,
-    )
+    selectedDateOverride,
+    clock,
+  ) { snapshot, override, now ->
+    buildUiState(snapshot, override, now)
   }.stateIn(
     scope = viewModelScope,
     started = SharingStarted.WhileSubscribed(5_000),
-    initialValue = run {
-      val s = repository.snapshot.value
-      val todayIso = LocalDate.now().toString()
-      RegimenUiState(
-        selectedDateIso = todayIso,
-        snapshot = s,
-        dailyBoard = DoseEngine.buildDailyBoard(
-          dateIso = todayIso,
-          medications = s.medications,
-          schedules = s.schedules,
-          buckets = s.buckets,
-          logs = s.doseLogs,
-          conditions = s.conditions,
-          prescribers = s.prescribers,
-        ),
-      )
-    },
+    initialValue = buildUiState(repository.snapshot.value, null, System.currentTimeMillis()),
   )
 
   init {
@@ -112,92 +105,90 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     DoseNotificationManager.syncActiveWindowNotifications(application, s)
   }
 
-  fun selectDestination(destination: TopLevelDestination) {
-    _selectedDestination.value = destination
+  private fun buildUiState(snapshot: RegimenSnapshot, override: String?, now: Long): RegimenUiState {
+    val todayIso = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate().toString()
+    val dateIso = override ?: todayIso
+    val board = boardFor(snapshot, dateIso, now)
+    val todayBoard = if (dateIso == todayIso) board else boardFor(snapshot, todayIso, now)
+    return RegimenUiState(
+      selectedDateIso = dateIso,
+      todayIso = todayIso,
+      nowMillis = now,
+      snapshot = snapshot,
+      dailyBoard = board,
+      todayPendingCount = todayBoard.bucketGroups.sumOf { it.pendingCount },
+    )
   }
 
+  private fun boardFor(snapshot: RegimenSnapshot, dateIso: String, now: Long): DailyDoseBoard =
+    DoseEngine.buildDailyBoard(
+      dateIso = dateIso,
+      medications = snapshot.medications,
+      schedules = snapshot.schedules,
+      buckets = snapshot.buckets,
+      logs = snapshot.doseLogs,
+      conditions = snapshot.conditions,
+      prescribers = snapshot.prescribers,
+      nowMillis = now,
+    )
+
+  // region Date navigation
+
   fun selectDate(dateIso: String) {
-    _selectedDateIso.value = dateIso
+    selectedDateOverride.value = dateIso.takeIf { it != uiState.value.todayIso }
+  }
+
+  fun goToToday() {
+    selectedDateOverride.value = null
   }
 
   fun shiftDateByDays(days: Long) {
-    val current = runCatching { LocalDate.parse(_selectedDateIso.value) }.getOrDefault(LocalDate.now())
-    _selectedDateIso.value = current.plusDays(days).toString()
+    val current = runCatching { LocalDate.parse(uiState.value.selectedDateIso) }.getOrDefault(LocalDate.now())
+    selectDate(current.plusDays(days).toString())
   }
 
-  fun selectMedication(id: String?) {
-    _selectedMedicationId.value = id
+  // endregion
+
+  // region Dose logging (each emits a message with Undo)
+
+  fun takeScheduledDose(item: ScheduledDoseItem, site: String? = item.suggestedSite) {
+    val log = writeScheduledLog(item, DoseStatus.TAKEN, site) ?: return
+    val siteNote = log.siteUsed?.let { " · $it" } ?: ""
+    post("Logged ${item.medication.primaryName}$siteNote", UndoAction.RestoreLogs(listOf(item.existingLog to log.id)))
   }
 
-  fun selectPrescriber(id: String?) {
-    _selectedPrescriberId.value = id
-  }
-
-  fun selectCondition(id: String?) {
-    _selectedConditionId.value = id
-  }
-
-  fun takeScheduledDose(item: ScheduledDoseItem, overrideSite: String? = null, notes: String? = null) {
-    repository.logDose(
-      medicationId = item.medication.id,
-      scheduleId = item.schedule.id,
-      bucketId = item.bucket.id,
-      scheduledDateIso = item.dateIso,
-      status = DoseStatus.TAKEN,
-      amountTaken = item.schedule.doseAmount,
-      amountUnit = item.schedule.doseUnit,
-      siteUsed = overrideSite ?: item.suggestedSite,
-      notes = notes,
-      existingLogId = item.existingLog?.id,
-    )
-    DoseNotificationManager.cancelNotificationForItem(getApplication(), item.key)
-  }
-
-  fun skipScheduledDose(item: ScheduledDoseItem, notes: String? = null) {
-    repository.logDose(
-      medicationId = item.medication.id,
-      scheduleId = item.schedule.id,
-      bucketId = item.bucket.id,
-      scheduledDateIso = item.dateIso,
-      status = DoseStatus.SKIPPED,
-      amountTaken = item.schedule.doseAmount,
-      amountUnit = item.schedule.doseUnit,
-      siteUsed = null,
-      notes = notes,
-      existingLogId = item.existingLog?.id,
-    )
-    DoseNotificationManager.cancelNotificationForItem(getApplication(), item.key)
+  fun skipScheduledDose(item: ScheduledDoseItem) {
+    val log = writeScheduledLog(item, DoseStatus.SKIPPED, site = null) ?: return
+    post("Skipped ${item.medication.primaryName}", UndoAction.RestoreLogs(listOf(item.existingLog to log.id)))
   }
 
   fun snoozeScheduledDose(
     item: ScheduledDoseItem,
     minutes: Int = repository.snapshot.value.settings.snoozeMinutes,
   ) {
-    val snoozeUntil = System.currentTimeMillis() + minutes * 60_000L
-    repository.logDose(
-      medicationId = item.medication.id,
-      scheduleId = item.schedule.id,
-      bucketId = item.bucket.id,
-      scheduledDateIso = item.dateIso,
-      status = DoseStatus.SNOOZED,
-      amountTaken = item.schedule.doseAmount,
-      amountUnit = item.schedule.doseUnit,
-      siteUsed = item.suggestedSite,
-      snoozedUntilMillis = snoozeUntil,
-      existingLogId = item.existingLog?.id,
+    val until = System.currentTimeMillis() + minutes * 60_000L
+    val log = writeScheduledLog(item, DoseStatus.SNOOZED, item.suggestedSite, snoozedUntil = until) ?: return
+    val time = Instant.ofEpochMilli(until).atZone(ZoneId.systemDefault()).toLocalTime()
+    post(
+      "Snoozed until ${TimeOfDayBucket.formatClockTime(time.hour, time.minute)}",
+      UndoAction.RestoreLogs(listOf(item.existingLog to log.id)),
     )
   }
 
-  fun undoScheduledDoseLog(item: ScheduledDoseItem) {
-    item.existingLog?.id?.let { repository.deleteDoseLog(it) }
+  /** Clears a taken/skipped/snoozed state so the dose is pending again. */
+  fun clearScheduledDoseLog(item: ScheduledDoseItem) {
+    val existing = item.existingLog ?: return
+    repository.deleteDoseLog(existing.id)
+    post("Marked ${item.medication.primaryName} as not taken", UndoAction.RestoreDeletedLog(existing))
   }
 
-  fun takeAllPendingInBucket(bucketId: String) {
-    val board = uiState.value.dailyBoard
-    val group = board.bucketGroups.find { it.bucket.id == bucketId } ?: return
-    group.items.filter { !it.isCompleted }.forEach { item ->
-      takeScheduledDose(item)
+  fun takeAllPending(items: List<ScheduledDoseItem>) {
+    val entries = items.filter { !it.isCompleted }.mapNotNull { item ->
+      writeScheduledLog(item, DoseStatus.TAKEN, item.suggestedSite)?.let { item.existingLog to it.id }
     }
+    if (entries.isEmpty()) return
+    val noun = if (entries.size == 1) "dose" else "doses"
+    post("Logged ${entries.size} $noun", UndoAction.RestoreLogs(entries))
   }
 
   fun logPrnOrCustomDose(
@@ -205,10 +196,9 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     amount: Double = medication.defaultDoseAmount,
     unit: DoseUnit = medication.defaultDoseUnit,
     siteUsed: String? = null,
-    notes: String? = null,
-    dateIso: String = _selectedDateIso.value,
+    dateIso: String = uiState.value.todayIso,
   ) {
-    repository.logDose(
+    val log = repository.logDose(
       medicationId = medication.id,
       scheduleId = null,
       bucketId = null,
@@ -217,77 +207,81 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
       amountTaken = amount,
       amountUnit = unit,
       siteUsed = siteUsed,
-      notes = notes,
+    ) ?: return
+    val siteNote = log.siteUsed?.let { " · $it" } ?: ""
+    post(
+      "Logged ${medication.primaryName} ${formatNum(log.amountTaken)} ${log.amountUnit.symbol}$siteNote",
+      UndoAction.RestoreLogs(listOf(null to log.id)),
     )
   }
 
-  fun deleteDoseLog(logId: String) {
-    repository.deleteDoseLog(logId)
+  fun deleteDoseLog(log: DoseLog) {
+    repository.deleteDoseLog(log.id)
+    post("Log entry deleted", UndoAction.RestoreDeletedLog(log))
   }
 
-  fun saveMedication(medication: Medication, schedules: List<MedicationSchedule>? = null) {
-    repository.saveMedication(medication, schedules)
-    _selectedMedicationId.value = medication.id
-  }
-
-  fun saveSchedule(schedule: MedicationSchedule) {
-    repository.saveSchedule(schedule)
-  }
-
-  fun deleteSchedule(scheduleId: String) {
-    repository.deleteSchedule(scheduleId)
-  }
-
-  fun deleteMedication(medicationId: String) {
-    if (_selectedMedicationId.value == medicationId) {
-      _selectedMedicationId.value = null
+  fun undo(action: UndoAction) {
+    when (action) {
+      is UndoAction.RestoreLogs -> action.entries.forEach { (previous, writtenId) ->
+        if (previous != null) repository.restoreDoseLog(previous) else repository.deleteDoseLog(writtenId)
+      }
+      is UndoAction.RestoreDeletedLog -> repository.restoreDoseLog(action.log)
+      is UndoAction.RestoreSchedule -> repository.restoreSchedule(action.schedule)
     }
-    repository.deleteMedication(medicationId)
   }
 
-  fun savePrescriber(prescriber: Prescriber) {
-    repository.savePrescriber(prescriber)
-    _selectedPrescriberId.value = prescriber.id
+  private fun writeScheduledLog(
+    item: ScheduledDoseItem,
+    status: DoseStatus,
+    site: String?,
+    snoozedUntil: Long? = null,
+  ): DoseLog? = repository.logDose(
+    medicationId = item.medication.id,
+    scheduleId = item.schedule.id,
+    bucketId = item.bucket.id,
+    scheduledDateIso = item.dateIso,
+    status = status,
+    amountTaken = item.schedule.doseAmount,
+    amountUnit = item.schedule.doseUnit,
+    siteUsed = site,
+    snoozedUntilMillis = snoozedUntil,
+    existingLogId = item.existingLog?.id,
+  )
+
+  private fun post(text: String, undo: UndoAction? = null) {
+    _messages.tryEmit(UiMessage(text, undo))
   }
 
-  fun deletePrescriber(prescriberId: String) {
-    if (_selectedPrescriberId.value == prescriberId) {
-      _selectedPrescriberId.value = null
-    }
-    repository.deletePrescriber(prescriberId)
+  // endregion
+
+  // region Records
+
+  fun saveMedication(medication: Medication) = repository.saveMedication(medication)
+
+  fun deleteMedication(medicationId: String) = repository.deleteMedication(medicationId)
+
+  fun saveSchedule(schedule: MedicationSchedule) = repository.saveSchedule(schedule)
+
+  fun deleteSchedule(schedule: MedicationSchedule) {
+    repository.deleteSchedule(schedule.id)
+    post("Schedule deleted", UndoAction.RestoreSchedule(schedule))
   }
 
-  fun saveCondition(condition: Condition) {
-    repository.saveCondition(condition)
-    _selectedConditionId.value = condition.id
-  }
+  fun savePrescriber(prescriber: Prescriber) = repository.savePrescriber(prescriber)
 
-  fun deleteCondition(conditionId: String) {
-    if (_selectedConditionId.value == conditionId) {
-      _selectedConditionId.value = null
-    }
-    repository.deleteCondition(conditionId)
-  }
+  fun deletePrescriber(prescriberId: String) = repository.deletePrescriber(prescriberId)
 
-  fun saveBucket(bucket: TimeOfDayBucket) {
-    repository.saveBucket(bucket)
-  }
+  fun saveCondition(condition: Condition) = repository.saveCondition(condition)
 
-  fun deleteBucket(bucketId: String) {
-    repository.deleteBucket(bucketId)
-  }
+  fun deleteCondition(conditionId: String) = repository.deleteCondition(conditionId)
 
-  fun reorderBuckets(buckets: List<TimeOfDayBucket>) {
-    repository.reorderBuckets(buckets)
-  }
+  fun saveBucket(bucket: TimeOfDayBucket) = repository.saveBucket(bucket)
 
-  fun resetBucketsToDefault() {
-    repository.resetBucketsToDefault()
-  }
+  fun deleteBucket(bucketId: String) = repository.deleteBucket(bucketId)
 
-  fun saveSettings(settings: AppSettings) {
-    repository.saveSettings(settings)
-  }
+  fun resetBucketsToDefault() = repository.resetBucketsToDefault()
+
+  fun saveSettings(settings: AppSettings) = repository.saveSettings(settings)
 
   fun refreshPermissionsAndAlarms() {
     val s = repository.snapshot.value
@@ -295,34 +289,21 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     DoseNotificationManager.syncActiveWindowNotifications(getApplication(), s)
   }
 
-  fun clearAllUserData() {
-    _selectedMedicationId.value = null
-    _selectedPrescriberId.value = null
-    _selectedConditionId.value = null
-    repository.clearAllUserData()
-  }
+  fun clearAllUserData() = repository.clearAllUserData()
 
-  fun resetToSampleData() {
-    _selectedMedicationId.value = null
-    _selectedPrescriberId.value = null
-    _selectedConditionId.value = null
-    repository.resetToSampleData()
-  }
+  fun resetToSampleData() = repository.resetToSampleData()
 
-  fun sendTestReminder(
-    item: ScheduledDoseItem,
-    stage: DoseNotificationStage = DoseNotificationStage.WINDOW_START_PERSISTENT,
-  ): Boolean {
-    return DoseNotificationManager.showDoseWindowNotification(
+  fun sendTestReminder(item: ScheduledDoseItem, stage: DoseNotificationStage): Boolean =
+    DoseNotificationManager.showDoseWindowNotification(
       context = getApplication(),
       item = item,
       stage = stage,
       settings = repository.snapshot.value.settings,
     )
-  }
 
   fun exportBackupJson(): String = repository.exportBackupJson()
 
   fun importBackupJson(rawJson: String): Result<Int> = repository.importBackupJson(rawJson)
-}
 
+  // endregion
+}

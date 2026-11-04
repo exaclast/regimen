@@ -1,42 +1,30 @@
 package com.exaclast.regimen.ui.screens
 
 import android.net.Uri
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Autorenew
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandLess
@@ -50,17 +38,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,7 +56,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -89,17 +73,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.exaclast.regimen.data.CrossReferenceOutcome
 import com.exaclast.regimen.data.CrossReferencedFdaCandidate
 import com.exaclast.regimen.data.DrugBarcodeScanner
 import com.exaclast.regimen.data.DrugCrossReferenceCriteria
-import com.exaclast.regimen.data.DrugLabelParser
 import com.exaclast.regimen.data.FdaDrugLookupResult
 import com.exaclast.regimen.data.FdaNdcLookupService
 import com.exaclast.regimen.data.ParsedMedicationLabel
-import com.exaclast.regimen.data.RegimenSnapshot
-import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.model.Condition
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.InjectableDetails
@@ -110,839 +90,18 @@ import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Prescriber
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.TimeOfDayBucket
+import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.model.formatNum
+import com.exaclast.regimen.ui.components.DatePickerField
+import com.exaclast.regimen.ui.components.EditorScaffold
 import com.exaclast.regimen.ui.NumberInput
 import com.exaclast.regimen.ui.checkOptionalPositiveDecimal
 import com.exaclast.regimen.ui.checkOptionalPositiveInt
 import com.exaclast.regimen.ui.checkRequiredPositiveDecimal
 import com.exaclast.regimen.ui.checkRequiredPositiveInt
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
-
-@Composable
-fun MedicationsScreen(
-  snapshot: RegimenSnapshot,
-  selectedMedicationId: String?,
-  onSelectMedication: (String?) -> Unit,
-  onSaveMedication: (Medication) -> Unit,
-  onDeleteMedication: (String) -> Unit,
-  onSaveSchedule: (MedicationSchedule) -> Unit,
-  onDeleteSchedule: (String) -> Unit,
-  onQuickLogDose: (Medication, Double, DoseUnit, String?) -> Unit,
-  modifier: Modifier = Modifier,
-) {
-  var searchQuery by rememberSaveable { mutableStateOf("") }
-  var editingMedication by remember { mutableStateOf<Medication?>(null) }
-  var isCreatingNew by remember { mutableStateOf(false) }
-
-  // Post-creation prompt & separate schedule editor state
-  var newlyCreatedMedForSchedulePrompt by remember { mutableStateOf<Medication?>(null) }
-  var scheduleEditorTarget by remember { mutableStateOf<Pair<Medication, MedicationSchedule?>?>(null) }
-
-  val filteredMedications = remember(snapshot.medications, searchQuery) {
-    if (searchQuery.isBlank()) {
-      snapshot.medications
-    } else {
-      val q = searchQuery.trim().lowercase()
-      snapshot.medications.filter {
-        it.formulaName.lowercase().contains(q) ||
-          it.brandName?.lowercase()?.contains(q) == true ||
-          it.indicationText.lowercase().contains(q) ||
-          it.ndc11?.lowercase()?.contains(q) == true
-      }
-    }
-  }
-
-  val activeSelectedMedication = remember(snapshot.medications, selectedMedicationId) {
-    snapshot.medications.find { it.id == selectedMedicationId }
-  }
-
-  BoxWithConstraints(modifier = modifier.fillMaxSize()) {
-    val isTwoPane = maxWidth >= 700.dp
-
-    if (isTwoPane) {
-      val effectiveMedication = activeSelectedMedication ?: filteredMedications.firstOrNull()
-      Row(
-        modifier = Modifier
-          .fillMaxSize()
-          .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-      ) {
-        // Left Pane: Search + List
-        Column(
-          modifier = Modifier
-            .weight(0.9f)
-            .fillMaxHeight(),
-        ) {
-          MedicationListHeader(
-            searchQuery = searchQuery,
-            onSearchChange = { searchQuery = it },
-            onAddClick = { isCreatingNew = true },
-          )
-          Spacer(modifier = Modifier.height(12.dp))
-          LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(bottom = 24.dp),
-          ) {
-            items(filteredMedications, key = { it.id }) { med ->
-              MedicationSummaryCard(
-                medication = med,
-                snapshot = snapshot,
-                isSelected = med.id == effectiveMedication?.id,
-                onClick = { onSelectMedication(med.id) },
-              )
-            }
-          }
-        }
-
-        // Right Pane: Detail
-        Box(
-          modifier = Modifier
-            .weight(1.2f)
-            .fillMaxHeight(),
-        ) {
-          if (effectiveMedication != null) {
-            MedicationDetailPane(
-              medication = effectiveMedication,
-              snapshot = snapshot,
-              showBackButton = false,
-              onBack = {},
-              onEdit = { editingMedication = effectiveMedication },
-              onDelete = { onDeleteMedication(effectiveMedication.id) },
-              onAddSchedule = { scheduleEditorTarget = effectiveMedication to null },
-              onEditSchedule = { sched -> scheduleEditorTarget = effectiveMedication to sched },
-              onDeleteSchedule = onDeleteSchedule,
-              onQuickLog = { site ->
-                onQuickLogDose(
-                  effectiveMedication,
-                  effectiveMedication.defaultDoseAmount,
-                  effectiveMedication.defaultDoseUnit,
-                  site,
-                )
-              },
-            )
-          } else {
-            Card(modifier = Modifier.fillMaxSize()) {
-              Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Select or add a medication to view full details & schedule.")
-              }
-            }
-          }
-        }
-      }
-    } else {
-      // Single-pane layout for compact phone screen
-      if (activeSelectedMedication != null) {
-        BackHandler { onSelectMedication(null) }
-        MedicationDetailPane(
-          medication = activeSelectedMedication,
-          snapshot = snapshot,
-          showBackButton = true,
-          onBack = { onSelectMedication(null) },
-          onEdit = { editingMedication = activeSelectedMedication },
-          onDelete = { onDeleteMedication(activeSelectedMedication.id) },
-          onAddSchedule = { scheduleEditorTarget = activeSelectedMedication to null },
-          onEditSchedule = { sched -> scheduleEditorTarget = activeSelectedMedication to sched },
-          onDeleteSchedule = onDeleteSchedule,
-          onQuickLog = { site ->
-            onQuickLogDose(
-              activeSelectedMedication,
-              activeSelectedMedication.defaultDoseAmount,
-              activeSelectedMedication.defaultDoseUnit,
-              site,
-            )
-          },
-          modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        )
-      } else {
-        Box(modifier = Modifier.fillMaxSize()) {
-          Column(
-            modifier = Modifier
-              .fillMaxSize()
-              .padding(horizontal = 16.dp, vertical = 12.dp),
-          ) {
-            MedicationListHeader(
-              searchQuery = searchQuery,
-              onSearchChange = { searchQuery = it },
-              onAddClick = { isCreatingNew = true },
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            LazyColumn(
-              modifier = Modifier.fillMaxSize(),
-              verticalArrangement = Arrangement.spacedBy(10.dp),
-              contentPadding = PaddingValues(bottom = 88.dp),
-            ) {
-              items(filteredMedications, key = { it.id }) { med ->
-                MedicationSummaryCard(
-                  medication = med,
-                  snapshot = snapshot,
-                  isSelected = false,
-                  onClick = { onSelectMedication(med.id) },
-                )
-              }
-            }
-          }
-
-          FloatingActionButton(
-            onClick = { isCreatingNew = true },
-            modifier = Modifier
-              .align(Alignment.BottomEnd)
-              .padding(16.dp),
-          ) {
-            Icon(Icons.Default.Add, contentDescription = "Add Medication")
-          }
-        }
-      }
-    }
-  }
-
-  // 1. Medication-only Add/Edit Dialog
-  if (isCreatingNew || editingMedication != null) {
-    val existing = editingMedication
-    val wasNew = existing == null
-    MedicationEditorDialog(
-      initialMedication = existing,
-      conditions = snapshot.conditions,
-      prescribers = snapshot.prescribers,
-      configuredPatientName = snapshot.settings.patientName,
-      onDismiss = {
-        isCreatingNew = false
-        editingMedication = null
-      },
-      onSave = { savedMed ->
-        onSaveMedication(savedMed)
-        isCreatingNew = false
-        editingMedication = null
-        if (wasNew) {
-          newlyCreatedMedForSchedulePrompt = savedMed
-        }
-      },
-    )
-  }
-
-  // 2. Post-Save "Set up schedule now?" prompt for newly added medications
-  newlyCreatedMedForSchedulePrompt?.let { createdMed ->
-    AlertDialog(
-      onDismissRequest = { newlyCreatedMedForSchedulePrompt = null },
-      title = { Text("Set up a schedule for ${createdMed.displayTitle}?") },
-      text = {
-        Text(
-          "You can assign this medication to daily or recurring time-of-day windows now, or leave it as As-Needed (PRN) and add schedules later."
-        )
-      },
-      confirmButton = {
-        Button(
-          onClick = {
-            newlyCreatedMedForSchedulePrompt = null
-            scheduleEditorTarget = createdMed to null
-          }
-        ) {
-          Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(16.dp))
-          Spacer(modifier = Modifier.width(6.dp))
-          Text("Set Up Schedule")
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = { newlyCreatedMedForSchedulePrompt = null }) {
-          Text("Keep As-Needed")
-        }
-      },
-    )
-  }
-
-  // 3. Dedicated Schedule Editor Dialog
-  scheduleEditorTarget?.let { (medication, existingSchedule) ->
-    ScheduleEditorDialog(
-      medication = medication,
-      initialSchedule = existingSchedule,
-      buckets = snapshot.buckets,
-      onDismiss = { scheduleEditorTarget = null },
-      onSave = { savedSchedule ->
-        onSaveSchedule(savedSchedule)
-        scheduleEditorTarget = null
-      },
-    )
-  }
-}
-
-@Composable
-private fun MedicationListHeader(
-  searchQuery: String,
-  onSearchChange: (String) -> Unit,
-  onAddClick: () -> Unit,
-) {
-  Row(
-    modifier = Modifier.fillMaxWidth(),
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.spacedBy(8.dp),
-  ) {
-    OutlinedTextField(
-      value = searchQuery,
-      onValueChange = onSearchChange,
-      placeholder = {
-        Text(
-          text = "Search formula, brand, NDC...",
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-      },
-      leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-      trailingIcon = {
-        if (searchQuery.isNotEmpty()) {
-          IconButton(onClick = { onSearchChange("") }) {
-            Icon(Icons.Default.Close, contentDescription = "Clear search")
-          }
-        }
-      },
-      singleLine = true,
-      modifier = Modifier.weight(1f),
-    )
-    Button(onClick = onAddClick) {
-      Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-      Spacer(modifier = Modifier.width(6.dp))
-      Text("Add")
-    }
-  }
-}
-
-@Composable
-private fun MedicationSummaryCard(
-  medication: Medication,
-  snapshot: RegimenSnapshot,
-  isSelected: Boolean,
-  onClick: () -> Unit,
-) {
-  val condition = snapshot.conditions.find { it.id == medication.indicationConditionId }
-  val nextSite = DoseEngine.computeNextSite(medication, snapshot.doseLogs)
-
-  Card(
-    onClick = onClick,
-    modifier = Modifier.fillMaxWidth(),
-    colors = CardDefaults.cardColors(
-      containerColor = if (isSelected) {
-        MaterialTheme.colorScheme.secondaryContainer
-      } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
-      },
-    ),
-  ) {
-    Column(modifier = Modifier.padding(14.dp)) {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Text(
-          text = medication.displayTitle,
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.Bold,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-          modifier = Modifier.weight(1f),
-        )
-        Text(
-          text = medication.strength,
-          style = MaterialTheme.typography.labelLarge,
-          color = MaterialTheme.colorScheme.primary,
-          fontWeight = FontWeight.SemiBold,
-        )
-      }
-
-      Spacer(modifier = Modifier.height(4.dp))
-
-      val routeInfo = medication.injectableDetails?.let { " (${it.route.code})" } ?: ""
-      Text(
-        text = "${medication.form.displayName}$routeInfo • Default: ${medication.formattedDefaultDose()}",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-
-      val indicationStr = condition?.name ?: medication.indicationText.takeIf { it.isNotBlank() }
-      if (indicationStr != null) {
-        Text(
-          text = "Indication: $indicationStr",
-          style = MaterialTheme.typography.labelSmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-      }
-
-      if (nextSite != null) {
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-          text = "Next rotation site: $nextSite",
-          style = MaterialTheme.typography.labelSmall,
-          color = MaterialTheme.colorScheme.tertiary,
-          fontWeight = FontWeight.SemiBold,
-        )
-      }
-    }
-  }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun MedicationDetailPane(
-  medication: Medication,
-  snapshot: RegimenSnapshot,
-  showBackButton: Boolean,
-  onBack: () -> Unit,
-  onEdit: () -> Unit,
-  onDelete: () -> Unit,
-  onAddSchedule: () -> Unit,
-  onEditSchedule: (MedicationSchedule) -> Unit,
-  onDeleteSchedule: (String) -> Unit,
-  onQuickLog: (String?) -> Unit,
-  modifier: Modifier = Modifier,
-) {
-  val condition = snapshot.conditions.find { it.id == medication.indicationConditionId }
-  val prescriber = snapshot.prescribers.find { it.id == medication.prescriberId }
-  val schedules = snapshot.schedules.filter { it.medicationId == medication.id }
-  val medLogs = snapshot.doseLogs.filter { it.medicationId == medication.id }
-  val nextSite = DoseEngine.computeNextSite(medication, snapshot.doseLogs)
-  val lastSite = DoseEngine.getLastSiteUsed(medication.id, snapshot.doseLogs)
-  val pacing = DoseEngine.evaluatePacing(medication, snapshot.doseLogs)
-
-  var confirmDelete by remember { mutableStateOf(false) }
-
-  Card(
-    modifier = modifier.fillMaxSize(),
-    colors = CardDefaults.cardColors(
-      containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-    ),
-  ) {
-    LazyColumn(
-      modifier = Modifier.fillMaxSize(),
-      contentPadding = PaddingValues(16.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      item {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f),
-          ) {
-            if (showBackButton) {
-              IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to list")
-              }
-            }
-            Column {
-              Text(
-                text = medication.formulaName,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-              )
-              if (!medication.brandName.isNullOrBlank()) {
-                Text(
-                  text = "Brand: ${medication.brandName}",
-                  style = MaterialTheme.typography.bodyMedium,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-            }
-          }
-
-          Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            IconButton(onClick = onEdit) {
-              Icon(Icons.Default.Edit, contentDescription = "Edit medication")
-            }
-            IconButton(onClick = { confirmDelete = true }) {
-              Icon(
-                Icons.Default.Delete,
-                contentDescription = "Delete medication",
-                tint = MaterialTheme.colorScheme.error,
-              )
-            }
-          }
-        }
-      }
-
-      // Quick Log & Pacing Status Banner
-      item {
-        ElevatedCard(
-          modifier = Modifier.fillMaxWidth(),
-          colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-          ),
-        ) {
-          Row(
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-          ) {
-            Column(modifier = Modifier.weight(1f)) {
-              Text(
-                text = "${medication.strength} • ${medication.form.displayName}",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-              )
-              Text(
-                text = "Default Dose: ${medication.formattedDefaultDose()}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-              )
-              Text(
-                text = "Pacing: ${pacing.statusSummary}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
-              )
-            }
-            Button(onClick = { onQuickLog(nextSite) }) {
-              Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-              Spacer(modifier = Modifier.width(6.dp))
-              Text(if (nextSite != null) "Log ($nextSite)" else "Log Dose")
-            }
-          }
-        }
-      }
-
-      // Dedicated Schedules Card (Separated from Medication Editor)
-      item {
-        Surface(
-          shape = MaterialTheme.shapes.medium,
-          color = MaterialTheme.colorScheme.surface,
-          tonalElevation = 1.dp,
-          modifier = Modifier.fillMaxWidth(),
-        ) {
-          Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-              Text(
-                text = "Dose Schedules",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-              )
-              FilledTonalButton(
-                onClick = onAddSchedule,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-              ) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Add Schedule")
-              }
-            }
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            if (schedules.isEmpty()) {
-              Text(
-                text = "No recurring schedule rules configured (tracked As-Needed / PRN).",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            } else {
-              val bucketMap = snapshot.buckets.associateBy { it.id }
-              Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                schedules.forEach { sched ->
-                  val bucketNames = sched.bucketIds
-                    .mapNotNull { bucketMap[it]?.let { b -> "${b.name} (${b.formattedTime()})" } }
-                    .joinToString(", ")
-                  val freqDesc = when (sched.frequencyType) {
-                    ScheduleFrequencyType.DAILY -> "Daily • $bucketNames"
-                    ScheduleFrequencyType.EVERY_N_DAYS ->
-                      "Every ${sched.intervalDays} days (from ${sched.anchorDateIso}) • $bucketNames"
-                    ScheduleFrequencyType.RELATIVE_TO_LAST_DOSE ->
-                      "Every ${sched.intervalDays} days after last dose • $bucketNames"
-                    ScheduleFrequencyType.DAYS_OF_WEEK ->
-                      "Days ${sched.daysOfWeek.sorted().joinToString("/")} • $bucketNames"
-                    ScheduleFrequencyType.AS_NEEDED -> "As Needed (PRN)"
-                  }
-                  Surface(
-                    shape = MaterialTheme.shapes.small,
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    modifier = Modifier.fillMaxWidth(),
-                  ) {
-                    Row(
-                      modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 8.dp),
-                      verticalAlignment = Alignment.CenterVertically,
-                      horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                      Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                          text = "${formatNum(sched.doseAmount)} ${sched.doseUnit.symbol} • ${sched.frequencyType.displayName}",
-                          style = MaterialTheme.typography.bodyMedium,
-                          fontWeight = FontWeight.SemiBold,
-                        )
-                        Text(
-                          text = freqDesc,
-                          style = MaterialTheme.typography.labelSmall,
-                          color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                      }
-                      Row {
-                        IconButton(
-                          onClick = { onEditSchedule(sched) },
-                          modifier = Modifier.size(32.dp),
-                        ) {
-                          Icon(
-                            Icons.Default.Edit,
-                            contentDescription = "Edit schedule",
-                            modifier = Modifier.size(18.dp),
-                          )
-                        }
-                        IconButton(
-                          onClick = { onDeleteSchedule(sched.id) },
-                          modifier = Modifier.size(32.dp),
-                        ) {
-                          Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "Delete schedule",
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(18.dp),
-                          )
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-
-      // Injectable & Vial Hardware Specifications
-      medication.injectableDetails?.let { inj ->
-        item {
-          SectionDetailCard(title = "Injectable / Vial & Syringe Specifications") {
-            DetailRow("Administration Route", inj.route.displayName)
-            inj.concentrationMgPerMl?.let {
-              DetailRow("Vial Concentration", "${formatNum(it)} mg/mL")
-            }
-            inj.vialVolumeMl?.let {
-              DetailRow("Vial Size", "${formatNum(it)} mL")
-            }
-            val calcVol = inj.calculateVolumeMl(medication.defaultDoseAmount, medication.defaultDoseUnit)
-            if (calcVol != null) {
-              DetailRow(
-                "Calculated Draw Volume",
-                "${formatNum(calcVol)} mL (${formatNum(calcVol * 100.0)} units on U-100)",
-              )
-            }
-            inj.syringeVolumeMl?.let {
-              val desc = inj.syringeDescription?.let { d -> " ($d)" } ?: ""
-              DetailRow("Syringe", "${formatNum(it)} mL$desc")
-            } ?: inj.syringeDescription?.let {
-              DetailRow("Syringe", it)
-            }
-            inj.formattedDrawNeedle()?.let {
-              DetailRow("Draw Needle", it)
-            }
-            inj.formattedInjectNeedle()?.let {
-              DetailRow("Injection Needle", it)
-            }
-          }
-        }
-      }
-
-      // Site Rotation Queue
-      if (medication.siteRotationEnabled && medication.rotationSites.isNotEmpty()) {
-        item {
-          SectionDetailCard(title = "Automated Site Rotation Queue") {
-            Text(
-              text = "Advances automatically from the actual site used on your last dose.",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            FlowRow(
-              horizontalArrangement = Arrangement.spacedBy(8.dp),
-              verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-              medication.rotationSites.forEachIndexed { index, site ->
-                val isNext = site.equals(nextSite, ignoreCase = true)
-                val isLast = site.equals(lastSite, ignoreCase = true)
-                AssistChip(
-                  onClick = { onQuickLog(site) },
-                  label = {
-                    val tag = when {
-                      isNext -> " (NEXT)"
-                      isLast -> " (LAST)"
-                      else -> ""
-                    }
-                    Text("${index + 1}. $site$tag")
-                  },
-                  leadingIcon = if (isNext) {
-                    {
-                      Icon(
-                        Icons.Default.Autorenew,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                      )
-                    }
-                  } else null,
-                )
-              }
-            }
-          }
-        }
-      }
-
-      // Pacing & Safety Limits (on the Medication object)
-      item {
-        SectionDetailCard(title = "Pacing & Daily Limits (Medication Attributes)") {
-          DetailRow(
-            "Min Time Between Doses",
-            medication.minIntervalMinutes?.let { DoseEngine.formatDurationMinutes(it) } ?: "No minimum interval",
-          )
-          DetailRow(
-            "Max Daily Doses",
-            medication.maxDailyDoses?.let { "${formatNum(it)} doses / day" } ?: "Unlimited",
-          )
-          DetailRow(
-            "Max Daily Amount",
-            medication.maxDailyAmount?.let { "${formatNum(it)} ${medication.defaultDoseUnit.symbol} / day" }
-              ?: "Unlimited",
-          )
-        }
-      }
-
-      // Indication, Prescriber & Drug Metadata (NDC-11, Brand, Manufacturer)
-      item {
-        SectionDetailCard(title = "Indication, Prescriber & Drug Info") {
-          DetailRow("Linked Condition", condition?.name ?: "None linked")
-          if (medication.indicationText.isNotBlank()) {
-            DetailRow("Indication Notes", medication.indicationText)
-          }
-          DetailRow(
-            "Prescriber",
-            prescriber?.let { if (it.isPcp) "${it.name} (PCP)" else it.name } ?: "Not specified",
-          )
-          medication.prescribedDateIso?.takeIf { it.isNotBlank() }?.let {
-            DetailRow("Prescribed Date", it)
-          }
-          medication.ndc11?.takeIf { it.isNotBlank() }?.let {
-            DetailRow("NDC-11", it)
-          }
-          medication.brandName?.takeIf { it.isNotBlank() }?.let {
-            DetailRow("Brand Name", it)
-          }
-          medication.manufacturer?.takeIf { it.isNotBlank() }?.let {
-            DetailRow("Manufacturer", it)
-          }
-          medication.notes?.takeIf { it.isNotBlank() }?.let {
-            DetailRow("Instructions / Notes", it)
-          }
-        }
-      }
-
-      // Dose History for this Medication
-      item {
-        SectionDetailCard(title = "Recent Dose History (${medLogs.size})") {
-          if (medLogs.isEmpty()) {
-            Text(
-              text = "No doses logged yet for this medication.",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-          } else {
-            medLogs.take(10).forEach { log ->
-              val dt = Instant.ofEpochMilli(log.actionTimestampMillis)
-                .atZone(ZoneId.systemDefault())
-                .format(DateTimeFormatter.ofPattern("MMM d, yyyy h:mm a"))
-              val sitePart = log.siteUsed?.let { " • $it" } ?: ""
-              DetailRow(
-                label = dt,
-                value = "${log.status.displayName}: ${formatNum(log.amountTaken)} ${log.amountUnit.symbol}$sitePart",
-              )
-            }
-          }
-        }
-      }
-    }
-  }
-
-  if (confirmDelete) {
-    AlertDialog(
-      onDismissRequest = { confirmDelete = false },
-      title = { Text("Delete ${medication.displayTitle}?") },
-      text = { Text("This will remove the medication and its active schedules.") },
-      confirmButton = {
-        Button(
-          onClick = {
-            confirmDelete = false
-            onDelete()
-          }
-        ) {
-          Text("Delete")
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = { confirmDelete = false }) {
-          Text("Cancel")
-        }
-      },
-    )
-  }
-}
-
-@Composable
-fun SectionDetailCard(
-  title: String,
-  content: @Composable () -> Unit,
-) {
-  Surface(
-    shape = MaterialTheme.shapes.medium,
-    color = MaterialTheme.colorScheme.surface,
-    tonalElevation = 1.dp,
-    modifier = Modifier.fillMaxWidth(),
-  ) {
-    Column(modifier = Modifier.padding(14.dp)) {
-      Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-      )
-      Spacer(modifier = Modifier.height(8.dp))
-      content()
-    }
-  }
-}
-
-@Composable
-fun DetailRow(label: String, value: String) {
-  Row(
-    modifier = Modifier
-      .fillMaxWidth()
-      .padding(vertical = 3.dp),
-    horizontalArrangement = Arrangement.SpaceBetween,
-  ) {
-    Text(
-      text = label,
-      style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      modifier = Modifier.weight(0.45f),
-    )
-    Text(
-      text = value,
-      style = MaterialTheme.typography.bodySmall,
-      fontWeight = FontWeight.Medium,
-      modifier = Modifier.weight(0.55f),
-    )
-  }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1060,7 +219,7 @@ private fun CollapsibleFormSection(
  * - Separated from Schedule configuration
  */
 @Composable
-private fun MedicationEditorDialog(
+fun MedicationEditorScreen(
   initialMedication: Medication?,
   conditions: List<Condition>,
   prescribers: List<Prescriber>,
@@ -1395,107 +554,71 @@ private fun MedicationEditorDialog(
     if (!maxDailyAmountCheck.isValid) add("Max Daily Amount")
   }
 
-  Dialog(
-    onDismissRequest = onDismiss,
-    properties = DialogProperties(usePlatformDefaultWidth = false),
+  fun saveMedication() {
+    // Save is disabled unless every check is valid, so these are the user's exact values.
+    val doseAmt = doseCheck.validOrNull() ?: return
+    val minIntervalMins = minIntervalCheck.validOrNull()
+      ?.let { (it * 60.0).roundToInt().coerceAtLeast(1) }
+    val injDetails = if (form.isInjectable) {
+      InjectableDetails(
+        route = route,
+        concentrationMgPerMl = concentrationCheck.validOrNull(),
+        vialVolumeMl = vialVolumeCheck.validOrNull(),
+        syringeVolumeMl = syringeVolumeCheck.validOrNull(),
+        syringeDescription = syringeDesc.takeIf { it.isNotBlank() },
+        drawNeedleGauge = drawGaugeCheck.validOrNull(),
+        drawNeedleLengthInches = drawLengthCheck.validOrNull(),
+        injectNeedleGauge = injectGaugeCheck.validOrNull(),
+        injectNeedleLengthInches = injectLengthCheck.validOrNull(),
+      )
+    } else null
+
+    val medId = initialMedication?.id ?: java.util.UUID.randomUUID().toString()
+    val savedMed = Medication(
+      id = medId,
+      formulaName = formulaName.trim(),
+      strength = strength.trim(),
+      form = form,
+      defaultDoseAmount = doseAmt,
+      defaultDoseUnit = defaultDoseUnit,
+      injectableDetails = injDetails,
+      siteRotationEnabled = form.supportsSiteRotation && siteRotationEnabled,
+      rotationSites = if (form.supportsSiteRotation && siteRotationEnabled) {
+        rotationSites.toList()
+      } else emptyList(),
+      minIntervalMinutes = minIntervalMins,
+      maxDailyDoses = maxDailyDosesCheck.validOrNull(),
+      maxDailyAmount = maxDailyAmountCheck.validOrNull(),
+      indicationConditionId = selectedConditionId,
+      indicationText = indicationText.trim(),
+      prescriberId = selectedPrescriberId,
+      prescribedDateIso = prescribedDateIso.trim().takeIf { it.isNotBlank() },
+      ndc11 = ndc11.trim().takeIf { it.isNotBlank() },
+      brandName = brandName.trim().takeIf { it.isNotBlank() },
+      manufacturer = manufacturer.trim().takeIf { it.isNotBlank() },
+      notes = notes.trim().takeIf { it.isNotBlank() },
+    )
+    onSave(savedMed)
+  }
+
+  EditorScaffold(
+    title = if (initialMedication == null) "Add medication" else "Edit medication",
+    onClose = onDismiss,
+    onSave = { saveMedication() },
+    saveEnabled = formulaName.isNotBlank() && strength.isNotBlank() && invalidFieldLabels.isEmpty(),
+    banner = if (invalidFieldLabels.isNotEmpty()) {
+      {
+        Text(
+          text = "Fix to save: ${invalidFieldLabels.joinToString(", ")}",
+          style = MaterialTheme.typography.labelLarge,
+          color = MaterialTheme.colorScheme.error,
+          modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+      }
+    } else {
+      null
+    },
   ) {
-    Surface(
-      modifier = Modifier
-        .fillMaxSize()
-        .padding(16.dp),
-      shape = MaterialTheme.shapes.large,
-      color = MaterialTheme.colorScheme.surface,
-    ) {
-      Column(modifier = Modifier.fillMaxSize()) {
-        // Dialog Header
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-          Text(
-            text = if (initialMedication == null) "Add Medication" else "Edit Medication",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-          )
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = onDismiss) {
-              Text("Cancel")
-            }
-            Button(
-              onClick = {
-                // Save is disabled unless every check is valid, so these are the user's exact values.
-                val doseAmt = doseCheck.validOrNull() ?: return@Button
-                val minIntervalMins = minIntervalCheck.validOrNull()
-                  ?.let { (it * 60.0).roundToInt().coerceAtLeast(1) }
-                val injDetails = if (form.isInjectable) {
-                  InjectableDetails(
-                    route = route,
-                    concentrationMgPerMl = concentrationCheck.validOrNull(),
-                    vialVolumeMl = vialVolumeCheck.validOrNull(),
-                    syringeVolumeMl = syringeVolumeCheck.validOrNull(),
-                    syringeDescription = syringeDesc.takeIf { it.isNotBlank() },
-                    drawNeedleGauge = drawGaugeCheck.validOrNull(),
-                    drawNeedleLengthInches = drawLengthCheck.validOrNull(),
-                    injectNeedleGauge = injectGaugeCheck.validOrNull(),
-                    injectNeedleLengthInches = injectLengthCheck.validOrNull(),
-                  )
-                } else null
-
-                val medId = initialMedication?.id ?: java.util.UUID.randomUUID().toString()
-                val savedMed = Medication(
-                  id = medId,
-                  formulaName = formulaName.trim(),
-                  strength = strength.trim(),
-                  form = form,
-                  defaultDoseAmount = doseAmt,
-                  defaultDoseUnit = defaultDoseUnit,
-                  injectableDetails = injDetails,
-                  siteRotationEnabled = form.supportsSiteRotation && siteRotationEnabled,
-                  rotationSites = if (form.supportsSiteRotation && siteRotationEnabled) {
-                    rotationSites.toList()
-                  } else emptyList(),
-                  minIntervalMinutes = minIntervalMins,
-                  maxDailyDoses = maxDailyDosesCheck.validOrNull(),
-                  maxDailyAmount = maxDailyAmountCheck.validOrNull(),
-                  indicationConditionId = selectedConditionId,
-                  indicationText = indicationText.trim(),
-                  prescriberId = selectedPrescriberId,
-                  prescribedDateIso = prescribedDateIso.trim().takeIf { it.isNotBlank() },
-                  ndc11 = ndc11.trim().takeIf { it.isNotBlank() },
-                  brandName = brandName.trim().takeIf { it.isNotBlank() },
-                  manufacturer = manufacturer.trim().takeIf { it.isNotBlank() },
-                  notes = notes.trim().takeIf { it.isNotBlank() },
-                )
-                onSave(savedMed)
-              },
-              enabled = formulaName.isNotBlank() && strength.isNotBlank() && invalidFieldLabels.isEmpty(),
-            ) {
-              Text("Save")
-            }
-          }
-        }
-
-        if (invalidFieldLabels.isNotEmpty()) {
-          Text(
-            text = "Fix to save: ${invalidFieldLabels.joinToString(", ")}",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-          )
-        }
-
-        HorizontalDivider()
-
-        Column(
-          modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-          verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
           // 1. Top Label OCR Scanner & OpenFDA Cross-Reference Bar + Core Medication Identity
           Surface(
             shape = MaterialTheme.shapes.medium,
@@ -2041,12 +1164,10 @@ private fun MedicationEditorDialog(
               modifier = Modifier.fillMaxWidth(),
             )
 
-            OutlinedTextField(
-              value = prescribedDateIso,
+            DatePickerField(
+              label = "Prescribed date",
+              valueIso = prescribedDateIso,
               onValueChange = { prescribedDateIso = it },
-              label = { Text("Prescribed Date (YYYY-MM-DD)") },
-              placeholder = { Text("2026-01-15") },
-              singleLine = true,
               modifier = Modifier.fillMaxWidth(),
             )
 
@@ -2066,9 +1187,6 @@ private fun MedicationEditorDialog(
               modifier = Modifier.fillMaxWidth(),
             )
           }
-        }
-      }
-    }
   }
 
   // Label OCR Photo / Paste Dialog (for pharmacy vials, compounded bottles, and OTC labels)
@@ -2319,11 +1437,11 @@ private fun CrossReferenceDisambiguationDialog(
 }
 
 /**
- * Dedicated Schedule Editor Dialog separated from Medication entry.
+ * Full-screen schedule editor (frequency, dose, windows, interval/start date, weekdays).
  */
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ScheduleEditorDialog(
+fun ScheduleEditorScreen(
   medication: Medication,
   initialSchedule: MedicationSchedule?,
   buckets: List<TimeOfDayBucket>,
@@ -2333,31 +1451,23 @@ private fun ScheduleEditorDialog(
   var frequencyType by rememberSaveable {
     mutableStateOf(initialSchedule?.frequencyType ?: ScheduleFrequencyType.DAILY)
   }
+  val orderedBuckets = remember(buckets) { buckets.chronological() }
   val selectedBucketIds = remember {
     mutableStateListOf<String>().apply {
-      addAll(initialSchedule?.bucketIds ?: listOf(buckets.firstOrNull()?.id ?: TimeOfDayBucket.BUCKET_MORNING))
+      addAll(initialSchedule?.bucketIds ?: listOfNotNull(orderedBuckets.firstOrNull()?.id))
     }
   }
   var doseAmountText by rememberSaveable {
-    mutableStateOf(
-      formatNum(initialSchedule?.doseAmount ?: medication.defaultDoseAmount)
-    )
+    mutableStateOf(formatNum(initialSchedule?.doseAmount ?: medication.defaultDoseAmount))
   }
-  var doseUnit by rememberSaveable {
-    mutableStateOf(initialSchedule?.doseUnit ?: medication.defaultDoseUnit)
-  }
-  var intervalDaysText by rememberSaveable {
-    mutableStateOf((initialSchedule?.intervalDays ?: 7).toString())
-  }
+  var doseUnit by rememberSaveable { mutableStateOf(initialSchedule?.doseUnit ?: medication.defaultDoseUnit) }
+  var intervalDaysText by rememberSaveable { mutableStateOf((initialSchedule?.intervalDays ?: 7).toString()) }
   var anchorDateIso by rememberSaveable {
     mutableStateOf(initialSchedule?.anchorDateIso ?: LocalDate.now().toString())
   }
   val selectedDaysOfWeek = remember {
-    mutableStateListOf<Int>().apply {
-      addAll(initialSchedule?.daysOfWeek ?: setOf(1, 2, 3, 4, 5, 6, 7))
-    }
+    mutableStateListOf<Int>().apply { addAll(initialSchedule?.daysOfWeek ?: setOf(1, 2, 3, 4, 5, 6, 7)) }
   }
-  var showAnchorDatePicker by remember { mutableStateOf(false) }
 
   // Strict validation: invalid input blocks Save rather than silently becoming a default.
   // (An unparseable start date used to make an every-N-days schedule due every day.)
@@ -2367,7 +1477,7 @@ private fun ScheduleEditorDialog(
   val doseCheck = checkRequiredPositiveDecimal(doseAmountText)
   val intervalCheck = checkRequiredPositiveInt(intervalDaysText)
   val anchorDate = NumberInput.parseIsoDate(anchorDateIso)
-  val anchorError = if (anchorDate == null) "Use YYYY-MM-DD or pick a date" else null
+  val anchorError = if (anchorDate == null) "Pick a start date" else null
   val bucketError = if (frequencyType != ScheduleFrequencyType.AS_NEEDED && validBucketIds.isEmpty()) {
     "Select at least one dose window"
   } else {
@@ -2383,194 +1493,118 @@ private fun ScheduleEditorDialog(
     bucketError == null &&
     daysError == null
 
-  if (showAnchorDatePicker) {
-    val pickerState = rememberDatePickerState(
-      // DatePicker works in UTC-midnight millis; convert via the epoch day to avoid zone shifts.
-      initialSelectedDateMillis = (anchorDate ?: LocalDate.now()).toEpochDay() * 86_400_000L,
+  fun save() {
+    // Save is disabled unless every check is valid, so these are the user's exact values.
+    val doseAmt = doseCheck.validOrNull() ?: return
+    onSave(
+      MedicationSchedule(
+        id = initialSchedule?.id ?: java.util.UUID.randomUUID().toString(),
+        medicationId = medication.id,
+        frequencyType = frequencyType,
+        bucketIds = if (frequencyType == ScheduleFrequencyType.AS_NEEDED) emptyList() else validBucketIds,
+        // Interval/anchor only matter for interval schedules; keep prior values otherwise.
+        intervalDays = intervalCheck.validOrNull() ?: initialSchedule?.intervalDays ?: 7,
+        anchorDateIso = anchorDate?.toString() ?: initialSchedule?.anchorDateIso ?: LocalDate.now().toString(),
+        daysOfWeek = selectedDaysOfWeek.toSet().ifEmpty { setOf(1, 2, 3, 4, 5, 6, 7) },
+        doseAmount = doseAmt,
+        doseUnit = doseUnit,
+        enabled = initialSchedule?.enabled ?: true,
+        createdAtEpochMillis = initialSchedule?.createdAtEpochMillis ?: System.currentTimeMillis(),
+      )
     )
-    DatePickerDialog(
-      onDismissRequest = { showAnchorDatePicker = false },
-      confirmButton = {
-        TextButton(
-          onClick = {
-            pickerState.selectedDateMillis?.let { millis ->
-              anchorDateIso = java.time.Instant.ofEpochMilli(millis)
-                .atZone(ZoneOffset.UTC)
-                .toLocalDate()
-                .toString()
-            }
-            showAnchorDatePicker = false
-          },
-        ) { Text("OK") }
-      },
-      dismissButton = {
-        TextButton(onClick = { showAnchorDatePicker = false }) { Text("Cancel") }
-      },
-    ) {
-      DatePicker(state = pickerState)
-    }
   }
 
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    title = {
-      Text(
-        text = if (initialSchedule == null) {
-          "Add Schedule for ${medication.displayTitle}"
-        } else {
-          "Edit Schedule for ${medication.displayTitle}"
-        }
+  EditorScaffold(
+    title = if (initialSchedule == null) "Add schedule" else "Edit schedule",
+    onClose = onDismiss,
+    onSave = { save() },
+    saveEnabled = canSave,
+  ) {
+    Text(
+      text = medication.primaryName,
+      style = MaterialTheme.typography.titleMedium,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    DropdownSelectorField(
+      label = "How often",
+      selectedText = frequencyType.displayName,
+      options = ScheduleFrequencyType.entries,
+      optionLabel = { it.displayName },
+      onOptionSelected = { frequencyType = it },
+      modifier = Modifier.fillMaxWidth(),
+    )
+
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+      ValidatedNumberField(
+        check = doseCheck,
+        value = doseAmountText,
+        onValueChange = { doseAmountText = it },
+        label = { Text("Dose") },
+        singleLine = true,
+        modifier = Modifier.weight(1f),
       )
-    },
-    text = {
-      Column(
-        modifier = Modifier
-          .fillMaxWidth()
-          .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-      ) {
-        DropdownSelectorField(
-          label = "Schedule Frequency",
-          selectedText = frequencyType.displayName,
-          options = ScheduleFrequencyType.entries,
-          optionLabel = { it.displayName },
-          onOptionSelected = { frequencyType = it },
-          modifier = Modifier.fillMaxWidth(),
-        )
+      DropdownSelectorField(
+        label = "Unit",
+        selectedText = doseUnit.symbol,
+        options = DoseUnit.entries,
+        optionLabel = { "${it.symbol} — ${it.displayName}" },
+        onOptionSelected = { doseUnit = it },
+        modifier = Modifier.weight(1f),
+      )
+    }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-          ValidatedNumberField(
-            check = doseCheck,
-            value = doseAmountText,
-            onValueChange = { doseAmountText = it },
-            label = { Text("Dose Amount") },
-            singleLine = true,
-            modifier = Modifier.weight(0.45f),
-          )
-          DropdownSelectorField(
-            label = "Unit",
-            selectedText = doseUnit.symbol,
-            options = DoseUnit.entries,
-            optionLabel = { "${it.symbol} — ${it.displayName}" },
-            onOptionSelected = { doseUnit = it },
-            modifier = Modifier.weight(0.55f),
-          )
-        }
+    if (usesInterval) {
+      ValidatedNumberField(
+        check = intervalCheck,
+        keyboardType = KeyboardType.Number,
+        value = intervalDaysText,
+        onValueChange = { intervalDaysText = it },
+        label = { Text("Every how many days") },
+        placeholder = { Text("7") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+      )
+      DatePickerField(
+        label = "Start date",
+        valueIso = anchorDateIso,
+        onValueChange = { anchorDateIso = it },
+        allowClear = false,
+        supportingText = anchorError,
+        modifier = Modifier.fillMaxWidth(),
+      )
+    }
 
-        if (frequencyType != ScheduleFrequencyType.AS_NEEDED) {
-          Text(
-            text = "Time-of-Day Dose Windows:",
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
+    if (frequencyType == ScheduleFrequencyType.DAYS_OF_WEEK) {
+      Text("Days", style = MaterialTheme.typography.titleSmall)
+      val dayNames = listOf(1 to "Mon", 2 to "Tue", 3 to "Wed", 4 to "Thu", 5 to "Fri", 6 to "Sat", 7 to "Sun")
+      FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        dayNames.forEach { (dayNum, label) ->
+          val isSelected = selectedDaysOfWeek.contains(dayNum)
+          FilterChip(
+            selected = isSelected,
+            onClick = { if (isSelected) selectedDaysOfWeek.remove(dayNum) else selectedDaysOfWeek.add(dayNum) },
+            label = { Text(label) },
           )
-          Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            buckets.sortedBy { it.sortOrder }.forEach { b ->
-              val isSelected = selectedBucketIds.contains(b.id)
-              FilterChip(
-                selected = isSelected,
-                onClick = {
-                  if (isSelected) selectedBucketIds.remove(b.id) else selectedBucketIds.add(b.id)
-                },
-                label = { Text("${b.name} (${b.formattedTime()})") },
-                modifier = Modifier.fillMaxWidth(),
-              )
-            }
-            bucketError?.let {
-              Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
-            }
-          }
-        }
-
-        if (usesInterval) {
-          Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            ValidatedNumberField(
-              check = intervalCheck,
-              keyboardType = KeyboardType.Number,
-              value = intervalDaysText,
-              onValueChange = { intervalDaysText = it },
-              label = { Text("Every N Days") },
-              placeholder = { Text("7") },
-              singleLine = true,
-              modifier = Modifier.weight(0.45f),
-            )
-            OutlinedTextField(
-              value = anchorDateIso,
-              onValueChange = { anchorDateIso = it },
-              label = { Text("Start Date") },
-              placeholder = { Text("YYYY-MM-DD") },
-              singleLine = true,
-              isError = anchorError != null,
-              supportingText = anchorError?.let { msg -> { Text(msg) } },
-              trailingIcon = {
-                IconButton(onClick = { showAnchorDatePicker = true }) {
-                  Icon(Icons.Default.CalendarMonth, contentDescription = "Pick start date")
-                }
-              },
-              modifier = Modifier.weight(0.55f),
-            )
-          }
-        }
-
-        if (frequencyType == ScheduleFrequencyType.DAYS_OF_WEEK) {
-          Text("Days of Week:", style = MaterialTheme.typography.labelLarge)
-          val dayNames = listOf(
-            1 to "Mon",
-            2 to "Tue",
-            3 to "Wed",
-            4 to "Thu",
-            5 to "Fri",
-            6 to "Sat",
-            7 to "Sun",
-          )
-          FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            dayNames.forEach { (dayNum, label) ->
-              val isSelected = selectedDaysOfWeek.contains(dayNum)
-              FilterChip(
-                selected = isSelected,
-                onClick = {
-                  if (isSelected) selectedDaysOfWeek.remove(dayNum) else selectedDaysOfWeek.add(dayNum)
-                },
-                label = { Text(label) },
-              )
-            }
-          }
-          daysError?.let {
-            Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
-          }
         }
       }
-    },
-    confirmButton = {
-      Button(
-        onClick = {
-          // Save is disabled unless every check is valid, so these are the user's exact values.
-          val doseAmt = doseCheck.validOrNull() ?: return@Button
-          val saved = MedicationSchedule(
-            id = initialSchedule?.id ?: java.util.UUID.randomUUID().toString(),
-            medicationId = medication.id,
-            frequencyType = frequencyType,
-            bucketIds = if (frequencyType == ScheduleFrequencyType.AS_NEEDED) emptyList() else validBucketIds,
-            // Interval/anchor only matter for interval schedules; keep prior values otherwise.
-            intervalDays = intervalCheck.validOrNull() ?: initialSchedule?.intervalDays ?: 7,
-            anchorDateIso = anchorDate?.toString()
-              ?: initialSchedule?.anchorDateIso
-              ?: LocalDate.now().toString(),
-            daysOfWeek = selectedDaysOfWeek.toSet().ifEmpty { setOf(1, 2, 3, 4, 5, 6, 7) },
-            doseAmount = doseAmt,
-            doseUnit = doseUnit,
-            enabled = true,
+      daysError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+    }
+
+    if (frequencyType != ScheduleFrequencyType.AS_NEEDED) {
+      Text("Dose windows", style = MaterialTheme.typography.titleSmall)
+      Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        orderedBuckets.forEach { b ->
+          val isSelected = selectedBucketIds.contains(b.id)
+          FilterChip(
+            selected = isSelected,
+            onClick = { if (isSelected) selectedBucketIds.remove(b.id) else selectedBucketIds.add(b.id) },
+            label = { Text("${b.name} · ${b.formattedTime()}") },
+            modifier = Modifier.fillMaxWidth(),
           )
-          onSave(saved)
-        },
-        enabled = canSave,
-      ) {
-        Text("Save Schedule")
+        }
+        bucketError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
       }
-    },
-    dismissButton = {
-      TextButton(onClick = onDismiss) {
-        Text("Cancel")
-      }
-    },
-  )
+    }
+  }
 }

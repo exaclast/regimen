@@ -34,6 +34,16 @@ object DoseAlarmTiming {
     return dateIsoFromItemKey(itemKey) ?: fallbackToday.toString()
   }
 
+  /** Epoch millis at which [bucket]'s window opens for doses scheduled on [dateIso]. */
+  fun windowStartMillis(bucket: TimeOfDayBucket, dateIso: String, zoneId: ZoneId = ZoneId.systemDefault()): Long? {
+    val date = runCatching { LocalDate.parse(dateIso) }.getOrNull() ?: return null
+    return date
+      .atTime(LocalTime.of(bucket.hour, bucket.minute))
+      .atZone(zoneId)
+      .toInstant()
+      .toEpochMilli()
+  }
+
   /**
    * Epoch millis at which [bucket]'s window ends for doses scheduled on [dateIso]. Overnight
    * windows end on the following calendar day.

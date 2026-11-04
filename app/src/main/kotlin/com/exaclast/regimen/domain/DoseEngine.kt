@@ -9,6 +9,7 @@ import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Prescriber
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.TimeOfDayBucket
+import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.model.formatNum
 import java.time.Instant
 import java.time.LocalDate
@@ -25,6 +26,9 @@ data class PacingEvaluation(
   val lastTakenTimestampMillis: Long? = null,
   val lastSiteUsed: String? = null,
   val statusSummary: String,
+  /** When the minimum interval elapses (epoch millis), if it hasn't yet. */
+  val nextAllowedAtMillis: Long? = null,
+  val maxDailyDoses: Double? = null,
 )
 
 data class ScheduledDoseItem(
@@ -225,6 +229,12 @@ object DoseEngine {
       lastTakenTimestampMillis = lastTaken?.actionTimestampMillis,
       lastSiteUsed = lastTaken?.siteUsed,
       statusSummary = statusParts.joinToString(" • "),
+      nextAllowedAtMillis = if (isIntervalWarning && lastTaken != null && minInterval != null) {
+        lastTaken.actionTimestampMillis + minInterval * 60_000L
+      } else {
+        null
+      },
+      maxDailyDoses = maxDoses?.takeIf { it > 0 },
     )
   }
 
@@ -313,7 +323,7 @@ object DoseEngine {
     val activeMedMap = medications.filter { it.deletedAtEpochMillis == null }.associateBy { it.id }
     val conditionMap = conditions.filter { it.deletedAtEpochMillis == null }.associateBy { it.id }
     val prescriberMap = prescribers.filter { it.deletedAtEpochMillis == null }.associateBy { it.id }
-    val sortedBuckets = buckets.sortedBy { it.sortOrder }
+    val sortedBuckets = buckets.chronological()
 
     val activeSchedules = schedules.filter {
       it.deletedAtEpochMillis == null && it.enabled && activeMedMap.containsKey(it.medicationId)

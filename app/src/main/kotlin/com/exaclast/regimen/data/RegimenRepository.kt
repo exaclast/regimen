@@ -198,13 +198,6 @@ class RegimenRepository private constructor(context: Context) {
     reloadSnapshot()
   }
 
-  fun reorderBuckets(buckets: List<TimeOfDayBucket>) {
-    buckets.forEachIndexed { index, b ->
-      db.upsertBucket(b.copy(sortOrder = index))
-    }
-    reloadSnapshot()
-  }
-
   fun resetBucketsToDefault() {
     val currentBuckets = db.getAllBuckets()
     currentBuckets.forEach { DoseNotificationManager.cancelBucketAlarms(appContext, it.id) }
@@ -278,7 +271,45 @@ class RegimenRepository private constructor(context: Context) {
     val now = System.currentTimeMillis()
     val log = _snapshot.value.doseLogs.find { it.id == logId } ?: return
     db.upsertDoseLog(log.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now))
+    itemKeyFor(log)?.let { key -> DoseNotificationManager.cancelSnoozeAlarm(appContext, key, log.bucketId) }
     reloadSnapshot()
+  }
+
+  /**
+   * Restores [log] exactly as it was (used by Undo): un-deletes it, or puts back the state a newer action
+   * overwrote. A restored future snooze re-arms its alarm.
+   */
+  fun restoreDoseLog(log: DoseLog) {
+    val now = System.currentTimeMillis()
+    val restored = log.copy(deletedAtEpochMillis = null, updatedAtEpochMillis = now)
+    db.upsertDoseLog(restored)
+    itemKeyFor(restored)?.let { key ->
+      val snoozeUntil = restored.snoozedUntilMillis
+      if (restored.status == DoseStatus.SNOOZED && snoozeUntil != null && snoozeUntil > now) {
+        DoseNotificationManager.scheduleSnoozeAlarm(
+          context = appContext,
+          itemKey = key,
+          bucketId = restored.bucketId,
+          scheduledDateIso = restored.scheduledDateIso,
+          triggerAtMillis = snoozeUntil,
+        )
+      } else {
+        DoseNotificationManager.cancelSnoozeAlarm(appContext, key, restored.bucketId)
+      }
+    }
+    reloadSnapshot()
+  }
+
+  /** Un-deletes a schedule (used by Undo). */
+  fun restoreSchedule(schedule: MedicationSchedule) {
+    db.upsertSchedule(schedule.copy(deletedAtEpochMillis = null, updatedAtEpochMillis = System.currentTimeMillis()))
+    reloadSnapshot()
+  }
+
+  private fun itemKeyFor(log: DoseLog): String? {
+    val scheduleId = log.scheduleId ?: return null
+    val bucketId = log.bucketId ?: return null
+    return "${scheduleId}_${bucketId}_${log.scheduledDateIso}"
   }
 
   fun exportBackupJson(): String {

@@ -1,291 +1,360 @@
 package com.exaclast.regimen
 
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Badge
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Medication
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.runtime.rememberNavBackStack
+import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.ui.NavDisplay
+import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.ThemeMode
-import com.exaclast.regimen.notifications.DoseNotificationManager
 import com.exaclast.regimen.notifications.DoseNotificationStage
 import com.exaclast.regimen.ui.RegimenViewModel
-import com.exaclast.regimen.ui.TopLevelDestination
-import com.exaclast.regimen.ui.screens.ConditionsScreen
-import com.exaclast.regimen.ui.screens.MedicationsScreen
-import com.exaclast.regimen.ui.screens.PrescribersScreen
-import com.exaclast.regimen.ui.screens.SettingsDialog
+import com.exaclast.regimen.ui.components.LocalSnackbarHostState
+import com.exaclast.regimen.ui.navigation.Navigator
+import com.exaclast.regimen.ui.navigation.Route
+import com.exaclast.regimen.ui.navigation.TopLevel
+import com.exaclast.regimen.ui.navigation.isFullScreenTask
+import com.exaclast.regimen.ui.screens.ConditionDetailScreen
+import com.exaclast.regimen.ui.screens.ConditionEditorScreen
+import com.exaclast.regimen.ui.screens.ConditionListScreen
+import com.exaclast.regimen.ui.screens.DiagnosticsTarget
+import com.exaclast.regimen.ui.screens.DoseWindowEditorScreen
+import com.exaclast.regimen.ui.screens.MedicationDetailScreen
+import com.exaclast.regimen.ui.screens.MedicationEditorScreen
+import com.exaclast.regimen.ui.screens.MedicationListScreen
+import com.exaclast.regimen.ui.screens.PrescriberDetailScreen
+import com.exaclast.regimen.ui.screens.PrescriberEditorScreen
+import com.exaclast.regimen.ui.screens.PrescriberListScreen
+import com.exaclast.regimen.ui.screens.ScheduleEditorScreen
+import com.exaclast.regimen.ui.screens.SettingsScreen
 import com.exaclast.regimen.ui.screens.StartupPermissionsDialog
 import com.exaclast.regimen.ui.screens.TodayScreen
 import com.exaclast.regimen.ui.theme.RegimenTheme
-import java.time.LocalDate
+import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 fun RegimenApp(
   viewModel: RegimenViewModel = viewModel(),
 ) {
   val context = LocalContext.current
-  val uiState by viewModel.uiState.collectAsState()
-  val currentDestination by viewModel.selectedDestination.collectAsState()
-  val selectedMedicationId by viewModel.selectedMedicationId.collectAsState()
-  val selectedPrescriberId by viewModel.selectedPrescriberId.collectAsState()
-  val selectedConditionId by viewModel.selectedConditionId.collectAsState()
+  val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+  val snapshot = uiState.snapshot
+  val settings = snapshot.settings
+  val backStack = rememberNavBackStack(Route.Today)
+  val navigator = remember(backStack) { Navigator(backStack) }
+  val snackbarHostState = remember { SnackbarHostState() }
 
-  var showSettingsDialog by rememberSaveable { mutableStateOf(false) }
-
-  val hasSubSelection = when (currentDestination) {
-    TopLevelDestination.MEDICATIONS -> selectedMedicationId != null
-    TopLevelDestination.PRESCRIBERS -> selectedPrescriberId != null
-    TopLevelDestination.CONDITIONS -> selectedConditionId != null
-    TopLevelDestination.TODAY -> false
+  // One message at a time; a newer message replaces the one on screen.
+  LaunchedEffect(viewModel) {
+    viewModel.messages.collectLatest { message ->
+      val result = snackbarHostState.showSnackbar(
+        message = message.text,
+        actionLabel = if (message.undo != null) "Undo" else null,
+        withDismissAction = message.undo != null,
+        // Undo needs time to read and reach; Long also honors the system accessibility timeout.
+        duration = if (message.undo != null) SnackbarDuration.Long else SnackbarDuration.Short,
+      )
+      if (result == SnackbarResult.ActionPerformed) message.undo?.let(viewModel::undo)
+    }
   }
 
-  // Handle predictive back navigation to Today tab when on a secondary destination
-  BackHandler(enabled = !showSettingsDialog && currentDestination != TopLevelDestination.TODAY && !hasSubSelection) {
-    viewModel.selectDestination(TopLevelDestination.TODAY)
-  }
-
-  val settings = uiState.snapshot.settings
-  val needsStartupPermissions = settings.permissionsPromptDismissedVersion < AppSettings.CURRENT_PERMISSIONS_VERSION
-  val systemDark = isSystemInDarkTheme()
   val useDarkTheme = when (settings.themeMode) {
-    ThemeMode.SYSTEM -> systemDark
+    ThemeMode.SYSTEM -> isSystemInDarkTheme()
     ThemeMode.LIGHT -> false
     ThemeMode.DARK -> true
   }
+  val current = navigator.current ?: Route.Today
+  val layoutType = if (current.isFullScreenTask) {
+    NavigationSuiteType.None
+  } else {
+    NavigationSuiteScaffoldDefaults.navigationSuiteType(currentWindowAdaptiveInfo())
+  }
 
-  val pendingDosesCount = uiState.dailyBoard.bucketGroups.sumOf { it.pendingCount }
-
-  RegimenTheme(
-    darkTheme = useDarkTheme,
-    dynamicColor = settings.dynamicColor,
-  ) {
-    Surface(
-      modifier = Modifier.fillMaxSize(),
-      color = MaterialTheme.colorScheme.background,
-    ) {
+  RegimenTheme(darkTheme = useDarkTheme, dynamicColor = settings.dynamicColor) {
+    CompositionLocalProvider(LocalSnackbarHostState provides snackbarHostState) {
       NavigationSuiteScaffold(
+        layoutType = layoutType,
         navigationSuiteItems = {
-          TopLevelDestination.entries.forEach { dest ->
-            val icon = destinationIcon(dest)
+          TopLevel.entries.forEach { tab ->
             item(
-              selected = currentDestination == dest,
-              onClick = { viewModel.selectDestination(dest) },
+              selected = navigator.currentTab == tab,
+              onClick = { navigator.selectTab(tab) },
               icon = {
-                if (dest == TopLevelDestination.TODAY && pendingDosesCount > 0) {
-                  BadgedBox(
-                    badge = {
-                      Badge { Text(pendingDosesCount.toString()) }
-                    }
-                  ) {
-                    Icon(icon, contentDescription = dest.label)
+                if (tab == TopLevel.TODAY && uiState.todayPendingCount > 0) {
+                  BadgedBox(badge = { Badge { Text(uiState.todayPendingCount.toString()) } }) {
+                    Icon(tab.icon, contentDescription = null)
                   }
                 } else {
-                  Icon(icon, contentDescription = dest.label)
+                  Icon(tab.icon, contentDescription = null)
                 }
               },
-              label = { Text(dest.label) },
+              label = { Text(tab.label) },
             )
           }
-        }
+        },
       ) {
-        Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-          val contentModifier = Modifier
-            .fillMaxSize()
-            .padding(innerPadding)
-
-          when (currentDestination) {
-            TopLevelDestination.TODAY -> {
+        NavDisplay(
+          backStack = backStack,
+          onBack = { navigator.back() },
+          entryDecorators = listOf(rememberSaveableStateHolderNavEntryDecorator()),
+          entryProvider = entryProvider {
+            entry<Route.Today> {
               TodayScreen(
                 uiState = uiState,
-                onShiftDate = { days -> viewModel.shiftDateByDays(days) },
-                onResetToToday = { viewModel.selectDate(LocalDate.now().toString()) },
-                onTakeScheduledDose = { item, siteOverride ->
-                  viewModel.takeScheduledDose(item, siteOverride)
+                onPreviousDay = { viewModel.shiftDateByDays(-1) },
+                onNextDay = { viewModel.shiftDateByDays(1) },
+                onGoToToday = viewModel::goToToday,
+                onOpenSettings = { navigator.navigate(Route.Settings) },
+                onTake = viewModel::takeScheduledDose,
+                onSkip = viewModel::skipScheduledDose,
+                onSnooze = { viewModel.snoozeScheduledDose(it) },
+                onClearLog = viewModel::clearScheduledDoseLog,
+                onTakeAll = viewModel::takeAllPending,
+                onLogPrn = { med, amount, site ->
+                  viewModel.logPrnOrCustomDose(med, amount, med.defaultDoseUnit, site, uiState.selectedDateIso)
                 },
-                onSkipScheduledDose = { item -> viewModel.skipScheduledDose(item) },
-                onSnoozeScheduledDose = { item ->
-                  viewModel.snoozeScheduledDose(item)
-                  Toast.makeText(
-                    context,
-                    "Snoozed for ${settings.snoozeMinutes} minutes",
-                    Toast.LENGTH_SHORT,
-                  ).show()
+                onDeleteLog = viewModel::deleteDoseLog,
+                onOpenMedication = { navigator.navigate(Route.MedicationDetail(it)) },
+                onOpenWindow = { navigator.navigate(Route.DoseWindowEditor(it)) },
+                onAddMedication = { navigator.navigate(Route.MedicationEditor()) },
+              )
+            }
+
+            entry<Route.Medications> {
+              MedicationListScreen(
+                snapshot = snapshot,
+                onOpenMedication = { navigator.navigate(Route.MedicationDetail(it)) },
+                onAddMedication = { navigator.navigate(Route.MedicationEditor()) },
+              )
+            }
+
+            entry<Route.MedicationDetail> { key ->
+              MedicationDetailScreen(
+                medicationId = key.id,
+                snapshot = snapshot,
+                nowMillis = uiState.nowMillis,
+                todayIso = uiState.todayIso,
+                promptForSchedule = key.promptForSchedule,
+                onBack = navigator::back,
+                onEdit = { navigator.navigate(Route.MedicationEditor(key.id)) },
+                onDelete = {
+                  viewModel.deleteMedication(key.id)
+                  navigator.back()
                 },
-                onUndoScheduledDose = { item -> viewModel.undoScheduledDoseLog(item) },
-                onTakeAllInBucket = { bucketId -> viewModel.takeAllPendingInBucket(bucketId) },
-                onLogPrnDose = { med, amount, site ->
-                  viewModel.logPrnOrCustomDose(
-                    medication = med,
-                    amount = amount,
-                    unit = med.defaultDoseUnit,
-                    siteUsed = site,
-                  )
-                },
-                onDeleteLog = { logId -> viewModel.deleteDoseLog(logId) },
-                onSendTestNotification = { item, stage ->
-                  if (!settings.notificationsEnabled) {
-                    Toast.makeText(
-                      context,
-                      "Notifications are globally disabled in Settings",
-                      Toast.LENGTH_SHORT,
-                    ).show()
-                    return@TodayScreen
-                  }
-                  if (stage == DoseNotificationStage.WINDOW_END_ALARM && !settings.alarmsEnabled) {
-                    Toast.makeText(
-                      context,
-                      "End-of-window alarms are disabled in Settings",
-                      Toast.LENGTH_SHORT,
-                    ).show()
-                    return@TodayScreen
-                  }
-                  val posted = viewModel.sendTestReminder(item, stage)
-                  if (posted) {
-                    val msg = if (stage == DoseNotificationStage.WINDOW_END_ALARM) {
-                      "Ringing end-of-window alarm for ${item.medication.displayTitle}"
+                onAddSchedule = { navigator.navigate(Route.ScheduleEditor(key.id)) },
+                onEditSchedule = { navigator.navigate(Route.ScheduleEditor(key.id, it.id)) },
+                onDeleteSchedule = viewModel::deleteSchedule,
+                onLogDose = { med, site -> viewModel.logPrnOrCustomDose(med, siteUsed = site) },
+                onOpenPrescriber = { navigator.navigate(Route.PrescriberDetail(it)) },
+                onOpenCondition = { navigator.navigate(Route.ConditionDetail(it)) },
+              )
+            }
+
+            entry<Route.MedicationEditor> { key ->
+              val existing = key.id?.let { id -> snapshot.medications.find { it.id == id } }
+              if (key.id != null && existing == null) {
+                LaunchedEffect(key) { navigator.back() }
+              } else {
+                MedicationEditorScreen(
+                  initialMedication = existing,
+                  conditions = snapshot.conditions,
+                  prescribers = snapshot.prescribers,
+                  configuredPatientName = settings.patientName,
+                  onDismiss = navigator::back,
+                  onSave = { med ->
+                    viewModel.saveMedication(med)
+                    if (existing == null) {
+                      navigator.replace(Route.MedicationDetail(med.id, promptForSchedule = true))
                     } else {
-                      "Pinned persistent window notification for ${item.medication.displayTitle}"
+                      navigator.back()
                     }
-                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                  } else {
-                    Toast.makeText(
-                      context,
-                      "Grant notification permission to receive reminders",
-                      Toast.LENGTH_SHORT,
-                    ).show()
+                  },
+                )
+              }
+            }
+
+            entry<Route.ScheduleEditor> { key ->
+              val medication = snapshot.medications.find { it.id == key.medicationId }
+              val schedule = key.scheduleId?.let { id -> snapshot.schedules.find { it.id == id } }
+              if (medication == null || (key.scheduleId != null && schedule == null)) {
+                LaunchedEffect(key) { navigator.back() }
+              } else {
+                ScheduleEditorScreen(
+                  medication = medication,
+                  initialSchedule = schedule,
+                  buckets = snapshot.buckets,
+                  onDismiss = navigator::back,
+                  onSave = {
+                    viewModel.saveSchedule(it)
+                    navigator.back()
+                  },
+                )
+              }
+            }
+
+            entry<Route.Prescribers> {
+              PrescriberListScreen(
+                snapshot = snapshot,
+                onOpenPrescriber = { navigator.navigate(Route.PrescriberDetail(it)) },
+                onAddPrescriber = { navigator.navigate(Route.PrescriberEditor()) },
+              )
+            }
+
+            entry<Route.PrescriberDetail> { key ->
+              PrescriberDetailScreen(
+                prescriberId = key.id,
+                snapshot = snapshot,
+                onBack = navigator::back,
+                onEdit = { navigator.navigate(Route.PrescriberEditor(key.id)) },
+                onDelete = {
+                  viewModel.deletePrescriber(key.id)
+                  navigator.back()
+                },
+                onOpenMedication = { navigator.navigate(Route.MedicationDetail(it)) },
+              )
+            }
+
+            entry<Route.PrescriberEditor> { key ->
+              val existing = key.id?.let { id -> snapshot.prescribers.find { it.id == id } }
+              PrescriberEditorScreen(
+                initialPrescriber = existing,
+                onClose = navigator::back,
+                onSave = { saved ->
+                  viewModel.savePrescriber(saved)
+                  if (existing == null) navigator.replace(Route.PrescriberDetail(saved.id)) else navigator.back()
+                },
+              )
+            }
+
+            entry<Route.Conditions> {
+              ConditionListScreen(
+                snapshot = snapshot,
+                onOpenCondition = { navigator.navigate(Route.ConditionDetail(it)) },
+                onAddCondition = { navigator.navigate(Route.ConditionEditor()) },
+              )
+            }
+
+            entry<Route.ConditionDetail> { key ->
+              ConditionDetailScreen(
+                conditionId = key.id,
+                snapshot = snapshot,
+                onBack = navigator::back,
+                onEdit = { navigator.navigate(Route.ConditionEditor(key.id)) },
+                onDelete = {
+                  viewModel.deleteCondition(key.id)
+                  navigator.back()
+                },
+                onOpenMedication = { navigator.navigate(Route.MedicationDetail(it)) },
+              )
+            }
+
+            entry<Route.ConditionEditor> { key ->
+              val existing = key.id?.let { id -> snapshot.conditions.find { it.id == id } }
+              ConditionEditorScreen(
+                initialCondition = existing,
+                onClose = navigator::back,
+                onSave = { saved ->
+                  viewModel.saveCondition(saved)
+                  if (existing == null) navigator.replace(Route.ConditionDetail(saved.id)) else navigator.back()
+                },
+              )
+            }
+
+            entry<Route.Settings> {
+              // A dose due today to exercise test notifications with (prefer one still pending).
+              val testItem = remember(snapshot, uiState.todayIso) {
+                DoseEngine.buildDailyBoard(
+                  dateIso = uiState.todayIso,
+                  medications = snapshot.medications,
+                  schedules = snapshot.schedules,
+                  buckets = snapshot.buckets,
+                  logs = snapshot.doseLogs,
+                  conditions = snapshot.conditions,
+                  prescribers = snapshot.prescribers,
+                ).bucketGroups.flatMap { it.items }.let { items -> items.firstOrNull { !it.isCompleted } ?: items.firstOrNull() }
+              }
+              SettingsScreen(
+                settings = settings,
+                buckets = snapshot.buckets,
+                diagnosticsTarget = testItem?.let {
+                  DiagnosticsTarget("${it.medication.primaryName} (${it.bucket.name})")
+                },
+                onBack = navigator::back,
+                onSaveSettings = viewModel::saveSettings,
+                onOpenWindow = { navigator.navigate(Route.DoseWindowEditor(it)) },
+                onResetWindows = viewModel::resetBucketsToDefault,
+                onTestNotification = { stage ->
+                  val item = testItem ?: return@SettingsScreen
+                  val posted = viewModel.sendTestReminder(item, stage)
+                  val text = when {
+                    !posted -> "Allow notifications to test reminders"
+                    stage == DoseNotificationStage.WINDOW_END_ALARM -> "Test alarm sent"
+                    else -> "Test reminder sent"
                   }
+                  Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
                 },
-                onOpenMedicationDetail = { medId ->
-                  viewModel.selectMedication(medId)
-                  viewModel.selectDestination(TopLevelDestination.MEDICATIONS)
-                },
-                onOpenSettings = { showSettingsDialog = true },
-                modifier = contentModifier,
+                onExportJson = viewModel::exportBackupJson,
+                onImportJson = viewModel::importBackupJson,
+                onClearAllData = viewModel::clearAllUserData,
+                onResetSampleData = viewModel::resetToSampleData,
+                onPermissionsChanged = viewModel::refreshPermissionsAndAlarms,
               )
             }
 
-            TopLevelDestination.MEDICATIONS -> {
-              MedicationsScreen(
-                snapshot = uiState.snapshot,
-                selectedMedicationId = selectedMedicationId,
-                onSelectMedication = { viewModel.selectMedication(it) },
-                onSaveMedication = { med -> viewModel.saveMedication(med) },
-                onDeleteMedication = { viewModel.deleteMedication(it) },
-                onSaveSchedule = { sched -> viewModel.saveSchedule(sched) },
-                onDeleteSchedule = { schedId -> viewModel.deleteSchedule(schedId) },
-                onQuickLogDose = { med, amt, unit, site ->
-                  viewModel.logPrnOrCustomDose(
-                    medication = med,
-                    amount = amt,
-                    unit = unit,
-                    siteUsed = site,
-                  )
-                  val siteText = site?.let { " ($it)" } ?: ""
-                  Toast.makeText(
-                    context,
-                    "Logged ${med.displayTitle}$siteText",
-                    Toast.LENGTH_SHORT,
-                  ).show()
+            entry<Route.DoseWindowEditor> { key ->
+              val existing = key.id?.let { id -> snapshot.buckets.find { it.id == id } }
+              DoseWindowEditorScreen(
+                initialBucket = existing,
+                canDelete = snapshot.buckets.size > 1,
+                globalNotificationsEnabled = settings.notificationsEnabled,
+                globalAlarmsEnabled = settings.alarmsEnabled,
+                onClose = navigator::back,
+                onSave = {
+                  viewModel.saveBucket(it)
+                  navigator.back()
                 },
-                modifier = contentModifier,
+                onDelete = {
+                  existing?.let { viewModel.deleteBucket(it.id) }
+                  navigator.back()
+                },
               )
             }
-
-            TopLevelDestination.PRESCRIBERS -> {
-              PrescribersScreen(
-                snapshot = uiState.snapshot,
-                selectedPrescriberId = selectedPrescriberId,
-                onSelectPrescriber = { viewModel.selectPrescriber(it) },
-                onSavePrescriber = { viewModel.savePrescriber(it) },
-                onDeletePrescriber = { viewModel.deletePrescriber(it) },
-                onOpenMedication = { medId ->
-                  viewModel.selectMedication(medId)
-                  viewModel.selectDestination(TopLevelDestination.MEDICATIONS)
-                },
-                modifier = contentModifier,
-              )
-            }
-
-            TopLevelDestination.CONDITIONS -> {
-              ConditionsScreen(
-                snapshot = uiState.snapshot,
-                selectedConditionId = selectedConditionId,
-                onSelectCondition = { viewModel.selectCondition(it) },
-                onSaveCondition = { viewModel.saveCondition(it) },
-                onDeleteCondition = { viewModel.deleteCondition(it) },
-                onOpenMedication = { medId ->
-                  viewModel.selectMedication(medId)
-                  viewModel.selectDestination(TopLevelDestination.MEDICATIONS)
-                },
-                modifier = contentModifier,
-              )
-            }
-          }
-        }
-      }
-
-      if (showSettingsDialog) {
-        SettingsDialog(
-          settings = settings,
-          buckets = uiState.snapshot.buckets,
-          onSaveSettings = { viewModel.saveSettings(it) },
-          onSaveBucket = { viewModel.saveBucket(it) },
-          onDeleteBucket = { viewModel.deleteBucket(it) },
-          onReorderBuckets = { viewModel.reorderBuckets(it) },
-          onResetBucketsToDefault = { viewModel.resetBucketsToDefault() },
-          onExportJson = { viewModel.exportBackupJson() },
-          onImportJson = { viewModel.importBackupJson(it) },
-          onClearAllData = { viewModel.clearAllUserData() },
-          onResetSampleData = { viewModel.resetToSampleData() },
-          onDismiss = { showSettingsDialog = false },
+          },
         )
       }
 
-      if (needsStartupPermissions && !showSettingsDialog) {
+      val needsStartupPermissions = settings.permissionsPromptDismissedVersion < AppSettings.CURRENT_PERMISSIONS_VERSION
+      if (needsStartupPermissions && current !is Route.Settings) {
         StartupPermissionsDialog(
           onDismiss = {
             viewModel.saveSettings(
-              settings.copy(
-                permissionsPromptDismissedVersion = com.exaclast.regimen.model.AppSettings.CURRENT_PERMISSIONS_VERSION,
-              )
+              settings.copy(permissionsPromptDismissedVersion = AppSettings.CURRENT_PERMISSIONS_VERSION)
             )
           },
-          onPermissionsChanged = { viewModel.refreshPermissionsAndAlarms() },
+          onPermissionsChanged = viewModel::refreshPermissionsAndAlarms,
         )
       }
     }
-  }
-}
-
-private fun destinationIcon(destination: TopLevelDestination): ImageVector {
-  return when (destination) {
-    TopLevelDestination.TODAY -> Icons.Default.CheckCircle
-    TopLevelDestination.MEDICATIONS -> Icons.Default.Medication
-    TopLevelDestination.PRESCRIBERS -> Icons.Default.Badge
-    TopLevelDestination.CONDITIONS -> Icons.Default.Favorite
   }
 }

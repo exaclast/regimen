@@ -15,6 +15,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import android.text.format.DateFormat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -24,6 +25,7 @@ import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.ScheduledDoseItem
 import com.exaclast.regimen.model.AppSettings
+import com.exaclast.regimen.model.ClockPreferences
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.TimeOfDayBucket
 import java.time.LocalDate
@@ -210,6 +212,7 @@ object DoseNotificationManager {
     if (!hasNotificationPermission(context)) {
       return false
     }
+    ClockPreferences.use24Hour = DateFormat.is24HourFormat(context)
 
     val notificationId = item.key.hashCode()
     val med = item.medication
@@ -227,9 +230,9 @@ object DoseNotificationManager {
     )
 
     val title = when {
-      discreet && isAlarm -> "⏰ Scheduled Dose Window Ending"
+      discreet && isAlarm -> "Scheduled dose window ending"
       discreet -> "Scheduled Dose Window Open (${item.bucket.name})"
-      isAlarm -> "⏰ Window Ending: ${med.displayTitle} (${med.strength})"
+      isAlarm -> "Window ending: ${med.displayTitle} (${med.strength})"
       else -> "Dose Window Open: ${med.displayTitle} (${med.strength})"
     }
 

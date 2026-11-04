@@ -1,8 +1,23 @@
 package com.exaclast.regimen.model
 
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.UUID
 import kotlinx.serialization.Serializable
+
+/**
+ * Process-wide clock preference. Updated from the device setting by the activity and the notification
+ * manager (`DateFormat.is24HourFormat`); defaults to 12-hour so pure-JVM code and tests are stable.
+ */
+object ClockPreferences {
+  @Volatile
+  var use24Hour: Boolean = false
+}
+
+/** Windows in time-of-day order. */
+fun List<TimeOfDayBucket>.chronological(): List<TimeOfDayBucket> = sortedWith(TimeOfDayBucket.CHRONOLOGICAL)
 
 @Serializable
 enum class MedicationForm(val displayName: String, val supportsSiteRotation: Boolean) {
@@ -120,6 +135,14 @@ data class Medication(
 ) {
   val displayTitle: String
     get() = if (!brandName.isNullOrBlank()) "$formulaName ($brandName)" else formulaName
+
+  /** The name most people recognize: brand when known, otherwise the generic name. */
+  val primaryName: String
+    get() = brandName?.takeIf { it.isNotBlank() } ?: formulaName
+
+  /** The generic name when [primaryName] is a brand; null otherwise. */
+  val secondaryName: String?
+    get() = formulaName.takeIf { !brandName.isNullOrBlank() }
 
   fun formattedDefaultDose(): String {
     val base = "${formatNum(defaultDoseAmount)} ${defaultDoseUnit.symbol}"
@@ -240,15 +263,15 @@ data class TimeOfDayBucket(
     const val BUCKET_EVENING = "bucket_evening"
     const val BUCKET_BEDTIME = "bucket_bedtime"
 
-    fun formatClockTime(h: Int, m: Int): String {
-      val amPm = if (h < 12) "AM" else "PM"
-      val h12 = when {
-        h == 0 -> 12
-        h > 12 -> h - 12
-        else -> h
-      }
-      return String.format("%d:%02d %s", h12, m, amPm)
+    /** Formats a wall-clock time using the device's 12/24-hour preference ([ClockPreferences]). */
+    fun formatClockTime(h: Int, m: Int, use24Hour: Boolean = ClockPreferences.use24Hour): String {
+      val pattern = if (use24Hour) "HH:mm" else "h:mm a"
+      return LocalTime.of(h, m).format(DateTimeFormatter.ofPattern(pattern, Locale.getDefault()))
     }
+
+    /** Windows are always presented in time-of-day order (start time, then name). */
+    val CHRONOLOGICAL: Comparator<TimeOfDayBucket> =
+      compareBy<TimeOfDayBucket>({ it.hour * 60 + it.minute }, { it.name.lowercase() })
 
     fun defaultBuckets(): List<TimeOfDayBucket> = listOf(
       TimeOfDayBucket(
