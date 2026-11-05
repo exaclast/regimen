@@ -20,6 +20,7 @@ import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.formatNum
 import com.exaclast.regimen.notifications.DoseNotificationManager
 import com.exaclast.regimen.notifications.DoseNotificationStage
+import com.exaclast.regimen.ui.components.UiFormat
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -101,8 +102,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
   init {
     val s = repository.snapshot.value
     DoseNotificationManager.ensureChannels(application)
-    DoseNotificationManager.scheduleDailyBucketAlarms(application, s.buckets, s.settings)
-    DoseNotificationManager.syncActiveWindowNotifications(application, s)
+    DoseNotificationManager.refresh(application, s)
   }
 
   private fun buildUiState(snapshot: RegimenSnapshot, override: String?, now: Long): RegimenUiState {
@@ -151,10 +151,15 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
 
   // region Dose logging (each emits a message with Undo)
 
-  fun takeScheduledDose(item: ScheduledDoseItem, site: String? = item.suggestedSite) {
-    val log = writeScheduledLog(item, DoseStatus.TAKEN, site) ?: return
+  /** Logs a scheduled dose as taken, now or at [takenAtMillis] (e.g. the window end for "taken on time"). */
+  fun takeScheduledDose(item: ScheduledDoseItem, site: String? = item.suggestedSite, takenAtMillis: Long? = null) {
+    val log = writeScheduledLog(item, DoseStatus.TAKEN, site, takenAtMillis = takenAtMillis) ?: return
     val siteNote = log.siteUsed?.let { " · $it" } ?: ""
-    post("Logged ${item.medication.primaryName}$siteNote", UndoAction.RestoreLogs(listOf(item.existingLog to log.id)))
+    val timeNote = takenAtMillis?.let { " as taken at ${UiFormat.time(it)}" } ?: ""
+    post(
+      "Logged ${item.medication.primaryName}$timeNote$siteNote",
+      UndoAction.RestoreLogs(listOf(item.existingLog to log.id)),
+    )
   }
 
   fun skipScheduledDose(item: ScheduledDoseItem) {
@@ -235,6 +240,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     status: DoseStatus,
     site: String?,
     snoozedUntil: Long? = null,
+    takenAtMillis: Long? = null,
   ): DoseLog? = repository.logDose(
     medicationId = item.medication.id,
     scheduleId = item.schedule.id,
@@ -246,6 +252,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     siteUsed = site,
     snoozedUntilMillis = snoozedUntil,
     existingLogId = item.existingLog?.id,
+    actionTimestampMillis = takenAtMillis,
   )
 
   private fun post(text: String, undo: UndoAction? = null) {
@@ -285,21 +292,27 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
 
   fun refreshPermissionsAndAlarms() {
     val s = repository.snapshot.value
-    DoseNotificationManager.scheduleDailyBucketAlarms(getApplication(), s.buckets, s.settings)
-    DoseNotificationManager.syncActiveWindowNotifications(getApplication(), s)
+    DoseNotificationManager.refresh(getApplication(), s)
   }
 
   fun clearAllUserData() = repository.clearAllUserData()
 
   fun resetToSampleData() = repository.resetToSampleData()
 
-  fun sendTestReminder(item: ScheduledDoseItem, stage: DoseNotificationStage): Boolean =
-    DoseNotificationManager.showDoseWindowNotification(
+  /** Previews the real notification for [item]'s window (all of its doses still due). */
+  fun sendTestReminder(item: ScheduledDoseItem, stage: DoseNotificationStage): Boolean {
+    val snapshot = repository.snapshot.value
+    val items = DoseNotificationManager.actionableItems(snapshot, item.bucket.id, item.dateIso)
+      .ifEmpty { listOf(item) }
+    return DoseNotificationManager.postWindowNotification(
       context = getApplication(),
-      item = item,
+      bucket = item.bucket,
+      dateIso = item.dateIso,
+      items = items,
       stage = stage,
-      settings = repository.snapshot.value.settings,
+      settings = snapshot.settings,
     )
+  }
 
   fun exportBackupJson(): String = repository.exportBackupJson()
 

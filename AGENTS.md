@@ -65,4 +65,15 @@ This repository is **Regimen**, an Android medication and dose-tracking app buil
 - **Dose Windows (Buckets)**:
   - Windows can be added, deleted, and edited. They are **always ordered by start time** (`chronological()`); manual reordering was removed and `sortOrder` is legacy.
   - Windows can cross midnight (`crossesMidnight = true`). Receivers and alarm scheduling must account for overnight dates when querying scheduled items.
+- **Schedules**:
+  - Optional inclusive `startDateIso` / `endDateIso` (null end = ongoing), plus `startBucketId` / `endBucketId` for partial first/last days (e.g. a course started with the evening dose). Not applied to `SPECIFIC_DATES` / `AS_NEEDED`.
+  - Outside the range a schedule produces no doses, but a dose that was actually logged always stays visible.
+- **Notifications & Alarms** (`notifications/`):
+  - `DoseNotificationManager.refresh(context, snapshot)` is the single entry point after any data, settings, clock, or permission change. It re-arms alarms and reconciles the shade, and it is silent. Only receivers alert, once per event. Don't add separate schedule/sync calls.
+  - Per window, at most three alarm slots: START (next opening with doses due, looking ahead past empty days), END (only while the current window is open with unlogged doses), and NUDGE (repeat reminders on a fixed grid from window start). Snoozes get a per-dose alarm. Alarms carry the dose's date; never infer it from the clock.
+  - **One notification per window occurrence**, tagged `window:<bucketId>:<dateIso>`: title "Morning dose" / "Morning medications", body lists drugs and doses, actions Take / Skip (single) or Take all (several), applying to exactly the listed doses. Discreet mode hides the body on the lock screen via a public version.
+  - Swiping a reminder away = snooze (delete intent). Repeat reminders re-alert ones not acted on. There is no Snooze button on notifications (it exists on the alarm screen and in-app).
+  - Receivers never call `startActivity`. The end-of-window alarm screen opens via the notification's full-screen intent (`DoseAlarmActivity.ACTION_RING` rings; `ACTION_SHOW` from a tap is silent).
+- **Optional Tracking**:
+  - Prescribers and conditions are optional (`AppSettings.trackPrescribers` / `trackConditions`; null = on only if records exist). Use `RegimenSnapshot.tracksPrescribers` / `tracksConditions` to gate tabs and fields. Hiding never deletes data.
 

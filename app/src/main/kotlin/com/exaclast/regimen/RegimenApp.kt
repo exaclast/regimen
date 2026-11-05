@@ -85,6 +85,19 @@ fun RegimenApp(
     ThemeMode.DARK -> true
   }
   val current = navigator.current ?: Route.Today
+  val visibleTabs = TopLevel.entries.filter { tab ->
+    when (tab) {
+      TopLevel.PRESCRIBERS -> snapshot.tracksPrescribers
+      TopLevel.CONDITIONS -> snapshot.tracksConditions
+      else -> true
+    }
+  }
+  // Tracking switched off while that tab's screens were underneath (e.g. from Settings): once
+  // back on them, return to Today rather than leave the user on a hidden section.
+  val hiddenTabShowing = navigator.currentTab !in visibleTabs && current !is Route.Settings
+  LaunchedEffect(hiddenTabShowing) {
+    if (hiddenTabShowing) navigator.selectTab(TopLevel.TODAY)
+  }
   val layoutType = if (current.isFullScreenTask) {
     NavigationSuiteType.None
   } else {
@@ -96,7 +109,7 @@ fun RegimenApp(
       NavigationSuiteScaffold(
         layoutType = layoutType,
         navigationSuiteItems = {
-          TopLevel.entries.forEach { tab ->
+          visibleTabs.forEach { tab ->
             item(
               selected = navigator.currentTab == tab,
               onClick = { navigator.selectTab(tab) },
@@ -181,6 +194,8 @@ fun RegimenApp(
                   initialMedication = existing,
                   conditions = snapshot.conditions,
                   prescribers = snapshot.prescribers,
+                  showConditions = snapshot.tracksConditions,
+                  showPrescribers = snapshot.tracksPrescribers,
                   configuredPatientName = settings.patientName,
                   allowFdaLookup = settings.allowFdaLookup,
                   onDismiss = navigator::back,
@@ -298,6 +313,8 @@ fun RegimenApp(
               }
               SettingsScreen(
                 settings = settings,
+                tracksPrescribers = snapshot.tracksPrescribers,
+                tracksConditions = snapshot.tracksConditions,
                 buckets = snapshot.buckets,
                 diagnosticsTarget = testItem?.let {
                   DiagnosticsTarget("${it.medication.primaryName} (${it.bucket.name})")
@@ -350,12 +367,12 @@ fun RegimenApp(
       if (needsStartupPermissions && current !is Route.Settings) {
         StartupPermissionsDialog(
           settings = settings,
+          tracksPrescribers = snapshot.tracksPrescribers,
+          tracksConditions = snapshot.tracksConditions,
           onSaveSettings = viewModel::saveSettings,
-          onDismiss = {
-            viewModel.saveSettings(
-              settings.copy(permissionsPromptDismissedVersion = AppSettings.CURRENT_PERMISSIONS_VERSION)
-            )
-          },
+          // The dialog saves its own "seen" flag together with the name typed into it; saving
+          // here too (from an older settings copy) would overwrite that name.
+          onDismiss = {},
           onPermissionsChanged = viewModel::refreshPermissionsAndAlarms,
         )
       }

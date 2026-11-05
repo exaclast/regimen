@@ -59,7 +59,7 @@ class FdaNdcLookupServiceTest {
       }
     """.trimIndent()
 
-    val result = FdaNdcLookupService.parseOpenFdaJson(sampleOpenFdaResponse, "00517-0031-25")
+    val result = FdaNdcLookupService.parseOpenFdaJson(sampleOpenFdaResponse, listOf("00517-0031-25"))
     assertNotNull(result)
     assertEquals("Cyanocobalamin", result!!.formulaName)
     assertEquals("Cyanocobalamin", result.brandName)
@@ -287,5 +287,103 @@ class FdaNdcLookupServiceTest {
       (outcomeFuzzy as CrossReferenceOutcome.UnambiguousMatch).candidate.result.ndc11
     )
   }
-}
 
+  /** A product with several package sizes; the FDA lists the -14 bottle first. */
+  private val multiPackageResponse = """
+    {
+      "results": [
+        {
+          "product_ndc": "4580-2112",
+          "generic_name": "UNRELATED DRUG",
+          "labeler_name": "Other Labeler",
+          "dosage_form": "TABLET",
+          "active_ingredients": [{ "name": "UNRELATED DRUG", "strength": "5 mg/1" }],
+          "packaging": [{ "package_ndc": "4580-2112-01", "description": "100 TABLET in 1 BOTTLE" }]
+        },
+        {
+          "product_ndc": "45802-112",
+          "generic_name": "EXAMPLEDRUG",
+          "labeler_name": "Perrigo",
+          "dosage_form": "TABLET",
+          "active_ingredients": [{ "name": "EXAMPLEDRUG", "strength": "10 mg/1" }],
+          "packaging": [
+            { "package_ndc": "45802-112-14", "description": "14 TABLET in 1 BOTTLE" },
+            { "package_ndc": "45802-112-22", "description": "30 TABLET in 1 BOTTLE" },
+            { "package_ndc": "45802-112-78", "description": "90 TABLET in 1 BOTTLE" }
+          ]
+        }
+      ]
+    }
+  """.trimIndent()
+
+  @Test
+  fun parseOpenFdaJson_picksEnteredPackageNotFirstListed() {
+    // Bare 10-digit entry 4580211222 is ambiguous (4-4-2 / 5-3-2 / 5-4-1); only 5-3-2 is a real
+    // package, and it is not the first package of its product nor the first search result.
+    val result = FdaNdcLookupService.parseOpenFdaJson(
+      multiPackageResponse,
+      FdaNdcLookupService.candidateNdc11s("4580211222"),
+    )
+    assertNotNull(result)
+    assertEquals("45802-0112-22", result!!.ndc11)
+    assertEquals("Exampledrug", result.formulaName)
+    assertEquals("30 TABLET in 1 BOTTLE", result.packageDescription)
+  }
+
+  @Test
+  fun parseOpenFdaJson_keepsEnteredNdcWhenPackageNotListed() {
+    // Product matches but this package size isn't in the FDA listing (e.g. discontinued):
+    // keep the entered NDC rather than substituting another bottle size.
+    val singleProduct = """
+      {
+        "results": [
+          {
+            "product_ndc": "45802-112",
+            "generic_name": "EXAMPLEDRUG",
+            "dosage_form": "TABLET",
+            "active_ingredients": [{ "name": "EXAMPLEDRUG", "strength": "10 mg/1" }],
+            "packaging": [
+              { "package_ndc": "45802-112-14", "description": "14 TABLET in 1 BOTTLE" },
+              { "package_ndc": "45802-112-22", "description": "30 TABLET in 1 BOTTLE" }
+            ]
+          }
+        ]
+      }
+    """.trimIndent()
+    val result = FdaNdcLookupService.parseOpenFdaJson(
+      singleProduct,
+      FdaNdcLookupService.candidateNdc11s("4580211250"),
+    )
+    assertNotNull(result)
+    assertEquals("45802-0112-50", result!!.ndc11)
+    assertEquals("Exampledrug", result.formulaName)
+  }
+
+  @Test
+  fun buildOpenFdaSearchQuery_packageOnlyCoversAllThreeTenDigitLayouts() {
+    val query = FdaNdcLookupService.buildOpenFdaSearchQuery("4580211222", includeProducts = false)
+    // The FDA stores 10-digit hyphenated NDCs; each possible layout must be queried exactly.
+    assertTrue(query.contains("packaging.package_ndc:\"4580-2112-22\"")) // 4-4-2
+    assertTrue(query.contains("packaging.package_ndc:\"45802-112-22\"")) // 5-3-2
+    assertTrue(query.contains("packaging.package_ndc:\"45802-1122-2\"")) // 5-4-1
+    assertTrue(!query.contains("product_ndc"))
+  }
+
+  @Test
+  fun hyphenatedInputs_resolveToTheSinglePackageTheyName() {
+    // Hyphens fix the layout, so only that one reading is used (no 3-way guessing).
+    for (input in listOf("45802-112-22", "45802-0112-22", "45802011222")) {
+      assertEquals(input, listOf("45802-0112-22"), FdaNdcLookupService.candidateNdc11s(input))
+      val query = FdaNdcLookupService.buildOpenFdaSearchQuery(input, includeProducts = false)
+      assertTrue(input, query.contains("packaging.package_ndc:\"45802-112-22\"")) // FDA's stored form
+      assertTrue(input, !query.contains("4580-2112")) // other layouts aren't guessed
+      val result = FdaNdcLookupService.parseOpenFdaJson(multiPackageResponse, FdaNdcLookupService.candidateNdc11s(input))
+      assertEquals(input, "45802-0112-22", result!!.ndc11)
+    }
+    // 4-4-2 and 5-4-1 hyphenated layouts.
+    assertEquals(listOf("04580-2112-22"), FdaNdcLookupService.candidateNdc11s("4580-2112-22"))
+    assertEquals(listOf("45802-1122-02"), FdaNdcLookupService.candidateNdc11s("45802-1122-2"))
+    // Spaces instead of hyphens fall back to the three-layout search.
+    assertEquals(3, FdaNdcLookupService.candidateNdc11s("45802 112 22").size)
+  }
+}

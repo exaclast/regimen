@@ -337,10 +337,63 @@ data class MedicationSchedule(
   val doseAmount: Double = 1.0,
   val doseUnit: DoseUnit = DoseUnit.TABLET,
   val enabled: Boolean = true,
+  /** First day the schedule applies (inclusive); null = no lower bound. */
+  val startDateIso: String? = null,
+  /** Last day the schedule applies (inclusive); null = ongoing. */
+  val endDateIso: String? = null,
+  /** First dose window on the start date (e.g. picked up a prescription in the evening); null = all. */
+  val startBucketId: String? = null,
+  /** Last dose window on the end date; null = all. */
+  val endBucketId: String? = null,
   val createdAtEpochMillis: Long = System.currentTimeMillis(),
   val updatedAtEpochMillis: Long = System.currentTimeMillis(),
   val deletedAtEpochMillis: Long? = null,
-)
+) {
+  /** Specific-date and as-needed schedules aren't bounded by a start/end range. */
+  val usesDateRange: Boolean
+    get() = frequencyType != ScheduleFrequencyType.SPECIFIC_DATES &&
+      frequencyType != ScheduleFrequencyType.AS_NEEDED
+
+  fun startDateOrNull(): LocalDate? = startDateIso?.let { runCatching { LocalDate.parse(it.trim()) }.getOrNull() }
+
+  fun endDateOrNull(): LocalDate? = endDateIso?.let { runCatching { LocalDate.parse(it.trim()) }.getOrNull() }
+
+  /** True when [date] falls inside the schedule's start/end range (always true when unbounded). */
+  fun isInDateRange(date: LocalDate): Boolean {
+    if (!usesDateRange) return true
+    val start = startDateOrNull()
+    val end = endDateOrNull()
+    return (start == null || !date.isBefore(start)) && (end == null || !date.isAfter(end))
+  }
+
+  /**
+   * True when [bucket]'s dose on [date] is inside the range, including the partial first and last
+   * days: on the start date only windows at or after [startBucketId] count, on the end date only
+   * windows at or before [endBucketId]. Windows compare by start time; a boundary window that no
+   * longer exists doesn't restrict anything.
+   */
+  fun isWindowInRange(date: LocalDate, bucket: TimeOfDayBucket, buckets: List<TimeOfDayBucket>): Boolean {
+    if (!isInDateRange(date)) return false
+    if (!usesDateRange) return true
+    fun minutesOf(b: TimeOfDayBucket) = b.hour * 60 + b.minute
+    val minutes = minutesOf(bucket)
+    if (date == startDateOrNull()) {
+      val first = startBucketId?.let { id -> buckets.find { it.id == id } }
+      if (first != null && minutes < minutesOf(first)) return false
+    }
+    if (date == endDateOrNull()) {
+      val last = endBucketId?.let { id -> buckets.find { it.id == id } }
+      if (last != null && minutes > minutesOf(last)) return false
+    }
+    return true
+  }
+
+  /** The schedule's end date has passed: it no longer produces doses. */
+  fun hasEndedBefore(date: LocalDate): Boolean {
+    if (!usesDateRange) return false
+    return endDateOrNull()?.isBefore(date) == true
+  }
+}
 
 @Serializable
 enum class DoseStatus(val displayName: String) {
@@ -380,6 +433,7 @@ data class AppSettings(
   val notificationsEnabled: Boolean = true,
   val alarmsEnabled: Boolean = true,
   val snoozeMinutes: Int = 30,
+  val reminderRepeatMinutes: Int = 15,
   val discreetNotifications: Boolean = false,
   val confirmBeforeTake: Boolean = false,
   val themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -387,10 +441,15 @@ data class AppSettings(
   val permissionsPromptDismissedVersion: Int = 0,
   val allowFdaLookup: Boolean = false,
   val patientName: String = "",
+  /** Track prescribers (tab, fields). null = not chosen yet: on only if any prescriber exists. */
+  val trackPrescribers: Boolean? = null,
+  /** Track conditions (tab, fields). null = not chosen yet: on only if any condition exists. */
+  val trackConditions: Boolean? = null,
 ) {
   companion object {
     const val CURRENT_PERMISSIONS_VERSION = 2
     val SNOOZE_PRESETS = listOf(15, 30, 45, 60)
+    val REPEAT_PRESETS = listOf(0, 10, 15, 20, 30)
   }
 }
 

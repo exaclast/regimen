@@ -4,6 +4,7 @@ import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
+import java.time.LocalDate
 
 /** Plain-language schedule descriptions ("Weekly · Morning", "Mon, Wed, Fri · Evening"). */
 object ScheduleText {
@@ -53,12 +54,18 @@ object ScheduleText {
     }
   }
 
-  /** One-line summary of all of a medication's active schedules. */
-  fun summary(schedules: List<MedicationSchedule>, buckets: List<TimeOfDayBucket>): String {
-    val active = schedules.filter { it.enabled && it.deletedAtEpochMillis == null }
+  /** One-line summary of all of a medication's active schedules (finished ones are left out). */
+  fun summary(
+    schedules: List<MedicationSchedule>,
+    buckets: List<TimeOfDayBucket>,
+    today: LocalDate = LocalDate.now(),
+  ): String {
+    val current = schedules.filter { it.enabled && it.deletedAtEpochMillis == null }
+    val active = current.filterNot { it.hasEndedBefore(today) }
     return when {
-      active.isEmpty() -> "As needed"
-      else -> active.joinToString("; ") { describe(it, buckets) }
+      active.isNotEmpty() -> active.joinToString("; ") { describe(it, buckets) }
+      current.isNotEmpty() -> "Schedule ended"
+      else -> "As needed"
     }
   }
 }

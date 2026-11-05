@@ -72,6 +72,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -103,6 +104,8 @@ data class DiagnosticsTarget(val label: String)
 @Composable
 fun SettingsScreen(
   settings: AppSettings,
+  tracksPrescribers: Boolean,
+  tracksConditions: Boolean,
   buckets: List<TimeOfDayBucket>,
   diagnosticsTarget: DiagnosticsTarget?,
   onBack: () -> Unit,
@@ -164,7 +167,7 @@ fun SettingsScreen(
       item(key = "reminders") {
         SectionHeader("Reminders")
         GroupedColumn {
-          GroupItem(0, 5) {
+          GroupItem(0, 6) {
             SwitchRow(
               title = "Dose reminders",
               subtitle = "Notify when a dose window opens",
@@ -172,7 +175,7 @@ fun SettingsScreen(
               onCheckedChange = { onSaveSettings(settings.copy(notificationsEnabled = it)) },
             )
           }
-          GroupItem(1, 5) {
+          GroupItem(1, 6) {
             SwitchRow(
               title = "End-of-window alarm",
               subtitle = "Ring if a dose is still unlogged when its window ends",
@@ -181,7 +184,7 @@ fun SettingsScreen(
               onCheckedChange = { onSaveSettings(settings.copy(alarmsEnabled = it)) },
             )
           }
-          GroupItem(2, 5) {
+          GroupItem(2, 6) {
             SwitchRow(
               title = "Discreet notifications",
               subtitle = "Hide medication names and sites on the lock screen",
@@ -190,9 +193,14 @@ fun SettingsScreen(
               onCheckedChange = { onSaveSettings(settings.copy(discreetNotifications = it)) },
             )
           }
-          GroupItem(3, 5) {
+          GroupItem(3, 6) {
             Column(modifier = Modifier.padding(16.dp)) {
-              Text("Snooze length", style = MaterialTheme.typography.bodyLarge)
+              Text("When dismissed, remind again in", style = MaterialTheme.typography.bodyLarge)
+              Text(
+                "Swiping a reminder away (or tapping Snooze in the app) brings it back after this long",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
               Spacer(Modifier.height(8.dp))
               val presets = AppSettings.SNOOZE_PRESETS
               SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -208,7 +216,30 @@ fun SettingsScreen(
               }
             }
           }
-          GroupItem(4, 5) {
+          GroupItem(4, 6) {
+            Column(modifier = Modifier.padding(16.dp)) {
+              Text("Remind again if no response", style = MaterialTheme.typography.bodyLarge)
+              Text(
+                "Repeats a reminder you haven't acted on, until the window's end alarm",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              Spacer(Modifier.height(8.dp))
+              val repeatPresets = AppSettings.REPEAT_PRESETS
+              SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                repeatPresets.forEachIndexed { i, mins ->
+                  SegmentedButton(
+                    selected = settings.reminderRepeatMinutes == mins,
+                    onClick = { onSaveSettings(settings.copy(reminderRepeatMinutes = mins)) },
+                    shape = SegmentedButtonDefaults.itemShape(index = i, count = repeatPresets.size),
+                    icon = {},
+                    label = { Text(if (mins == 0) "Off" else "$mins m", maxLines = 1) },
+                  )
+                }
+              }
+            }
+          }
+          GroupItem(5, 6) {
             SwitchRow(
               title = "Confirm before logging",
               subtitle = "Ask before logging a scheduled dose",
@@ -257,6 +288,34 @@ fun SettingsScreen(
         )
       }
 
+      item(key = "tracking") {
+        SectionHeader("Tracking")
+        GroupedColumn {
+          GroupItem(0, 2) {
+            SwitchRow(
+              title = "Prescribers",
+              subtitle = "Keep a list of prescribers and link them to medications",
+              checked = tracksPrescribers,
+              onCheckedChange = { onSaveSettings(settings.copy(trackPrescribers = it)) },
+            )
+          }
+          GroupItem(1, 2) {
+            SwitchRow(
+              title = "Conditions",
+              subtitle = "Keep a list of conditions and what each medication treats",
+              checked = tracksConditions,
+              onCheckedChange = { onSaveSettings(settings.copy(trackConditions = it)) },
+            )
+          }
+        }
+        Text(
+          text = "Turning one off hides it from the app. Nothing you've entered is deleted.",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+        )
+      }
+
       item(key = "appearance") {
         SectionHeader("Appearance")
         GroupedColumn {
@@ -299,35 +358,35 @@ fun SettingsScreen(
       }
 
       item(key = "scanning") {
-        SectionHeader("Label scanning")
-        if (nanoStatus == FeatureStatus.UNAVAILABLE) {
-          Surface(
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surfaceContainerLow,
-            modifier = Modifier.fillMaxWidth(),
-          ) {
-            Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-              verticalAlignment = Alignment.CenterVertically,
+        SectionHeader("Label scanning & lookup")
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+          if (nanoStatus == FeatureStatus.UNAVAILABLE) {
+            Surface(
+              shape = MaterialTheme.shapes.medium,
+              color = MaterialTheme.colorScheme.surfaceContainerLow,
+              modifier = Modifier.fillMaxWidth(),
             ) {
-              Icon(
-                imageVector = Icons.Default.Info,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
-              )
-              Spacer(modifier = Modifier.width(12.dp))
-              Text(
-                text = "This device does not support on-device Gemini Nano label scanning capabilities.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
+              Row(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Info,
+                  contentDescription = null,
+                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                  modifier = Modifier.size(24.dp),
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                  text = "This device doesn't support on-device Gemini Nano label scanning. You can still enter medications manually and verify them with OpenFDA.",
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
             }
-          }
-        } else {
-          Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+          } else {
             NanoAiCard(
               nanoStatus = nanoStatus,
               nanoProgressMessage = nanoProgressMessage,
@@ -352,12 +411,16 @@ fun SettingsScreen(
                 DrugBarcodeScanner.openAiCoreSettings(context)
               },
             )
+          }
 
-            FdaLookupCard(
-              allowFdaLookup = settings.allowFdaLookup,
-              onAllowFdaLookupChange = { onSaveSettings(settings.copy(allowFdaLookup = it)) },
-            )
+          // OpenFDA lookup works on every device (manual entry + "Match FDA"), AI or not.
+          FdaLookupCard(
+            allowFdaLookup = settings.allowFdaLookup,
+            onAllowFdaLookupChange = { onSaveSettings(settings.copy(allowFdaLookup = it)) },
+          )
 
+          // The printed-name filter only matters for AI label scanning.
+          if (nanoStatus != FeatureStatus.UNAVAILABLE) {
             PatientNameField(
               savedName = settings.patientName,
               onSave = { onSaveSettings(settings.copy(patientName = it)) },
@@ -690,6 +753,8 @@ fun DoseWindowEditorScreen(
 @Composable
 fun StartupPermissionsDialog(
   settings: AppSettings,
+  tracksPrescribers: Boolean,
+  tracksConditions: Boolean,
   onSaveSettings: (AppSettings) -> Unit,
   onDismiss: () -> Unit,
   onPermissionsChanged: () -> Unit,
@@ -724,15 +789,23 @@ fun StartupPermissionsDialog(
   }
   val isNanoSupported = nanoStatus != null && nanoStatus != FeatureStatus.UNAVAILABLE
 
-  var patientNameText by rememberSaveable(settings.patientName) {
-    mutableStateOf(settings.patientName)
+  // Local until the dialog closes: saving per keystroke trimmed the text and reset the field
+  // (no spaces could be typed) and re-armed every alarm on each character.
+  var patientNameText by rememberSaveable { mutableStateOf(settings.patientName) }
+
+  /** One write on close: the name and the "setup seen" flag together. */
+  fun finish() {
+    onSaveSettings(
+      settings.copy(
+        patientName = patientNameText.trim(),
+        permissionsPromptDismissedVersion = AppSettings.CURRENT_PERMISSIONS_VERSION,
+      )
+    )
+    onDismiss()
   }
 
   AlertDialog(
-    onDismissRequest = {
-      onSaveSettings(settings.copy(patientName = patientNameText.trim()))
-      onDismiss()
-    },
+    onDismissRequest = ::finish,
     title = { Text("Permissions & System Setup") },
     text = {
       Column(
@@ -743,7 +816,7 @@ fun StartupPermissionsDialog(
           text = if (isNanoSupported) {
             "Configure notification reliability and optional label scanning features. You can change these anytime in Settings:"
           } else {
-            "Configure notification reliability for your dose reminders and alarms. You can change these anytime in Settings:"
+            "Configure notification reliability for your dose reminders and optional medication lookup. You can change these anytime in Settings:"
           },
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -764,14 +837,40 @@ fun StartupPermissionsDialog(
           )
         }
 
-        if (isNanoSupported) {
-          Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(
-              text = "Label Scanning Setup (Optional)",
-              style = MaterialTheme.typography.titleSmall,
-              fontWeight = FontWeight.Bold,
-              color = MaterialTheme.colorScheme.primary,
-            )
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+          Text(
+            text = "What would you like to track?",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+          )
+          Text(
+            text = "Medications and doses are always tracked. These are optional; you can change them in Settings.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          SwitchRow(
+            title = "Prescribers",
+            subtitle = "Who prescribed each medication",
+            checked = tracksPrescribers,
+            onCheckedChange = { onSaveSettings(settings.copy(trackPrescribers = it)) },
+          )
+          SwitchRow(
+            title = "Conditions",
+            subtitle = "What each medication treats",
+            checked = tracksConditions,
+            onCheckedChange = { onSaveSettings(settings.copy(trackConditions = it)) },
+          )
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Text(
+            text = if (isNanoSupported) "Label Scanning & Lookup (Optional)" else "Medication Lookup (Optional)",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+          )
+          if (isNanoSupported) {
             Text(
               text = "On-device AI extracts medication details from prescription bottle labels without sending images to the cloud.",
               style = MaterialTheme.typography.bodySmall,
@@ -803,55 +902,44 @@ fun StartupPermissionsDialog(
                 DrugBarcodeScanner.openAiCoreSettings(context)
               },
             )
+          }
 
-            FdaLookupCard(
-              allowFdaLookup = settings.allowFdaLookup,
-              onAllowFdaLookupChange = { onSaveSettings(settings.copy(allowFdaLookup = it)) },
+          FdaLookupCard(
+            allowFdaLookup = settings.allowFdaLookup,
+            onAllowFdaLookupChange = { onSaveSettings(settings.copy(allowFdaLookup = it)) },
+          )
+
+          if (isNanoSupported) {
+            Text(
+              text = "Your Name on Labels (Optional)",
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.padding(top = 6.dp),
             )
-
-            Surface(
-              shape = MaterialTheme.shapes.small,
-              color = MaterialTheme.colorScheme.surface,
+            Text(
+              text = "Label scanning ignores this name so it's never mistaken for a medication. It stays on your device.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedTextField(
+              value = patientNameText,
+              onValueChange = { patientNameText = it },
+              label = { Text("Name as printed on labels") },
+              placeholder = { Text("e.g. Jane Doe") },
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Words,
+                imeAction = ImeAction.Done,
+              ),
               modifier = Modifier.fillMaxWidth(),
-            ) {
-              Column(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .padding(vertical = 4.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-              ) {
-                Text(
-                  text = "Prescription Label Name (Optional)",
-                  style = MaterialTheme.typography.labelLarge,
-                  fontWeight = FontWeight.Bold,
-                )
-                Text(
-                  text = "Used by on-device Gemini Nano as a filter so your printed name is never misread as a medication brand or generic name. This stays entirely on your device and is only required if you plan to use label scanning.",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                OutlinedTextField(
-                  value = patientNameText,
-                  onValueChange = {
-                    patientNameText = it
-                    onSaveSettings(settings.copy(patientName = it.trim()))
-                  },
-                  label = { Text("Your name as printed on labels") },
-                  placeholder = { Text("e.g. Jane Doe") },
-                  singleLine = true,
-                  modifier = Modifier.fillMaxWidth(),
-                )
-              }
-            }
+            )
           }
         }
       }
     },
     confirmButton = {
-      Button(onClick = {
-        onSaveSettings(settings.copy(patientName = patientNameText.trim()))
-        onDismiss()
-      }) {
+      Button(onClick = ::finish) {
         Text(
           if (allCoreGranted && batteryUnrestricted) {
             "All Set"
@@ -892,6 +980,9 @@ fun PermissionsChecklistSection(
   }
   val exactAlarmsGranted = remember(refreshTick) {
     DoseNotificationManager.canScheduleExactAlarms(context)
+  }
+  val fullScreenGranted = remember(refreshTick) {
+    DoseNotificationManager.canUseFullScreenIntent(context)
   }
   val batteryUnrestricted = remember(refreshTick) {
     DoseNotificationManager.isIgnoringBatteryOptimizations(context)
@@ -941,7 +1032,21 @@ fun PermissionsChecklistSection(
     )
 
     PermissionItemCard(
-      title = "3. Unrestricted Background Battery",
+      title = "3. Full-Screen Alarms",
+      subtitle = if (fullScreenGranted) {
+        "Granted — end-of-window alarms open full screen over the lock screen"
+      } else {
+        "Without this, end-of-window alarms only appear as a heads-up notification"
+      },
+      isGranted = fullScreenGranted,
+      actionLabel = "Allow",
+      onActionClick = {
+        DoseNotificationManager.openFullScreenIntentSettings(context)
+      },
+    )
+
+    PermissionItemCard(
+      title = "4. Unrestricted Background Battery",
       subtitle = if (batteryUnrestricted) {
         "Granted — exempt from background battery throttling"
       } else {

@@ -239,6 +239,9 @@ fun MedicationEditorScreen(
   initialMedication: Medication?,
   conditions: List<Condition>,
   prescribers: List<Prescriber>,
+  // Optional tracking: hidden fields keep any existing link untouched.
+  showConditions: Boolean = true,
+  showPrescribers: Boolean = true,
   configuredPatientName: String = "",
   allowFdaLookup: Boolean = false,
   onDismiss: () -> Unit,
@@ -828,15 +831,17 @@ fun MedicationEditorScreen(
           }
 
           // Indication (Condition selector + optional notes)
-          val selectedConditionObj = conditions.find { it.id == selectedConditionId }
-          DropdownSelectorField(
-            label = "Indication (Condition)",
-            selectedText = selectedConditionObj?.name ?: "None linked",
-            options = listOf<Condition?>(null) + conditions,
-            optionLabel = { it?.name ?: "None linked" },
-            onOptionSelected = { selectedConditionId = it?.id },
-            modifier = Modifier.fillMaxWidth(),
-          )
+          if (showConditions) {
+            val selectedConditionObj = conditions.find { it.id == selectedConditionId }
+            DropdownSelectorField(
+              label = "Indication (Condition)",
+              selectedText = selectedConditionObj?.name ?: "None linked",
+              options = listOf<Condition?>(null) + conditions,
+              optionLabel = { it?.name ?: "None linked" },
+              onOptionSelected = { selectedConditionId = it?.id },
+              modifier = Modifier.fillMaxWidth(),
+            )
+          }
 
           // 2. Injectable / Vial Specifications (only when Form is Injectable)
           if (form.isInjectable) {
@@ -1135,8 +1140,11 @@ fun MedicationEditorScreen(
           val optionalSummary = listOfNotNull(
             ndc11.takeIf { it.isNotBlank() }?.let { "NDC $it" },
             manufacturer.takeIf { it.isNotBlank() },
-            prescribers.find { it.id == selectedPrescriberId }?.name,
-          ).joinToString(" • ").ifEmpty { "NDC-11, manufacturer, prescriber, prescribed date & notes" }
+            prescribers.find { it.id == selectedPrescriberId }?.name?.takeIf { showPrescribers },
+          ).joinToString(" • ").ifEmpty {
+            if (showPrescribers) "NDC-11, manufacturer, prescriber, prescribed date & notes"
+            else "NDC-11, manufacturer, prescribed date & notes"
+          }
 
           CollapsibleFormSection(
             title = "Optional Rx & Drug Details",
@@ -1182,17 +1190,19 @@ fun MedicationEditorScreen(
               modifier = Modifier.fillMaxWidth(),
             )
 
-            val selectedDoc = prescribers.find { it.id == selectedPrescriberId }
-            DropdownSelectorField(
-              label = "Prescriber",
-              selectedText = selectedDoc?.let { if (it.isPcp) "${it.name} (PCP)" else it.name } ?: "None selected",
-              options = listOf<Prescriber?>(null) + prescribers,
-              optionLabel = { doc ->
-                doc?.let { if (it.isPcp) "${it.name} (PCP)" else it.name } ?: "None selected"
-              },
-              onOptionSelected = { selectedPrescriberId = it?.id },
-              modifier = Modifier.fillMaxWidth(),
-            )
+            if (showPrescribers) {
+              val selectedDoc = prescribers.find { it.id == selectedPrescriberId }
+              DropdownSelectorField(
+                label = "Prescriber",
+                selectedText = selectedDoc?.let { if (it.isPcp) "${it.name} (PCP)" else it.name } ?: "None selected",
+                options = listOf<Prescriber?>(null) + prescribers,
+                optionLabel = { doc ->
+                  doc?.let { if (it.isPcp) "${it.name} (PCP)" else it.name } ?: "None selected"
+                },
+                onOptionSelected = { selectedPrescriberId = it?.id },
+                modifier = Modifier.fillMaxWidth(),
+              )
+            }
 
             DatePickerField(
               label = "Prescribed date",
@@ -1624,9 +1634,21 @@ fun ScheduleEditorScreen(
   }
   var doseUnit by rememberSaveable { mutableStateOf(initialSchedule?.doseUnit ?: medication.defaultDoseUnit) }
   var intervalDaysText by rememberSaveable { mutableStateOf((initialSchedule?.intervalDays ?: 7).toString()) }
-  var anchorDateIso by rememberSaveable {
-    mutableStateOf(initialSchedule?.anchorDateIso ?: LocalDate.now().toString())
+  // One start date serves as both the range start and an interval schedule's cycle anchor.
+  var startDateIso by rememberSaveable {
+    mutableStateOf(
+      initialSchedule?.startDateIso
+        ?: initialSchedule?.takeIf {
+          it.frequencyType == ScheduleFrequencyType.EVERY_N_DAYS ||
+            it.frequencyType == ScheduleFrequencyType.RELATIVE_TO_LAST_DOSE
+        }?.anchorDateIso
+        ?: LocalDate.now().toString()
+    )
   }
+  var endDateIso by rememberSaveable { mutableStateOf(initialSchedule?.endDateIso.orEmpty()) }
+  // Partial first/last day, e.g. a twice-daily course started with the evening dose.
+  var startBucketId by rememberSaveable { mutableStateOf(initialSchedule?.startBucketId) }
+  var endBucketId by rememberSaveable { mutableStateOf(initialSchedule?.endBucketId) }
   val selectedDaysOfWeek = remember {
     mutableStateListOf<Int>().apply { addAll(initialSchedule?.daysOfWeek ?: setOf(1, 2, 3, 4, 5, 6, 7)) }
   }
@@ -1641,8 +1663,30 @@ fun ScheduleEditorScreen(
   val validBucketIds = selectedBucketIds.filter { id -> buckets.any { it.id == id } }
   val doseCheck = checkRequiredPositiveDecimal(doseAmountText)
   val intervalCheck = checkRequiredPositiveInt(intervalDaysText)
-  val anchorDate = NumberInput.parseIsoDate(anchorDateIso)
-  val anchorError = if (anchorDate == null) "Pick a start date" else null
+  val usesDateRange = frequencyType != ScheduleFrequencyType.SPECIFIC_DATES &&
+    frequencyType != ScheduleFrequencyType.AS_NEEDED
+  val startDate = NumberInput.parseIsoDate(startDateIso)
+  val endDate = NumberInput.parseIsoDate(endDateIso)
+  val startError = if (startDate == null) "Pick a start date" else null
+  val endError = if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
+    "End date can't be before the start date"
+  } else {
+    null
+  }
+  // Selected windows in time order; boundary windows only matter when there's more than one.
+  val chosenWindows = orderedBuckets.filter { it.id in selectedBucketIds }
+  val firstWindow = chosenWindows.find { it.id == startBucketId } ?: chosenWindows.firstOrNull()
+  val lastWindow = chosenWindows.find { it.id == endBucketId } ?: chosenWindows.lastOrNull()
+  val showBoundaryWindows = usesDateRange && chosenWindows.size > 1
+  val boundaryError = if (
+    showBoundaryWindows && startDate != null && startDate == endDate &&
+    firstWindow != null && lastWindow != null &&
+    chosenWindows.indexOf(lastWindow) < chosenWindows.indexOf(firstWindow)
+  ) {
+    "On a single-day schedule the last dose can't come before the first"
+  } else {
+    null
+  }
   val bucketError = if (frequencyType != ScheduleFrequencyType.AS_NEEDED && validBucketIds.isEmpty()) {
     "Select at least one dose window"
   } else {
@@ -1659,7 +1703,8 @@ fun ScheduleEditorScreen(
     null
   }
   val canSave = doseCheck.isValid &&
-    (!usesInterval || (intervalCheck.isValid && anchorError == null)) &&
+    (!usesInterval || intervalCheck.isValid) &&
+    (!usesDateRange || (startError == null && endError == null && boundaryError == null)) &&
     bucketError == null &&
     daysError == null &&
     specificDatesError == null
@@ -1675,12 +1720,19 @@ fun ScheduleEditorScreen(
         bucketIds = if (frequencyType == ScheduleFrequencyType.AS_NEEDED) emptyList() else validBucketIds,
         // Interval/anchor only matter for interval schedules; keep prior values otherwise.
         intervalDays = intervalCheck.validOrNull() ?: initialSchedule?.intervalDays ?: 7,
-        anchorDateIso = anchorDate?.toString() ?: initialSchedule?.anchorDateIso ?: LocalDate.now().toString(),
+        anchorDateIso = startDate?.toString() ?: initialSchedule?.anchorDateIso ?: LocalDate.now().toString(),
         daysOfWeek = selectedDaysOfWeek.toSet().ifEmpty { setOf(1, 2, 3, 4, 5, 6, 7) },
         specificDatesIso = if (frequencyType == ScheduleFrequencyType.SPECIFIC_DATES) selectedSpecificDates.toSet() else emptySet(),
         doseAmount = doseAmt,
         doseUnit = doseUnit,
         enabled = initialSchedule?.enabled ?: true,
+        startDateIso = if (usesDateRange) startDate?.toString() else null,
+        endDateIso = if (usesDateRange) endDate?.toString() else null,
+        // Stored only when it actually trims the day (null = every selected window).
+        startBucketId = firstWindow?.id
+          ?.takeIf { showBoundaryWindows && it != chosenWindows.first().id },
+        endBucketId = lastWindow?.id
+          ?.takeIf { showBoundaryWindows && endDate != null && it != chosenWindows.last().id },
         createdAtEpochMillis = initialSchedule?.createdAtEpochMillis ?: System.currentTimeMillis(),
       )
     )
@@ -1737,14 +1789,26 @@ fun ScheduleEditorScreen(
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
       )
-      DatePickerField(
-        label = "Start date",
-        valueIso = anchorDateIso,
-        onValueChange = { anchorDateIso = it },
-        allowClear = false,
-        supportingText = anchorError,
-        modifier = Modifier.fillMaxWidth(),
-      )
+    }
+
+    if (usesDateRange) {
+      Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        DatePickerField(
+          label = "Start date",
+          valueIso = startDateIso,
+          onValueChange = { startDateIso = it },
+          allowClear = false,
+          supportingText = startError ?: if (usesInterval) "First dose of the cycle" else null,
+          modifier = Modifier.weight(1f),
+        )
+        DatePickerField(
+          label = "End date",
+          valueIso = endDateIso,
+          onValueChange = { endDateIso = it },
+          supportingText = endError ?: if (endDateIso.isBlank()) "Ongoing" else "Last day, inclusive",
+          modifier = Modifier.weight(1f),
+        )
+      }
     }
 
     if (frequencyType == ScheduleFrequencyType.DAYS_OF_WEEK) {
@@ -1786,6 +1850,36 @@ fun ScheduleEditorScreen(
         }
         bucketError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
       }
+    }
+
+    if (showBoundaryWindows && firstWindow != null && lastWindow != null) {
+      Text("First and last day", style = MaterialTheme.typography.titleSmall)
+      Text(
+        "For courses that start or finish partway through a day, like an antibiotic picked up in the evening.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        DropdownSelectorField(
+          label = "First dose (start date)",
+          selectedText = firstWindow.name,
+          options = chosenWindows,
+          optionLabel = { "${it.name} · ${it.formattedStartTime()}" },
+          onOptionSelected = { startBucketId = it.id },
+          modifier = Modifier.weight(1f),
+        )
+        if (endDate != null) {
+          DropdownSelectorField(
+            label = "Last dose (end date)",
+            selectedText = lastWindow.name,
+            options = chosenWindows,
+            optionLabel = { "${it.name} · ${it.formattedStartTime()}" },
+            onOptionSelected = { endBucketId = it.id },
+            modifier = Modifier.weight(1f),
+          )
+        }
+      }
+      boundaryError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }
   }
 }

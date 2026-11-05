@@ -249,6 +249,18 @@ object DoseEngine {
   ): Boolean {
     if (!schedule.enabled || schedule.deletedAtEpochMillis != null) return false
 
+    // Outside the start/end range the schedule produces no doses, so older dates don't show a newer
+    // prescription as missed. A dose that was actually logged on that date stays visible.
+    if (!schedule.isInDateRange(targetDate)) {
+      val targetDateIso = targetDate.toString()
+      return allLogs.any {
+        it.deletedAtEpochMillis == null &&
+          it.medicationId == schedule.medicationId &&
+          it.scheduledDateIso == targetDateIso &&
+          (it.scheduleId == null || it.scheduleId == schedule.id)
+      }
+    }
+
     return when (schedule.frequencyType) {
       ScheduleFrequencyType.DAILY -> true
 
@@ -345,7 +357,13 @@ object DoseEngine {
       val matchingSchedules = activeSchedules.filter { schedule ->
         schedule.frequencyType != ScheduleFrequencyType.AS_NEEDED &&
           schedule.bucketIds.contains(bucket.id) &&
-          isScheduleDueOnDate(schedule, targetDate, logs)
+          isScheduleDueOnDate(schedule, targetDate, logs) &&
+          // Partial first/last day (e.g. started with the evening dose): skip windows outside the
+          // range unless that dose was actually logged.
+          (schedule.isWindowInRange(targetDate, bucket, buckets) ||
+            logsForDate.any {
+              logMatchesItem(it, schedule, bucket, activeScheduleIdsByMed[schedule.medicationId].orEmpty())
+            })
       }
 
       val items = matchingSchedules.mapNotNull { schedule ->

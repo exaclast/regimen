@@ -57,4 +57,58 @@ object DoseAlarmTiming {
       .toInstant()
       .toEpochMilli()
   }
+
+  /** True while [nowMillis] is inside [bucket]'s window for doses scheduled on [dateIso]. */
+  fun isWithinWindow(
+    bucket: TimeOfDayBucket,
+    dateIso: String,
+    nowMillis: Long,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+  ): Boolean {
+    val start = windowStartMillis(bucket, dateIso, zoneId) ?: return false
+    val end = windowEndMillis(bucket, dateIso, zoneId) ?: return false
+    return nowMillis in start until end
+  }
+
+  /**
+   * The scheduled date of [bucket]'s most recently *opened* window: today once today's window has
+   * started, otherwise yesterday. A dose stays relevant (its notification is kept) from its window
+   * start until the same window opens again, so an overnight window at 1 AM resolves to yesterday.
+   */
+  fun currentOccurrenceDateIso(
+    bucket: TimeOfDayBucket,
+    nowMillis: Long,
+    today: LocalDate,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+  ): String {
+    val todayIso = today.toString()
+    val todayStart = windowStartMillis(bucket, todayIso, zoneId)
+    return if (todayStart != null && nowMillis >= todayStart) todayIso else today.minusDays(1).toString()
+  }
+
+  /**
+   * Returns epoch millis for the next repeating reminder nudge, or null if repeat is disabled
+   * (interval <= 0) or the next nudge would fire at or after [windowEndMillis].
+   *
+   * Nudges sit on a fixed grid anchored at [windowStartMillis] (start + k·interval), so re-arming
+   * them on every data change does not keep pushing the next nudge back. Without an anchor the
+   * interval is measured from [nowMillis].
+   */
+  fun nextNudgeMillis(
+    nowMillis: Long,
+    repeatIntervalMinutes: Int,
+    windowEndMillis: Long?,
+    windowStartMillis: Long? = null,
+  ): Long? {
+    if (repeatIntervalMinutes <= 0) return null
+    val intervalMillis = repeatIntervalMinutes * 60_000L
+    val nextMillis = if (windowStartMillis != null && windowStartMillis <= nowMillis) {
+      val elapsedSlots = (nowMillis - windowStartMillis) / intervalMillis
+      windowStartMillis + (elapsedSlots + 1) * intervalMillis
+    } else {
+      nowMillis + intervalMillis
+    }
+    if (windowEndMillis != null && nextMillis >= windowEndMillis) return null
+    return nextMillis
+  }
 }

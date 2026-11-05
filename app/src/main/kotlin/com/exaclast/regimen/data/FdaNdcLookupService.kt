@@ -300,7 +300,7 @@ object FdaNdcLookupService {
    * Generates candidate OpenFDA `package_ndc` and `product_ndc` search tokens from an NDC-11,
    * hyphenated NDC, or scanned barcode (GS1 DataMatrix / UPC-A / 10-digit unhyphenated NDC).
    */
-  fun buildOpenFdaSearchQuery(rawNdc: String): String {
+  fun buildOpenFdaSearchQuery(rawNdc: String, includeProducts: Boolean = true): String {
     val parsed = parseDrugBarcode(rawNdc)
     val rawClean = parsed.extractedNdc.trim()
     val packageCandidates = linkedSetOf<String>()
@@ -339,7 +339,7 @@ object FdaNdcLookupService {
 
     val clauses = mutableListOf<String>()
     packageCandidates.forEach { clauses.add("packaging.package_ndc:\"$it\"") }
-    productCandidates.forEach { clauses.add("product_ndc:\"$it\"") }
+    if (includeProducts) productCandidates.forEach { clauses.add("product_ndc:\"$it\"") }
     return clauses.joinToString("+OR+")
   }
 
@@ -359,25 +359,19 @@ object FdaNdcLookupService {
         )
       }
 
-      val searchClause = buildOpenFdaSearchQuery(rawNdc)
-      val encodedSearch = URLEncoder.encode(searchClause, "UTF-8")
-        .replace("%2B", "+")
-        .replace("%3A", ":")
-        .replace("%22", "\"")
-      val urlString = "https://api.fda.gov/drug/ndc.json?search=$encodedSearch&limit=1"
-
-      val responseBody = runCatching {
-        fetchHttpUrl(urlString)
-      }.getOrNull()
-
-      if (responseBody != null) {
-        val parsed = parseOpenFdaJson(responseBody, primaryNdc11)
-        if (parsed != null) {
-          return@runCatching parsed.copy(
-            expirationDateIso = parsedBarcode.expirationDateIso,
-            lotNumber = parsedBarcode.lotNumber,
-          )
-        }
+      // 1. Exact package: a bare 10-digit NDC only has three layouts (4-4-2, 5-3-2, 5-4-1), and the
+      //    FDA keeps the 10 digits unique across layouts, so at most one of them is a real package.
+      // 2. Only if no package matches (e.g. a size the FDA no longer lists), widen to the product
+      //    and keep the entered package code.
+      for (includeProducts in listOf(false, true)) {
+        val responseBody = runCatching {
+          fetchHttpUrl(ndcSearchUrl(buildOpenFdaSearchQuery(rawNdc, includeProducts)))
+        }.getOrNull() ?: continue
+        val parsed = parseOpenFdaJson(responseBody, candidates) ?: continue
+        return@runCatching parsed.copy(
+          expirationDateIso = parsedBarcode.expirationDateIso,
+          lotNumber = parsedBarcode.lotNumber,
+        )
       }
 
       throw IllegalStateException(
@@ -385,6 +379,14 @@ object FdaNdcLookupService {
           ?: "No matching FDA NDC record found for $primaryNdc11. Tap 'Scan Label' to read the printed drug name & strength."
       )
     }
+  }
+
+  private fun ndcSearchUrl(searchClause: String): String {
+    val encodedSearch = URLEncoder.encode(searchClause, "UTF-8")
+      .replace("%2B", "+")
+      .replace("%3A", ":")
+      .replace("%22", "\"")
+    return "https://api.fda.gov/drug/ndc.json?search=$encodedSearch&limit=10"
   }
 
   /**
@@ -763,28 +765,59 @@ object FdaNdcLookupService {
     }
   }
 
-  internal fun parseOpenFdaJson(rawJson: String, fallbackCanonicalNdc11: String): FdaDrugLookupResult? {
+  /**
+   * Maps an NDC search response to the entered package. [requestedNdc11s] are the canonical
+   * NDC-11 readings of the input (one for an 11-digit/hyphenated NDC, up to three for a bare
+   * 10-digit one). A product usually has several packages (bottle sizes); the result must be the
+   * package that was entered, not whichever the FDA lists first.
+   */
+  internal fun parseOpenFdaJson(rawJson: String, requestedNdc11s: List<String>): FdaDrugLookupResult? {
     val response = runCatching { json.decodeFromString<OpenFdaNdcResponse>(rawJson) }.getOrNull()
       ?: return null
-    val item = response.results.firstOrNull() ?: return null
-    return mapOpenFdaItemToResult(item, fallbackCanonicalNdc11)
+    val requested = requestedNdc11s.map { toCanonicalNdc11(it) }.toSet()
+    val requestedProducts = requested.map { productPartOf(it) }.toSet()
+    val items = response.results
+    val item = items.firstOrNull { it -> it.packaging.any { pkg -> pkg.canonicalNdc11() in requested } }
+      ?: items.firstOrNull { productPartOfItem(it) in requestedProducts }
+      ?: items.firstOrNull()
+      ?: return null
+    return mapOpenFdaItemToResult(item, requestedNdc11s.firstOrNull() ?: "00000-0000-00", requested)
+  }
+
+  /** "45802-0112-22" -> "45802-0112" */
+  private fun productPartOf(canonicalNdc11: String): String = canonicalNdc11.substringBeforeLast('-')
+
+  private fun OpenFdaPackaging.canonicalNdc11(): String? = packageNdc?.let { toCanonicalNdc11(it) }
+
+  /** The item's canonical 5-4 product code, from a package (always 3-segment) or the product NDC. */
+  private fun productPartOfItem(item: OpenFdaDrugItem): String? {
+    item.packaging.firstNotNullOfOrNull { it.canonicalNdc11() }
+      ?.takeIf { it.length == 13 }
+      ?.let { return productPartOf(it) }
+    return item.productNdc?.let { toCanonicalNdc11("$it-00") }?.takeIf { it.length == 13 }?.let { productPartOf(it) }
   }
 
   private fun mapOpenFdaItemToResult(
     item: OpenFdaDrugItem,
     fallbackCanonicalNdc11: String,
+    requestedNdc11s: Set<String> = emptySet(),
   ): FdaDrugLookupResult? {
     val rawGeneric = item.genericName?.takeIf { it.isNotBlank() }
       ?: item.activeIngredients.mapNotNull { it.name }.joinToString(" / ").takeIf { it.isNotBlank() }
       ?: item.brandName
       ?: return null
 
-    val matchedPackageNdc = item.packaging.firstOrNull()?.packageNdc
-    val resolvedNdc11 = if (!matchedPackageNdc.isNullOrBlank()) {
-      toCanonicalNdc11(matchedPackageNdc)
-    } else {
-      fallbackCanonicalNdc11
-    }
+    // 1. The entered package itself. 2. The product matched but this package isn't listed (e.g.
+    // discontinued size): keep the entered NDC in the layout that matches the product.
+    // 3. No NDC was entered (name search): the first listed package.
+    val matchedPackage = item.packaging.firstOrNull { it.canonicalNdc11() in requestedNdc11s }
+    val itemProduct = productPartOfItem(item)
+    val enteredForProduct = requestedNdc11s.firstOrNull { productPartOf(it) == itemProduct }
+    val chosenPackage = matchedPackage ?: if (enteredForProduct == null) item.packaging.firstOrNull() else null
+    val resolvedNdc11 = matchedPackage?.canonicalNdc11()
+      ?: enteredForProduct
+      ?: chosenPackage?.canonicalNdc11()
+      ?: fallbackCanonicalNdc11
 
     val formulaName = formatTitleCase(rawGeneric)
     val brandName = item.brandName?.takeIf { it.isNotBlank() }?.let { formatTitleCase(it) }
@@ -811,7 +844,7 @@ object FdaNdcLookupService {
     }
 
     val concentrationMgPerMl = parseConcentrationMgPerMl(rawStrength)
-    val packageDesc = item.packaging.firstOrNull()?.description
+    val packageDesc = chosenPackage?.description
     val vialVolumeMl = parseVialVolumeMl(packageDesc)
 
     return FdaDrugLookupResult(

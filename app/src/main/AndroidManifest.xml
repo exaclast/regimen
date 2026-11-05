@@ -52,6 +52,16 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".notifications.DoseAlarmActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Regimen" />
+
         <receiver
             android:name=".notifications.DoseActionReceiver"
             android:exported="false">
@@ -59,7 +69,9 @@
                 <action android:name="com.exaclast.regimen.action.TAKE_DOSE" />
                 <action android:name="com.exaclast.regimen.action.SNOOZE_DOSE" />
                 <action android:name="com.exaclast.regimen.action.SKIP_DOSE" />
+                <action android:name="com.exaclast.regimen.action.DOSE_NOTIFICATION_DISMISSED" />
                 <action android:name="com.exaclast.regimen.action.TRIGGER_WINDOW_START" />
+                <action android:name="com.exaclast.regimen.action.TRIGGER_WINDOW_NUDGE" />
                 <action android:name="com.exaclast.regimen.action.TRIGGER_WINDOW_END_ALARM" />
                 <action android:name="com.exaclast.regimen.action.TRIGGER_SNOOZE_EXPIRED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

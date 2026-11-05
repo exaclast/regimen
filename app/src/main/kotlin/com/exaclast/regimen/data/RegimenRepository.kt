@@ -33,7 +33,17 @@ data class RegimenSnapshot(
   val buckets: List<TimeOfDayBucket> = TimeOfDayBucket.defaultBuckets(),
   val schedules: List<MedicationSchedule> = emptyList(),
   val doseLogs: List<DoseLog> = emptyList(),
-)
+) {
+  /**
+   * Prescribers and conditions are optional. Until the user chooses, they're shown only when
+   * records exist: new installs start minimal, and nobody loses sight of data they entered.
+   */
+  val tracksPrescribers: Boolean
+    get() = settings.trackPrescribers ?: prescribers.any { it.deletedAtEpochMillis == null }
+
+  val tracksConditions: Boolean
+    get() = settings.trackConditions ?: conditions.any { it.deletedAtEpochMillis == null }
+}
 
 /**
  * Singleton offline-first repository backed by SQLite, architected with soft-delete tombstones,
@@ -67,7 +77,29 @@ class RegimenRepository private constructor(context: Context) {
       // Don't load demo data by default; leave data empty for initial user setup
       prefs.edit().putBoolean(KEY_SEEDED_INITIAL, true).apply()
     }
+    migrateScheduleStartDates()
     reloadSnapshot()
+  }
+
+  /**
+   * Schedules created before start/end dates existed apply to every past date, so browsing history
+   * showed newer prescriptions as missed. Give each one a start date once: an interval schedule's
+   * cycle start, otherwise the day it was created.
+   */
+  private fun migrateScheduleStartDates() {
+    if (prefs.getBoolean(KEY_SCHEDULE_START_DATES_MIGRATED, false)) return
+    val zone = java.time.ZoneId.systemDefault()
+    db.getAllSchedules()
+      .filter { it.usesDateRange && it.startDateIso == null }
+      .forEach { schedule ->
+        val usesAnchor = schedule.frequencyType == ScheduleFrequencyType.EVERY_N_DAYS ||
+          schedule.frequencyType == ScheduleFrequencyType.RELATIVE_TO_LAST_DOSE
+        val anchor = runCatching { LocalDate.parse(schedule.anchorDateIso.trim()) }.getOrNull()
+        val created = java.time.Instant.ofEpochMilli(schedule.createdAtEpochMillis).atZone(zone).toLocalDate()
+        val start = if (usesAnchor && anchor != null) anchor else created
+        db.upsertSchedule(schedule.copy(startDateIso = start.toString()))
+      }
+    prefs.edit().putBoolean(KEY_SCHEDULE_START_DATES_MIGRATED, true).apply()
   }
 
   private fun loadSettings(): AppSettings {
@@ -93,12 +125,7 @@ class RegimenRepository private constructor(context: Context) {
       doseLogs = db.getAllDoseLogs(),
     )
     _snapshot.value = nextSnapshot
-    DoseNotificationManager.scheduleDailyBucketAlarms(
-      context = appContext,
-      buckets = nextSnapshot.buckets,
-      settings = loadedSettings,
-    )
-    DoseNotificationManager.syncActiveWindowNotifications(appContext, nextSnapshot)
+    DoseNotificationManager.refresh(appContext, nextSnapshot)
   }
 
   fun saveMedication(medication: Medication, schedulesForMedication: List<MedicationSchedule>? = null) {
@@ -218,6 +245,8 @@ class RegimenRepository private constructor(context: Context) {
     notes: String? = null,
     snoozedUntilMillis: Long? = null,
     existingLogId: String? = null,
+    /** When the dose was actually taken; defaults to now (e.g. "taken on time" back-dates it). */
+    actionTimestampMillis: Long? = null,
   ): DoseLog? {
     val state = _snapshot.value
     val med = state.medications.find { it.id == medicationId } ?: return null
@@ -237,7 +266,7 @@ class RegimenRepository private constructor(context: Context) {
       scheduleId = scheduleId,
       bucketId = bucketId,
       scheduledDateIso = scheduledDateIso,
-      actionTimestampMillis = now,
+      actionTimestampMillis = actionTimestampMillis ?: now,
       status = status,
       snoozedUntilMillis = snoozedUntilMillis,
       amountTaken = resolvedAmount,
@@ -502,6 +531,10 @@ class RegimenRepository private constructor(context: Context) {
     // 4. Sample Schedules
     val schedAmoxClavDaily = MedicationSchedule(
       id = "sched_amox_clav",
+      startDateIso = today.minusDays(2).toString(),
+      endDateIso = today.plusDays(7).toString(), // 10-day antibiotic course
+      startBucketId = TimeOfDayBucket.BUCKET_EVENING, // picked up and started in the evening
+      endBucketId = TimeOfDayBucket.BUCKET_MORNING, // so the course ends with a morning dose
       medicationId = medAmoxClav.id,
       frequencyType = ScheduleFrequencyType.DAILY,
       bucketIds = listOf(TimeOfDayBucket.BUCKET_MORNING, TimeOfDayBucket.BUCKET_EVENING),
@@ -522,6 +555,7 @@ class RegimenRepository private constructor(context: Context) {
 
     val schedInsulinDaily = MedicationSchedule(
       id = "sched_insulin_bedtime",
+      startDateIso = today.minusDays(2).toString(),
       medicationId = medInsulin.id,
       frequencyType = ScheduleFrequencyType.DAILY,
       bucketIds = listOf(TimeOfDayBucket.BUCKET_BEDTIME),
@@ -554,6 +588,7 @@ class RegimenRepository private constructor(context: Context) {
   companion object {
     private const val KEY_SEEDED_INITIAL = "seeded_initial_v1"
     private const val KEY_APP_SETTINGS = "app_settings_v1"
+    private const val KEY_SCHEDULE_START_DATES_MIGRATED = "schedule_start_dates_migrated_v1"
 
     @Volatile
     private var INSTANCE: RegimenRepository? = null

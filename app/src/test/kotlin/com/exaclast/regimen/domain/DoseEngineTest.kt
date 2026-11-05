@@ -9,6 +9,7 @@ import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.ScheduleFrequencyType
+import com.exaclast.regimen.model.TimeOfDayBucket
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -190,5 +191,119 @@ class DoseEngineTest {
     assertFalse(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-11-30"), emptyList()))
     assertFalse(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-12-02"), emptyList()))
   }
-}
 
+  @Test
+  fun dateRange_boundsDueDatesInclusively() {
+    val sched = MedicationSchedule(
+      id = "sched_course",
+      medicationId = "med_abx",
+      frequencyType = ScheduleFrequencyType.DAILY,
+      startDateIso = "2026-11-03",
+      endDateIso = "2026-11-12",
+    )
+    assertFalse(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-11-02"), emptyList()))
+    assertTrue(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-11-03"), emptyList()))
+    assertTrue(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-11-12"), emptyList()))
+    assertFalse(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-11-13"), emptyList()))
+
+    // Ongoing (no end date)
+    val ongoing = sched.copy(endDateIso = null)
+    assertTrue(DoseEngine.isScheduleDueOnDate(ongoing, LocalDate.parse("2027-06-01"), emptyList()))
+    assertTrue(ongoing.isInDateRange(LocalDate.parse("2027-06-01")))
+    assertTrue(sched.hasEndedBefore(LocalDate.parse("2026-11-13")))
+    assertFalse(sched.hasEndedBefore(LocalDate.parse("2026-11-12")))
+  }
+
+  @Test
+  fun dateRange_loggedDoseOutsideRangeStaysVisible() {
+    val sched = MedicationSchedule(
+      id = "sched_new",
+      medicationId = "med_new",
+      frequencyType = ScheduleFrequencyType.DAILY,
+      startDateIso = "2026-11-05",
+    )
+    val log = DoseLog(
+      id = "log_early",
+      medicationId = "med_new",
+      scheduleId = "sched_new",
+      bucketId = "bucket_morning",
+      scheduledDateIso = "2026-11-04",
+      status = DoseStatus.TAKEN,
+      amountTaken = 1.0,
+      amountUnit = DoseUnit.TABLET,
+    )
+    assertTrue(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-11-04"), listOf(log)))
+    assertFalse(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-11-03"), listOf(log)))
+    // A deleted log doesn't count.
+    val deleted = log.copy(deletedAtEpochMillis = 1L)
+    assertFalse(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-11-04"), listOf(deleted)))
+  }
+
+  @Test
+  fun dateRange_ignoredForSpecificDates() {
+    val sched = MedicationSchedule(
+      id = "sched_dates",
+      medicationId = "med_x",
+      frequencyType = ScheduleFrequencyType.SPECIFIC_DATES,
+      specificDatesIso = setOf("2026-10-01"),
+      startDateIso = "2026-11-01",
+      endDateIso = "2026-11-02",
+    )
+    assertTrue(DoseEngine.isScheduleDueOnDate(sched, LocalDate.parse("2026-10-01"), emptyList()))
+  }
+
+  @Test
+  fun partialFirstAndLastDay_twiceDailyCourseStartedInTheEvening() {
+    val morning = TimeOfDayBucket(id = "bucket_morning", name = "Morning", hour = 7, endHour = 10)
+    val evening = TimeOfDayBucket(id = "bucket_evening", name = "Evening", hour = 17, endHour = 20)
+    val buckets = listOf(morning, evening)
+    val med = Medication(id = "med_abx", formulaName = "Amoxicillin", strength = "500 mg")
+    val sched = MedicationSchedule(
+      id = "sched_abx",
+      medicationId = med.id,
+      frequencyType = ScheduleFrequencyType.DAILY,
+      bucketIds = listOf(morning.id, evening.id),
+      startDateIso = "2026-11-03",
+      endDateIso = "2026-11-12",
+      startBucketId = evening.id,
+      endBucketId = morning.id,
+    )
+    fun windowsOn(dateIso: String, logs: List<DoseLog> = emptyList()) = DoseEngine.buildDailyBoard(
+      dateIso = dateIso,
+      medications = listOf(med),
+      schedules = listOf(sched),
+      buckets = buckets,
+      logs = logs,
+      conditions = emptyList(),
+      prescribers = emptyList(),
+    ).bucketGroups.filter { it.items.isNotEmpty() }.map { it.bucket.id }
+
+    assertEquals(listOf(evening.id), windowsOn("2026-11-03")) // pickup day: evening only
+    assertEquals(listOf(morning.id, evening.id), windowsOn("2026-11-07"))
+    assertEquals(listOf(morning.id), windowsOn("2026-11-12")) // last day: morning only
+    assertEquals(emptyList<String>(), windowsOn("2026-11-13"))
+
+    // A dose logged anyway in a trimmed window stays visible.
+    val earlyLog = DoseLog(
+      medicationId = med.id,
+      scheduleId = sched.id,
+      bucketId = morning.id,
+      scheduledDateIso = "2026-11-03",
+      status = DoseStatus.TAKEN,
+      amountTaken = 1.0,
+      amountUnit = DoseUnit.TABLET,
+    )
+    assertEquals(listOf(morning.id, evening.id), windowsOn("2026-11-03", listOf(earlyLog)))
+  }
+
+  @Test
+  fun partialDay_missingBoundaryWindowDoesNotRestrict() {
+    val morning = TimeOfDayBucket(id = "m", name = "Morning", hour = 7)
+    val sched = MedicationSchedule(
+      medicationId = "x",
+      startDateIso = "2026-11-03",
+      startBucketId = "deleted_window",
+    )
+    assertTrue(sched.isWindowInRange(LocalDate.parse("2026-11-03"), morning, listOf(morning)))
+  }
+}

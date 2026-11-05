@@ -289,15 +289,19 @@ fun MedicationDetailScreen(
       item(key = "details") {
         SectionHeader("Details")
         val rows = buildList<Triple<String, String, (() -> Unit)?>> {
-          add(Triple("Condition", condition?.name ?: "Not linked", condition?.let { c -> { onOpenCondition(c.id) } }))
+          if (snapshot.tracksConditions) {
+            add(Triple("Condition", condition?.name ?: "Not linked", condition?.let { c -> { onOpenCondition(c.id) } }))
+          }
           if (medication.indicationText.isNotBlank()) add(Triple("Indication notes", medication.indicationText, null))
-          add(
-            Triple(
-              "Prescriber",
-              prescriber?.let { if (it.isPcp) "${it.name} (PCP)" else it.name } ?: "Not set",
-              prescriber?.let { p -> { onOpenPrescriber(p.id) } },
+          if (snapshot.tracksPrescribers) {
+            add(
+              Triple(
+                "Prescriber",
+                prescriber?.let { if (it.isPcp) "${it.name} (PCP)" else it.name } ?: "Not set",
+                prescriber?.let { p -> { onOpenPrescriber(p.id) } },
+              )
             )
-          )
+          }
           UiFormat.dateIso(medication.prescribedDateIso)?.let { add(Triple("Prescribed", it, null)) }
           medication.ndc11?.takeIf { it.isNotBlank() }?.let { add(Triple("NDC", it, null)) }
           medication.manufacturer?.takeIf { it.isNotBlank() }?.let { add(Triple("Manufacturer", it, null)) }
@@ -440,10 +444,26 @@ private fun ScheduleRow(
   val windows = snapshot.buckets.chronological().filter { it.id in schedule.bucketIds }
   val detail = buildList {
     if (windows.isNotEmpty()) add(windows.joinToString(", ") { "${it.name} ${it.formattedTime()}" })
-    if (schedule.frequencyType == ScheduleFrequencyType.EVERY_N_DAYS ||
-      schedule.frequencyType == ScheduleFrequencyType.RELATIVE_TO_LAST_DOSE
-    ) {
-      UiFormat.dateIso(schedule.anchorDateIso)?.let { add("from $it") }
+    val today = LocalDate.now()
+    val start = schedule.startDateOrNull()
+    val end = schedule.endDateOrNull()
+    fun windowName(id: String?) = id?.let { wid -> snapshot.buckets.find { it.id == wid }?.name }
+    windowName(schedule.startBucketId)?.takeIf { start != null && !start.isBefore(today) }
+      ?.let { add("first dose: $it") }
+    windowName(schedule.endBucketId)?.takeIf { end != null && !end.isBefore(today) }
+      ?.let { add("last dose: $it") }
+    if (schedule.usesDateRange) {
+      when {
+        end != null && end.isBefore(today) -> add("Ended ${UiFormat.date(end, withWeekday = false)}")
+        start != null && start.isAfter(today) && end != null ->
+          add("${UiFormat.date(start, withWeekday = false)} – ${UiFormat.date(end, withWeekday = false)}")
+        start != null && start.isAfter(today) -> add("Starts ${UiFormat.date(start, withWeekday = false)}")
+        end != null -> add("Until ${UiFormat.date(end, withWeekday = false)}")
+        start != null &&
+          (schedule.frequencyType == ScheduleFrequencyType.EVERY_N_DAYS ||
+            schedule.frequencyType == ScheduleFrequencyType.RELATIVE_TO_LAST_DOSE) ->
+          add("from ${UiFormat.date(start, withWeekday = false)}")
+      }
     }
     if (schedule.frequencyType == ScheduleFrequencyType.SPECIFIC_DATES && schedule.specificDatesIso.isNotEmpty()) {
       val nextUpcoming = schedule.specificDatesIso.sorted().firstOrNull { it >= LocalDate.now().toString() }

@@ -3,6 +3,7 @@
 package com.exaclast.regimen.ui.screens
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -62,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
@@ -70,6 +72,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.domain.BucketDoseGroup
@@ -90,9 +93,9 @@ import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.GroupedColumn
 import com.exaclast.regimen.ui.components.SectionHeader
+import com.exaclast.regimen.notifications.DoseAlarmTiming
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.groupListItemColors
-import androidx.compose.ui.text.style.TextAlign
 import java.time.LocalDate
 
 @Composable
@@ -102,7 +105,7 @@ fun TodayScreen(
   onNextDay: () -> Unit,
   onGoToToday: () -> Unit,
   onOpenSettings: () -> Unit,
-  onTake: (ScheduledDoseItem, String?) -> Unit,
+  onTake: (item: ScheduledDoseItem, site: String?, takenAtMillis: Long?) -> Unit,
   onSkip: (ScheduledDoseItem) -> Unit,
   onSnooze: (ScheduledDoseItem) -> Unit,
   onClearLog: (ScheduledDoseItem) -> Unit,
@@ -128,7 +131,7 @@ fun TodayScreen(
 
   fun commit(request: TakeRequest, site: String?) {
     when (request) {
-      is TakeRequest.Scheduled -> onTake(request.item, site)
+      is TakeRequest.Scheduled -> onTake(request.item, site, request.takenAtMillis)
       is TakeRequest.Prn -> onLogPrn(request.item.medication, request.item.doseAmount, site)
     }
   }
@@ -168,8 +171,18 @@ fun TodayScreen(
           IconButton(onClick = onNextDay) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next day")
           }
-          if (!uiState.isToday) {
-            IconButton(onClick = onGoToToday) { Icon(Icons.Default.Today, contentDescription = "Go to today") }
+          // "Go to today" keeps its slot even when hidden, so showing it never shifts the day
+          // arrows under the user's finger. Hidden = transparent, disabled, and out of a11y.
+          val showGoToToday = !uiState.isToday
+          val goToTodayAlpha by animateFloatAsState(if (showGoToToday) 1f else 0f, label = "goToTodayAlpha")
+          IconButton(
+            onClick = onGoToToday,
+            enabled = showGoToToday,
+            modifier = Modifier
+              .graphicsLayer { alpha = goToTodayAlpha }
+              .then(if (showGoToToday) Modifier else Modifier.clearAndSetSemantics {}),
+          ) {
+            Icon(Icons.Default.Today, contentDescription = "Go to today")
           }
           IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
         },
@@ -214,6 +227,12 @@ fun TodayScreen(
           nowMillis = now,
           settings = settings,
           onTake = { requestTake(TakeRequest.Scheduled(it)) },
+          // Recording a missed dose that was really taken in its window: no "too soon" pacing
+          // gate (that compares against now), but the site / confirmation prompts still apply.
+          onTakenOnTime = { item ->
+            val windowEnd = DoseAlarmTiming.windowEndMillis(item.bucket, item.dateIso)
+            afterPacing(TakeRequest.Scheduled(item, takenAtMillis = windowEnd), alreadyConfirmed = false)
+          },
           onSnooze = onSnooze,
           onSkip = onSkip,
           onClearLog = onClearLog,
@@ -324,7 +343,8 @@ private sealed interface TakeRequest {
   val pacing: PacingEvaluation
   val suggestedSite: String?
 
-  data class Scheduled(val item: ScheduledDoseItem) : TakeRequest {
+  /** [takenAtMillis] back-dates the log (null = now). */
+  data class Scheduled(val item: ScheduledDoseItem, val takenAtMillis: Long? = null) : TakeRequest {
     override val medication get() = item.medication
     override val pacing get() = item.pacing
     override val suggestedSite get() = item.suggestedSite
@@ -372,6 +392,7 @@ private fun WindowSection(
   nowMillis: Long,
   settings: AppSettings,
   onTake: (ScheduledDoseItem) -> Unit,
+  onTakenOnTime: (ScheduledDoseItem) -> Unit,
   onSnooze: (ScheduledDoseItem) -> Unit,
   onSkip: (ScheduledDoseItem) -> Unit,
   onClearLog: (ScheduledDoseItem) -> Unit,
@@ -458,6 +479,7 @@ private fun WindowSection(
               nowMillis = nowMillis,
               snoozeMinutes = settings.snoozeMinutes,
               onTake = { onTake(item) },
+              onTakenOnTime = { onTakenOnTime(item) },
               onSnooze = { onSnooze(item) },
               onSkip = { onSkip(item) },
               onClearLog = { onClearLog(item) },
@@ -537,6 +559,7 @@ private fun DoseCard(
   nowMillis: Long,
   snoozeMinutes: Int,
   onTake: () -> Unit,
+  onTakenOnTime: () -> Unit,
   onSnooze: () -> Unit,
   onSkip: () -> Unit,
   onClearLog: () -> Unit,
@@ -562,13 +585,20 @@ private fun DoseCard(
   }
   val takeLabel = when {
     !item.pacing.canTakeNow -> "Take anyway…"
-    missed -> "Log as taken"
+    missed -> "Take now"
     phase == WindowPhase.UPCOMING -> "Take early"
     else -> "Take"
   }
+  // Overdue: either taking it late (now) or it was taken on time and just not logged, which is
+  // recorded at the window's end.
+  val windowEnd = if (missed) DoseAlarmTiming.windowEndMillis(item.bucket, item.dateIso) else null
+  val canLogOnTime = canAct && windowEnd != null
 
   val a11yActions = buildList {
     if (canAct) add(CustomAccessibilityAction(takeLabel.removeSuffix("…")) { onTake(); true })
+    if (canLogOnTime) {
+      add(CustomAccessibilityAction("Taken on time, at ${UiFormat.time(windowEnd!!)}") { onTakenOnTime(); true })
+    }
     if (canSnooze) add(CustomAccessibilityAction("Snooze $snoozeMinutes minutes") { onSnooze(); true })
     if (canAct) add(CustomAccessibilityAction("Skip") { onSkip(); true })
     if (item.existingLog != null) add(CustomAccessibilityAction("Mark as not taken") { onClearLog(); true })
@@ -669,6 +699,16 @@ private fun DoseCard(
           Spacer(Modifier.height(4.dp))
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             when {
+              canLogOnTime -> {
+                Button(onClick = onTake, modifier = Modifier.weight(1f)) {
+                  Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                  Spacer(Modifier.width(8.dp))
+                  Text(takeLabel, maxLines = 1)
+                }
+                OutlinedButton(onClick = onTakenOnTime, modifier = Modifier.weight(1f)) {
+                  Text("Taken on time", maxLines = 1)
+                }
+              }
               !item.pacing.canTakeNow || phase == WindowPhase.UPCOMING ->
                 OutlinedButton(onClick = onTake, modifier = Modifier.weight(1f)) { Text(takeLabel) }
               else -> Button(onClick = onTake, modifier = Modifier.weight(1f)) {

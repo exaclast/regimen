@@ -57,4 +57,68 @@ class DoseAlarmTimingTest {
     )
     assertNull(DoseAlarmTiming.windowEndMillis(bedtime, "not-a-date", zone))
   }
+
+  @Test
+  fun nextNudgeMillis_calculatesCorrectlyAndStopsAtWindowEnd() {
+    val baseMillis = 1_000_000L
+    // Repeat off (0)
+    assertNull(DoseAlarmTiming.nextNudgeMillis(baseMillis, 0, baseMillis + 2_000_000L))
+
+    // 15 min repeat: 15 * 60 * 1000 = 900,000 ms
+    val expectedNudge = baseMillis + 900_000L
+    assertEquals(expectedNudge, DoseAlarmTiming.nextNudgeMillis(baseMillis, 15, baseMillis + 1_800_000L))
+
+    // Next nudge is at or past window end: returns null
+    assertNull(DoseAlarmTiming.nextNudgeMillis(baseMillis, 15, baseMillis + 900_000L))
+    assertNull(DoseAlarmTiming.nextNudgeMillis(baseMillis, 15, baseMillis + 500_000L))
+
+    // Open-ended window (windowEndMillis is null)
+    assertEquals(expectedNudge, DoseAlarmTiming.nextNudgeMillis(baseMillis, 15, null))
+  }
+
+  @Test
+  fun nextNudgeMillis_staysOnGridAnchoredAtWindowStart() {
+    val start = 0L
+    val end = 3 * 60 * 60_000L // 3h window
+    val min = 60_000L
+
+    // Re-arming at 7 or 14 minutes in must not push the 15-minute nudge back.
+    assertEquals(15 * min, DoseAlarmTiming.nextNudgeMillis(7 * min, 15, end, start))
+    assertEquals(15 * min, DoseAlarmTiming.nextNudgeMillis(14 * min, 15, end, start))
+    // Exactly on a grid point (the nudge itself firing): the next slot.
+    assertEquals(30 * min, DoseAlarmTiming.nextNudgeMillis(15 * min, 15, end, start))
+    // Last slot would land on the window end: no nudge, the end alarm takes over.
+    assertNull(DoseAlarmTiming.nextNudgeMillis(166 * min, 15, end, start))
+    // Before the window opens, fall back to measuring from now.
+    assertEquals(5 * min, DoseAlarmTiming.nextNudgeMillis(-10 * min, 15, end, start))
+  }
+
+  @Test
+  fun currentOccurrence_isMostRecentlyOpenedWindow() {
+    val morning = TimeOfDayBucket(id = "m", name = "Morning", hour = 7, minute = 0, endHour = 10, endMinute = 0)
+    val overnight = TimeOfDayBucket(id = "o", name = "Overnight", hour = 22, minute = 0, endHour = 2, endMinute = 0)
+    val today = LocalDate.of(2026, 11, 4)
+    fun at(h: Int, m: Int) = LocalDateTime.of(2026, 11, 4, h, m).atZone(zone).toInstant().toEpochMilli()
+
+    // Before today's morning window: yesterday's missed morning dose is still the current one.
+    assertEquals("2026-11-03", DoseAlarmTiming.currentOccurrenceDateIso(morning, at(6, 59), today, zone))
+    assertEquals("2026-11-04", DoseAlarmTiming.currentOccurrenceDateIso(morning, at(7, 0), today, zone))
+    assertEquals("2026-11-04", DoseAlarmTiming.currentOccurrenceDateIso(morning, at(18, 0), today, zone))
+
+    // 1 AM belongs to the overnight window that opened yesterday at 10 PM.
+    assertEquals("2026-11-03", DoseAlarmTiming.currentOccurrenceDateIso(overnight, at(1, 0), today, zone))
+    assertEquals("2026-11-04", DoseAlarmTiming.currentOccurrenceDateIso(overnight, at(22, 30), today, zone))
+  }
+
+  @Test
+  fun isWithinWindow_handlesOvernightAndBoundaries() {
+    val overnight = TimeOfDayBucket(id = "o", name = "Overnight", hour = 22, minute = 0, endHour = 2, endMinute = 0)
+    fun at(d: Int, h: Int, m: Int) = LocalDateTime.of(2026, 11, d, h, m).atZone(zone).toInstant().toEpochMilli()
+
+    assertEquals(true, DoseAlarmTiming.isWithinWindow(overnight, "2026-11-03", at(3, 22, 0), zone))
+    assertEquals(true, DoseAlarmTiming.isWithinWindow(overnight, "2026-11-03", at(4, 1, 59), zone))
+    // End is exclusive: the end alarm fires exactly at the boundary.
+    assertEquals(false, DoseAlarmTiming.isWithinWindow(overnight, "2026-11-03", at(4, 2, 0), zone))
+    assertEquals(false, DoseAlarmTiming.isWithinWindow(overnight, "2026-11-04", at(4, 1, 0), zone))
+  }
 }
