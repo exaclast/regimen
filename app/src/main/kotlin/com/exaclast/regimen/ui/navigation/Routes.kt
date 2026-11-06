@@ -38,6 +38,12 @@ sealed interface Route : NavKey {
   @Serializable data object Settings : Route
 
   @Serializable data class DoseWindowEditor(val id: String? = null) : Route
+
+  /** Backup passphrase: set up, change, reset, or reveal the recovery code. */
+  @Serializable data class BackupEncryption(val mode: BackupEncryptionMode) : Route
+
+  /** Unlock, preview and apply a backup file picked in Settings. */
+  @Serializable data object BackupRestore : Route
 }
 
 /** Bottom-bar destinations. */
@@ -55,7 +61,9 @@ val Route.isFullScreenTask: Boolean
     this is Route.PrescriberEditor ||
     this is Route.ConditionEditor ||
     this is Route.Settings ||
-    this is Route.DoseWindowEditor
+    this is Route.DoseWindowEditor ||
+    this is Route.BackupEncryption ||
+    this is Route.BackupRestore
 
 /**
  * Thin wrapper over the Navigation 3 back stack.
@@ -95,3 +103,6 @@ class Navigator(private val backStack: NavBackStack<NavKey>) {
     if (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
   }
 }
+
+@Serializable
+enum class BackupEncryptionMode { SETUP, CHANGE, SHOW_CODE, RESET }

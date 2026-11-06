@@ -3,6 +3,8 @@ package com.exaclast.regimen.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import android.net.Uri
+import com.exaclast.regimen.data.BackupManager
 import com.exaclast.regimen.data.RegimenRepository
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.DailyDoseBoard
@@ -16,6 +18,7 @@ import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Prescriber
+import com.exaclast.regimen.model.RegimenBackupBundle
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.formatNum
 import com.exaclast.regimen.notifications.DoseNotificationManager
@@ -24,7 +27,10 @@ import com.exaclast.regimen.ui.components.UiFormat
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -60,6 +66,23 @@ sealed interface UndoAction {
   data class RestoreDeletedLog(val log: DoseLog) : UndoAction
 
   data class RestoreSchedule(val schedule: MedicationSchedule) : UndoAction
+
+  /** Puts back everything that was on the device before a backup restore. */
+  data class RestoreBackup(val previous: RegimenBackupBundle) : UndoAction
+}
+
+/** The restore flow: pick a file → (unlock) → preview → merge or replace. */
+sealed interface RestoreUiState {
+  data object Idle : RestoreUiState
+  data object Opening : RestoreUiState
+  data class Locked(
+    val locked: BackupManager.OpenResult.NeedsUnlock,
+    val error: String? = null,
+    val busy: Boolean = false,
+  ) : RestoreUiState
+  data class Preview(val ready: BackupManager.OpenResult.Ready, val busy: Boolean = false) : RestoreUiState
+  /** Restored, or failed to open: the restore screen closes. */
+  data object Finished : RestoreUiState
 }
 
 data class UiMessage(
@@ -232,6 +255,10 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
       }
       is UndoAction.RestoreDeletedLog -> repository.restoreDoseLog(action.log)
       is UndoAction.RestoreSchedule -> repository.restoreSchedule(action.schedule)
+      is UndoAction.RestoreBackup -> viewModelScope.launch {
+        withContext(Dispatchers.IO) { backup.undoRestore(action.previous) }
+        post("Restore undone")
+      }
     }
   }
 
@@ -314,9 +341,130 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     )
   }
 
-  fun exportBackupJson(): String = repository.exportBackupJson()
+  // endregion
 
-  fun importBackupJson(rawJson: String): Result<Int> = repository.importBackupJson(rawJson)
+  // region Backup
+
+  private val backup = BackupManager.getInstance(application)
+
+  private val _backupEncryptionConfigured = MutableStateFlow(backup.isEncryptionConfigured)
+  val backupEncryptionConfigured: StateFlow<Boolean> = _backupEncryptionConfigured
+
+  /** Set when Export was tapped before a passphrase existed: export once setup finishes. */
+  private val _pendingExport = MutableStateFlow(false)
+  val pendingExport: StateFlow<Boolean> = _pendingExport
+
+  private val _restoreState = MutableStateFlow<RestoreUiState>(RestoreUiState.Idle)
+  val restoreState: StateFlow<RestoreUiState> = _restoreState
+
+  fun suggestedBackupFileName(encrypted: Boolean): String = backup.suggestedFileName(encrypted)
+
+  fun requestExportAfterSetup() {
+    _pendingExport.value = true
+  }
+
+  fun consumePendingExport() {
+    _pendingExport.value = false
+  }
+
+  /** Runs a passphrase operation (slow key derivation) off the main thread. */
+  private fun passphraseTask(block: () -> String?, onResult: (Result<String?>) -> Unit) {
+    viewModelScope.launch {
+      val result = withContext(Dispatchers.Default) { runCatching(block) }
+      _backupEncryptionConfigured.value = backup.isEncryptionConfigured
+      onResult(result)
+    }
+  }
+
+  /** Result: the recovery code. */
+  fun setUpBackupEncryption(passphrase: String, reset: Boolean, onResult: (Result<String?>) -> Unit) =
+    passphraseTask({
+      if (reset) backup.resetEncryption(passphrase.toCharArray()) else backup.setUpEncryption(passphrase.toCharArray())
+    }, onResult)
+
+  fun changeBackupPassphrase(current: String, new: String, onResult: (Result<String?>) -> Unit) =
+    passphraseTask({ backup.changePassphrase(current.toCharArray(), new.toCharArray()); null }, onResult)
+
+  fun revealRecoveryCode(passphrase: String, onResult: (Result<String?>) -> Unit) =
+    passphraseTask({ backup.recoveryCode(passphrase.toCharArray()) }, onResult)
+
+  fun exportBackup(uri: Uri, encrypted: Boolean) {
+    viewModelScope.launch {
+      val result = withContext(Dispatchers.IO) {
+        runCatching { if (encrypted) backup.exportEncrypted(uri) else backup.exportPlainJson(uri) }
+      }
+      post(
+        result.fold(
+          onSuccess = { if (encrypted) "Encrypted backup saved" else "Unencrypted backup saved" },
+          onFailure = { "Couldn't save the backup: ${it.message}" },
+        ),
+      )
+    }
+  }
+
+  fun openBackup(uri: Uri) {
+    _restoreState.value = RestoreUiState.Opening
+    viewModelScope.launch {
+      val result = withContext(Dispatchers.IO) { runCatching { backup.open(uri) } }
+      _restoreState.value = result.fold(
+        onSuccess = {
+          when (it) {
+            is BackupManager.OpenResult.Ready -> RestoreUiState.Preview(it)
+            is BackupManager.OpenResult.NeedsUnlock -> RestoreUiState.Locked(it)
+          }
+        },
+        onFailure = {
+          post("Couldn't open the backup: ${it.message}")
+          RestoreUiState.Finished
+        },
+      )
+    }
+  }
+
+  fun unlockBackup(secret: String, isRecoveryCode: Boolean) {
+    val locked = _restoreState.value as? RestoreUiState.Locked ?: return
+    _restoreState.value = locked.copy(busy = true, error = null)
+    viewModelScope.launch {
+      val result = withContext(Dispatchers.Default) {
+        runCatching { backup.unlock(locked.locked, secret, isRecoveryCode) }
+      }
+      _backupEncryptionConfigured.value = backup.isEncryptionConfigured
+      _restoreState.value = result.fold(
+        onSuccess = { RestoreUiState.Preview(it) },
+        onFailure = { locked.copy(busy = false, error = it.message ?: "Couldn't unlock the backup") },
+      )
+    }
+  }
+
+  fun applyRestore(replace: Boolean) {
+    val preview = _restoreState.value as? RestoreUiState.Preview ?: return
+    _restoreState.value = preview.copy(busy = true)
+    viewModelScope.launch {
+      val result = withContext(Dispatchers.IO) { runCatching { backup.restore(preview.ready.bundle, replace) } }
+      result.fold(
+        onSuccess = { outcome ->
+          val conflictNote = when (val n = outcome.conflicts.size) {
+            0 -> ""
+            1 -> " · 1 conflict resolved"
+            else -> " · $n conflicts resolved"
+          }
+          post(
+            (if (replace) "Replaced with backup" else "Backup merged") + conflictNote,
+            UndoAction.RestoreBackup(outcome.previous),
+          )
+          _restoreState.value = RestoreUiState.Finished
+        },
+        onFailure = {
+          post("Couldn't restore: ${it.message}")
+          _restoreState.value = preview.copy(busy = false)
+        },
+      )
+    }
+  }
+
+  fun resetRestore() {
+    _restoreState.value = RestoreUiState.Idle
+  }
 
   // endregion
 }

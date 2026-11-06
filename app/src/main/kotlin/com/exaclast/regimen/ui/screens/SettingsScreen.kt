@@ -3,9 +3,8 @@
 package com.exaclast.regimen.ui.screens
 
 import android.Manifest
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -85,6 +84,7 @@ import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.notifications.DoseNotificationManager
 import com.exaclast.regimen.notifications.DoseNotificationStage
+import com.exaclast.regimen.sync.BackupFiles
 import com.exaclast.regimen.ui.components.AppSnackbarHost
 import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.EditorScaffold
@@ -94,6 +94,7 @@ import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.ui.components.SwitchRow
 import com.exaclast.regimen.ui.components.TimePickerField
 import com.exaclast.regimen.ui.components.groupListItemColors
+import com.exaclast.regimen.ui.navigation.BackupEncryptionMode
 import com.google.mlkit.genai.common.FeatureStatus
 import java.util.UUID
 import kotlinx.coroutines.launch
@@ -113,8 +114,14 @@ fun SettingsScreen(
   onOpenWindow: (String?) -> Unit,
   onResetWindows: () -> Unit,
   onTestNotification: (DoseNotificationStage) -> Unit,
-  onExportJson: () -> String,
-  onImportJson: (String) -> Result<Int>,
+  backupEncryptionConfigured: Boolean,
+  pendingExport: Boolean,
+  onConsumePendingExport: () -> Unit,
+  suggestedBackupFileName: (encrypted: Boolean) -> String,
+  onExportBackup: (uri: Uri, encrypted: Boolean) -> Unit,
+  onRestoreFilePicked: (Uri) -> Unit,
+  onOpenBackupEncryption: (BackupEncryptionMode) -> Unit,
+  onRequestExportAfterSetup: () -> Unit,
   onClearAllData: () -> Unit,
   onResetSampleData: () -> Unit,
   onPermissionsChanged: () -> Unit,
@@ -123,8 +130,24 @@ fun SettingsScreen(
   val lifecycleOwner = LocalLifecycleOwner.current
   val coroutineScope = rememberCoroutineScope()
   var statusMessage by remember { mutableStateOf<String?>(null) }
-  var showImport by rememberSaveable { mutableStateOf(false) }
-  var importText by rememberSaveable { mutableStateOf("") }
+  val exportEncryptedLauncher = rememberLauncherForActivityResult(
+    ActivityResultContracts.CreateDocument(BackupFiles.MIME_TYPE),
+  ) { uri -> uri?.let { onExportBackup(it, true) } }
+  val exportPlainLauncher = rememberLauncherForActivityResult(
+    ActivityResultContracts.CreateDocument("application/json"),
+  ) { uri -> uri?.let { onExportBackup(it, false) } }
+  val restoreLauncher = rememberLauncherForActivityResult(
+    ActivityResultContracts.OpenDocument(),
+  ) { uri -> uri?.let(onRestoreFilePicked) }
+  var confirmPlainExport by remember { mutableStateOf(false) }
+
+  // Export was tapped before a passphrase existed: continue once setup is done. (Leaving setup
+  // without finishing clears the request.)
+  LaunchedEffect(pendingExport, backupEncryptionConfigured) {
+    if (!pendingExport || !backupEncryptionConfigured) return@LaunchedEffect
+    onConsumePendingExport()
+    exportEncryptedLauncher.launch(suggestedBackupFileName(true))
+  }
   var confirmResetWindows by remember { mutableStateOf(false) }
   var confirmClear by remember { mutableStateOf(false) }
   var confirmDemo by remember { mutableStateOf(false) }
@@ -456,47 +479,59 @@ fun SettingsScreen(
       item(key = "data") {
         SectionHeader("Backup")
         GroupedColumn {
-          GroupItem(0, 2, onClick = {
-            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            clipboard.setPrimaryClip(ClipData.newPlainText("Regimen backup", onExportJson()))
-            statusMessage = "Backup copied to the clipboard."
+          GroupItem(0, 3, onClick = {
+            if (backupEncryptionConfigured) {
+              exportEncryptedLauncher.launch(suggestedBackupFileName(true))
+            } else {
+              onRequestExportAfterSetup()
+              onOpenBackupEncryption(BackupEncryptionMode.SETUP)
+            }
           }) {
             ListItem(
-              supportingContent = { Text("Medications, schedules, history and settings as JSON") },
+              supportingContent = {
+                Text(
+                  if (backupEncryptionConfigured) "Save an encrypted file with everything on this device"
+                  else "Set a passphrase, then save an encrypted file",
+                )
+              },
               colors = groupListItemColors(),
-            ) { Text("Copy backup") }
+            ) { Text("Export backup") }
           }
-          GroupItem(1, 2, onClick = { showImport = !showImport }) {
+          GroupItem(1, 3, onClick = { restoreLauncher.launch(arrayOf("*/*")) }) {
             ListItem(
-              supportingContent = { Text("Paste a backup to merge it into this device") },
+              supportingContent = { Text("Preview a backup file, then merge it or replace this device's data") },
               colors = groupListItemColors(),
             ) { Text("Restore from backup") }
           }
+          GroupItem(2, 3, onClick = { confirmPlainExport = true }) {
+            ListItem(
+              supportingContent = { Text("Readable JSON for other tools. Anyone with the file can read it.") },
+              colors = groupListItemColors(),
+            ) { Text("Export unencrypted") }
+          }
         }
-        if (showImport) {
-          Column(modifier = Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-              value = importText,
-              onValueChange = { importText = it },
-              label = { Text("Backup JSON") },
-              minLines = 3,
-              maxLines = 6,
-              modifier = Modifier.fillMaxWidth(),
-            )
-            Button(
-              onClick = {
-                statusMessage = onImportJson(importText).fold(
-                  onSuccess = { count ->
-                    showImport = false
-                    importText = ""
-                    "Restored ${medicationCount(count)} and settings."
-                  },
-                  onFailure = { "Couldn't restore: ${it.message}" },
-                )
-              },
-              enabled = importText.isNotBlank(),
-              modifier = Modifier.align(Alignment.End),
-            ) { Text("Restore") }
+        Spacer(Modifier.height(12.dp))
+        GroupedColumn {
+          if (backupEncryptionConfigured) {
+            GroupItem(0, 2, onClick = { onOpenBackupEncryption(BackupEncryptionMode.CHANGE) }) {
+              ListItem(
+                supportingContent = { Text("Earlier backups stay readable") },
+                colors = groupListItemColors(),
+              ) { Text("Change backup passphrase") }
+            }
+            GroupItem(1, 2, onClick = { onOpenBackupEncryption(BackupEncryptionMode.SHOW_CODE) }) {
+              ListItem(
+                supportingContent = { Text("Opens your backups if you forget the passphrase") },
+                colors = groupListItemColors(),
+              ) { Text("Show recovery code") }
+            }
+          } else {
+            GroupItem(0, 1, onClick = { onOpenBackupEncryption(BackupEncryptionMode.SETUP) }) {
+              ListItem(
+                supportingContent = { Text("Not set up yet") },
+                colors = groupListItemColors(),
+              ) { Text("Backup passphrase") }
+            }
           }
         }
         statusMessage?.let {
@@ -555,6 +590,26 @@ fun SettingsScreen(
       onDismiss = { confirmDemo = false },
     )
   }
+  if (confirmPlainExport) {
+    AlertDialog(
+      onDismissRequest = { confirmPlainExport = false },
+      title = { Text("Export without encryption?") },
+      text = {
+        Text(
+          "The file will contain your medications, doses and history in plain text. " +
+            "Anyone who gets the file, or any app or cloud service it's stored in, can read it.",
+        )
+      },
+      confirmButton = {
+        TextButton(onClick = {
+          confirmPlainExport = false
+          exportPlainLauncher.launch(suggestedBackupFileName(false))
+        }) { Text("Export") }
+      },
+      dismissButton = { TextButton(onClick = { confirmPlainExport = false }) { Text("Cancel") } },
+    )
+  }
+
   if (confirmClear) {
     ConfirmDialog(
       title = "Delete all data?",

@@ -2,11 +2,16 @@
 
 package com.exaclast.regimen.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -87,13 +92,13 @@ import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.formatNum
+import com.exaclast.regimen.notifications.DoseAlarmTiming
 import com.exaclast.regimen.ui.RegimenUiState
 import com.exaclast.regimen.ui.components.AppSnackbarHost
 import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.GroupedColumn
 import com.exaclast.regimen.ui.components.SectionHeader
-import com.exaclast.regimen.notifications.DoseAlarmTiming
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.groupListItemColors
 import java.time.LocalDate
@@ -116,6 +121,7 @@ fun TodayScreen(
   onOpenWindow: (String) -> Unit,
   onAddMedication: () -> Unit,
   onLoadDemoData: (() -> Unit)? = null,
+  onRestoreBackup: ((Uri) -> Unit)? = null,
 ) {
   val board = uiState.dailyBoard
   val settings = uiState.snapshot.settings
@@ -214,6 +220,7 @@ fun TodayScreen(
             hasAnyMedications = uiState.snapshot.medications.isNotEmpty(),
             onAddMedication = onAddMedication,
             onLoadDemoData = onLoadDemoData,
+            onRestoreBackup = onRestoreBackup,
           )
         }
       }
@@ -893,13 +900,19 @@ private fun NoticeCard(text: String, actionLabel: String, onAction: () -> Unit) 
   }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun EmptyDayCard(
   hasAnyMedications: Boolean,
   onAddMedication: () -> Unit,
   onLoadDemoData: (() -> Unit)?,
+  onRestoreBackup: ((Uri) -> Unit)?,
 ) {
   var confirmDemo by remember { mutableStateOf(false) }
+  val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    if (uri != null) onRestoreBackup?.invoke(uri)
+  }
+  val isFirstRun = !hasAnyMedications
 
   Surface(
     color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -919,19 +932,23 @@ private fun EmptyDayCard(
         text = if (hasAnyMedications) {
           "Add a medication and give it a schedule to see doses here."
         } else {
-          "Add your medications and schedules to start tracking doses, or load demo data to explore."
+          "Add your medications and schedules to start tracking doses, restore a backup, or load demo data to explore."
         },
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,
       )
       Spacer(Modifier.height(16.dp))
-      Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+      // Wraps onto a second line on narrow screens instead of squeezing the buttons.
+      FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
       ) {
         Button(onClick = onAddMedication) { Text("Add medication") }
-        if (!hasAnyMedications && onLoadDemoData != null) {
+        if (isFirstRun && onRestoreBackup != null) {
+          OutlinedButton(onClick = { restoreLauncher.launch(arrayOf("*/*")) }) { Text("Restore backup") }
+        }
+        if (isFirstRun && onLoadDemoData != null) {
           OutlinedButton(onClick = { confirmDemo = true }) { Text("Load demo data") }
         }
       }

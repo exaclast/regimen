@@ -18,6 +18,7 @@ import com.exaclast.regimen.model.RegimenBackupBundle
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.notifications.DoseNotificationManager
+import com.exaclast.regimen.sync.DeviceIdentity
 import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,6 +55,7 @@ class RegimenRepository private constructor(context: Context) {
   private val appContext = context.applicationContext
   private val db = RegimenDatabase(appContext)
   private val prefs = appContext.getSharedPreferences("regimen_prefs", Context.MODE_PRIVATE)
+  val deviceIdentity = DeviceIdentity(appContext)
   private val json = Json {
     prettyPrint = true
     ignoreUnknownKeys = true
@@ -77,29 +79,7 @@ class RegimenRepository private constructor(context: Context) {
       // Don't load demo data by default; leave data empty for initial user setup
       prefs.edit().putBoolean(KEY_SEEDED_INITIAL, true).apply()
     }
-    migrateScheduleStartDates()
     reloadSnapshot()
-  }
-
-  /**
-   * Schedules created before start/end dates existed apply to every past date, so browsing history
-   * showed newer prescriptions as missed. Give each one a start date once: an interval schedule's
-   * cycle start, otherwise the day it was created.
-   */
-  private fun migrateScheduleStartDates() {
-    if (prefs.getBoolean(KEY_SCHEDULE_START_DATES_MIGRATED, false)) return
-    val zone = java.time.ZoneId.systemDefault()
-    db.getAllSchedules()
-      .filter { it.usesDateRange && it.startDateIso == null }
-      .forEach { schedule ->
-        val usesAnchor = schedule.frequencyType == ScheduleFrequencyType.EVERY_N_DAYS ||
-          schedule.frequencyType == ScheduleFrequencyType.RELATIVE_TO_LAST_DOSE
-        val anchor = runCatching { LocalDate.parse(schedule.anchorDateIso.trim()) }.getOrNull()
-        val created = java.time.Instant.ofEpochMilli(schedule.createdAtEpochMillis).atZone(zone).toLocalDate()
-        val start = if (usesAnchor && anchor != null) anchor else created
-        db.upsertSchedule(schedule.copy(startDateIso = start.toString()))
-      }
-    prefs.edit().putBoolean(KEY_SCHEDULE_START_DATES_MIGRATED, true).apply()
   }
 
   private fun loadSettings(): AppSettings {
@@ -108,7 +88,14 @@ class RegimenRepository private constructor(context: Context) {
   }
 
   fun saveSettings(settings: AppSettings) {
-    prefs.edit().putString(KEY_APP_SETTINGS, json.encodeToString(settings)).apply()
+    // Shared settings sync across devices; stamp when their values change so merges can tell.
+    val previous = loadSettings()
+    val stamped = if (previous.shared().sameValues(settings.shared())) {
+      settings.copy(sharedSettingsUpdatedAtEpochMillis = previous.sharedSettingsUpdatedAtEpochMillis)
+    } else {
+      settings.copy(sharedSettingsUpdatedAtEpochMillis = System.currentTimeMillis())
+    }
+    prefs.edit().putString(KEY_APP_SETTINGS, json.encodeToString(stamped)).apply()
     reloadSnapshot()
   }
 
@@ -207,7 +194,7 @@ class RegimenRepository private constructor(context: Context) {
   }
 
   fun saveBucket(bucket: TimeOfDayBucket) {
-    db.upsertBucket(bucket)
+    db.upsertBucket(bucket.copy(updatedAtEpochMillis = System.currentTimeMillis()))
     reloadSnapshot()
   }
 
@@ -341,35 +328,68 @@ class RegimenRepository private constructor(context: Context) {
     return "${scheduleId}_${bucketId}_${log.scheduledDateIso}"
   }
 
-  fun exportBackupJson(): String {
-    val s = _snapshot.value
-    val bundle = RegimenBackupBundle(
-      version = 2,
+  /**
+   * Everything on this device as a v3 bundle (the input to export and sync), including deletion
+   * tombstones so a device that never saw a record still learns it was deleted.
+   */
+  @Synchronized
+  fun currentBundle(): RegimenBackupBundle {
+    val settings = loadSettings()
+    return RegimenBackupBundle(
       exportedAtEpochMillis = System.currentTimeMillis(),
-      settings = s.settings,
-      medications = s.medications,
-      prescribers = s.prescribers,
-      conditions = s.conditions,
-      buckets = s.buckets,
-      schedules = s.schedules,
-      doseLogs = s.doseLogs,
+      sourceDeviceId = deviceIdentity.deviceId,
+      settings = settings,
+      sharedSettings = settings.shared(),
+      devices = listOf(deviceIdentity.asSyncDevice()),
+      medications = db.getAllMedications(includeDeleted = true),
+      prescribers = db.getAllPrescribers(includeDeleted = true),
+      conditions = db.getAllConditions(includeDeleted = true),
+      buckets = db.getAllBuckets().ifEmpty { TimeOfDayBucket.defaultBuckets() },
+      schedules = db.getAllSchedules(includeDeleted = true),
+      doseLogs = db.getAllDoseLogs(includeDeleted = true),
     )
-    return json.encodeToString(bundle)
   }
 
-  fun importBackupJson(rawJson: String): Result<Int> {
-    return runCatching {
-      val bundle = json.decodeFromString<RegimenBackupBundle>(rawJson)
-      prefs.edit().putString(KEY_APP_SETTINGS, json.encodeToString(bundle.settings)).apply()
-      bundle.buckets.forEach { db.upsertBucket(it) }
+  /**
+   * Writes [bundle] to this device.
+   * - [replace] = true: this device's records become exactly the bundle's, and its device settings
+   *   are restored too (a full restore, e.g. onto a new phone).
+   * - [replace] = false: records are upserted (the bundle is already a merge result) and only the
+   *   shared settings are taken; reminder and display settings stay as they are.
+   */
+  @Synchronized
+  fun applyBundle(bundle: RegimenBackupBundle, replace: Boolean) {
+    val current = loadSettings()
+    val shared = bundle.sharedSettings
+    val settings = if (replace) {
+      bundle.settings.withShared(shared).copy(
+        // Don't re-show onboarding/permission prompts this device has already been through.
+        permissionsPromptDismissedVersion = maxOf(
+          current.permissionsPromptDismissedVersion,
+          bundle.settings.permissionsPromptDismissedVersion,
+        ),
+      )
+    } else {
+      current.withShared(shared)
+    }
+    prefs.edit().putString(KEY_APP_SETTINGS, json.encodeToString(settings)).apply()
+
+    db.inTransaction {
+      if (replace) db.clearUserRecords()
+      val buckets = bundle.buckets.ifEmpty { TimeOfDayBucket.defaultBuckets() }
+      val keepBucketIds = buckets.mapTo(HashSet()) { it.id }
+      db.getAllBuckets().filter { it.id !in keepBucketIds }.forEach {
+        db.deleteBucket(it.id)
+        DoseNotificationManager.cancelBucketAlarms(appContext, it.id)
+      }
+      buckets.forEach { db.upsertBucket(it) }
       bundle.prescribers.forEach { db.upsertPrescriber(it) }
       bundle.conditions.forEach { db.upsertCondition(it) }
       bundle.medications.forEach { db.upsertMedication(it) }
       bundle.schedules.forEach { db.upsertSchedule(it) }
       bundle.doseLogs.forEach { db.upsertDoseLog(it) }
-      reloadSnapshot()
-      bundle.medications.size
     }
+    reloadSnapshot()
   }
 
   @Synchronized
@@ -588,7 +608,6 @@ class RegimenRepository private constructor(context: Context) {
   companion object {
     private const val KEY_SEEDED_INITIAL = "seeded_initial_v1"
     private const val KEY_APP_SETTINGS = "app_settings_v1"
-    private const val KEY_SCHEDULE_START_DATES_MIGRATED = "schedule_start_dates_migrated_v1"
 
     @Volatile
     private var INSTANCE: RegimenRepository? = null

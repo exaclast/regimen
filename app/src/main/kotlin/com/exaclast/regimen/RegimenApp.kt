@@ -31,10 +31,13 @@ import com.exaclast.regimen.model.ThemeMode
 import com.exaclast.regimen.notifications.DoseNotificationStage
 import com.exaclast.regimen.ui.RegimenViewModel
 import com.exaclast.regimen.ui.components.LocalSnackbarHostState
+import com.exaclast.regimen.ui.navigation.BackupEncryptionMode
 import com.exaclast.regimen.ui.navigation.Navigator
 import com.exaclast.regimen.ui.navigation.Route
 import com.exaclast.regimen.ui.navigation.TopLevel
 import com.exaclast.regimen.ui.navigation.isFullScreenTask
+import com.exaclast.regimen.ui.screens.BackupEncryptionScreen
+import com.exaclast.regimen.ui.screens.BackupRestoreScreen
 import com.exaclast.regimen.ui.screens.ConditionDetailScreen
 import com.exaclast.regimen.ui.screens.ConditionEditorScreen
 import com.exaclast.regimen.ui.screens.ConditionListScreen
@@ -60,6 +63,8 @@ fun RegimenApp(
   val context = LocalContext.current
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val snapshot = uiState.snapshot
+  val backupEncryptionConfigured by viewModel.backupEncryptionConfigured.collectAsStateWithLifecycle()
+  val pendingExport by viewModel.pendingExport.collectAsStateWithLifecycle()
   val settings = snapshot.settings
   val backStack = rememberNavBackStack(Route.Today)
   val navigator = remember(backStack) { Navigator(backStack) }
@@ -152,6 +157,10 @@ fun RegimenApp(
                 onOpenWindow = { navigator.navigate(Route.DoseWindowEditor(it)) },
                 onAddMedication = { navigator.navigate(Route.MedicationEditor()) },
                 onLoadDemoData = viewModel::resetToSampleData,
+                onRestoreBackup = { uri ->
+                  viewModel.openBackup(uri)
+                  navigator.navigate(Route.BackupRestore)
+                },
               )
             }
 
@@ -333,11 +342,57 @@ fun RegimenApp(
                   }
                   Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
                 },
-                onExportJson = viewModel::exportBackupJson,
-                onImportJson = viewModel::importBackupJson,
+                backupEncryptionConfigured = backupEncryptionConfigured,
+                pendingExport = pendingExport,
+                onConsumePendingExport = viewModel::consumePendingExport,
+                suggestedBackupFileName = viewModel::suggestedBackupFileName,
+                onExportBackup = viewModel::exportBackup,
+                onRestoreFilePicked = { uri ->
+                  viewModel.openBackup(uri)
+                  navigator.navigate(Route.BackupRestore)
+                },
+                onOpenBackupEncryption = { mode -> navigator.navigate(Route.BackupEncryption(mode)) },
+                onRequestExportAfterSetup = viewModel::requestExportAfterSetup,
                 onClearAllData = viewModel::clearAllUserData,
                 onResetSampleData = viewModel::resetToSampleData,
                 onPermissionsChanged = viewModel::refreshPermissionsAndAlarms,
+              )
+            }
+
+            entry<Route.BackupEncryption> { key ->
+              BackupEncryptionScreen(
+                mode = key.mode,
+                onSetUp = viewModel::setUpBackupEncryption,
+                onChange = viewModel::changeBackupPassphrase,
+                onReveal = viewModel::revealRecoveryCode,
+                onReset = {
+                  navigator.back()
+                  navigator.navigate(Route.BackupEncryption(BackupEncryptionMode.RESET))
+                },
+                onDone = { changed ->
+                  if (changed && key.mode == BackupEncryptionMode.CHANGE) {
+                    Toast.makeText(context, "Backup passphrase changed", Toast.LENGTH_SHORT).show()
+                  }
+                  navigator.back()
+                },
+                onClose = {
+                  // Leaving setup without a passphrase cancels a pending export.
+                  if (!backupEncryptionConfigured) viewModel.consumePendingExport()
+                  navigator.back()
+                },
+              )
+            }
+
+            entry<Route.BackupRestore> {
+              val restoreState by viewModel.restoreState.collectAsStateWithLifecycle()
+              BackupRestoreScreen(
+                state = restoreState,
+                onUnlock = viewModel::unlockBackup,
+                onApply = viewModel::applyRestore,
+                onClose = {
+                  viewModel.resetRestore()
+                  if (navigator.current is Route.BackupRestore) navigator.back()
+                },
               )
             }
 

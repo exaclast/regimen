@@ -1383,28 +1383,27 @@ private fun CrossReferenceDisambiguationDialog(
               modifier = Modifier.padding(12.dp),
               verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
+              // Stacked rather than side by side: multi-ingredient products (e.g. Adderall's four
+              // salts) have long names *and* long strengths, and a shared row squeezes one to a sliver.
+              val brand = res.brandName?.takeIf { it.isNotBlank() }
+              Text(
+                text = brand ?: res.formulaName,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+              )
+              if (brand != null) {
                 Text(
-                  text = if (!res.brandName.isNullOrBlank()) {
-                    "${res.brandName} (${res.formulaName})"
-                  } else {
-                    res.formulaName
-                  },
-                  style = MaterialTheme.typography.titleSmall,
-                  fontWeight = FontWeight.Bold,
-                  modifier = Modifier.weight(1f),
-                )
-                Text(
-                  text = res.strength,
-                  style = MaterialTheme.typography.labelLarge,
-                  color = MaterialTheme.colorScheme.primary,
-                  fontWeight = FontWeight.SemiBold,
+                  text = res.formulaName,
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
               }
+              Text(
+                text = res.strength,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+              )
               Text(
                 text = "${res.form.displayName} • Mfg: ${res.manufacturer ?: "Unspecified"} • NDC: ${res.ndc11}",
                 style = MaterialTheme.typography.bodySmall,

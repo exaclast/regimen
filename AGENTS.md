@@ -74,6 +74,12 @@ This repository is **Regimen**, an Android medication and dose-tracking app buil
   - **One notification per window occurrence**, tagged `window:<bucketId>:<dateIso>`: title "Morning dose" / "Morning medications", body lists drugs and doses, actions Take / Skip (single) or Take all (several), applying to exactly the listed doses. Discreet mode hides the body on the lock screen via a public version.
   - Swiping a reminder away = snooze (delete intent). Repeat reminders re-alert ones not acted on. There is no Snooze button on notifications (it exists on the alarm screen and in-app).
   - Receivers never call `startActivity`. The end-of-window alarm screen opens via the notification's full-screen intent (`DoseAlarmActivity.ACTION_RING` rings; `ACTION_SHOW` from a tap is silent).
+- **Backup & Sync** (`sync/`, `data/BackupManager.kt`, `data/BackupKeyStore.kt`):
+  - One format for backups and sync: `RegimenBackupBundle` (v1), JSON. There are no users yet, so there's no compatibility with older formats. `settings` is the exporting device's own settings (restored only by Replace); `sharedSettings` (patient name, tracking toggles) is what syncs. Reminder, alarm, theme and FDA-consent settings stay per device.
+  - Bundles include soft-deleted tombstones (`getAll*(includeDeleted = true)`) so deletions propagate. Records carry `updatedAtEpochMillis`; dose windows and shared settings are stamped when edited.
+  - `BundleMerger` is a three-way merge against the last agreed copy. Changed on one side → that change. Changed on both → the primary device keeps its own; other devices defer to the remote copy; with no primary, newer wins. Two logs for the same scheduled dose keep one and tombstone the other. File imports merge with no base and newer wins.
+  - Any device can log; `PrimaryClaim` (highest epoch wins) only decides conflicts.
+  - `BundleCrypto`: AES-256-GCM with a random data key wrapped by a PBKDF2 passphrase key in every file's header; the recovery code is the data key plus a checksum. The device caches the data key wrapped by an Android Keystore key. `regimen_device` and `regimen_backup_keys` prefs are excluded from Android Auto Backup.
 - **Optional Tracking**:
   - Prescribers and conditions are optional (`AppSettings.trackPrescribers` / `trackConditions`; null = on only if records exist). Use `RegimenSnapshot.tracksPrescribers` / `tracksConditions` to gate tabs and fields. Hiding never deletes data.
 

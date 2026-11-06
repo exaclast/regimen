@@ -1,13 +1,8 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
--->
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android Auto Backup (API 30 and below). Everything is backed up except per-install
+     identity and keys: a restored phone must get its own sync device id, and the backup data
+     key is wrapped by a Keystore key that never leaves the original device. -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="sharedpref" path="regimen_device.xml" />
+    <exclude domain="sharedpref" path="regimen_backup_keys.xml" />
 </full-backup-content>

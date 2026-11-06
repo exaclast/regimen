@@ -245,6 +245,8 @@ data class TimeOfDayBucket(
   val sortOrder: Int = 0,
   val notificationsEnabled: Boolean = true,
   val alarmAtWindowEnd: Boolean = true,
+  /** For sync conflict tie-breaks. 0 = never edited (a built-in default). */
+  val updatedAtEpochMillis: Long = 0L,
 ) {
   val startHour: Int
     get() = hour
@@ -449,7 +451,24 @@ data class AppSettings(
   val trackPrescribers: Boolean? = null,
   /** Track conditions (tab, fields). null = not chosen yet: on only if any condition exists. */
   val trackConditions: Boolean? = null,
+  /** When a [SharedSettings] field last changed on this device; 0 = never. */
+  val sharedSettingsUpdatedAtEpochMillis: Long = 0L,
 ) {
+  /** The settings every synced device shares; everything else (reminders, theme...) is per device. */
+  fun shared(): SharedSettings = SharedSettings(
+    patientName = patientName,
+    trackPrescribers = trackPrescribers,
+    trackConditions = trackConditions,
+    updatedAtEpochMillis = sharedSettingsUpdatedAtEpochMillis,
+  )
+
+  fun withShared(shared: SharedSettings): AppSettings = copy(
+    patientName = shared.patientName,
+    trackPrescribers = shared.trackPrescribers,
+    trackConditions = shared.trackConditions,
+    sharedSettingsUpdatedAtEpochMillis = shared.updatedAtEpochMillis,
+  )
+
   companion object {
     const val CURRENT_PERMISSIONS_VERSION = 2
     val SNOOZE_PRESETS = listOf(15, 30, 45, 60)
@@ -457,18 +476,67 @@ data class AppSettings(
   }
 }
 
+/** Settings that sync across devices. Reminder, alarm, theme and privacy settings stay per device. */
+@Serializable
+data class SharedSettings(
+  val patientName: String = "",
+  val trackPrescribers: Boolean? = null,
+  val trackConditions: Boolean? = null,
+  val updatedAtEpochMillis: Long = 0L,
+) {
+  /** Equality of the user-visible values, ignoring when they were set. */
+  fun sameValues(other: SharedSettings): Boolean = copy(updatedAtEpochMillis = 0L) == other.copy(updatedAtEpochMillis = 0L)
+}
+
+/** A device that has synced. Any device can log; [PrimaryClaim] decides conflicts. */
+@Serializable
+data class SyncDevice(
+  val id: String,
+  val name: String,
+  val model: String = "",
+  val firstSeenEpochMillis: Long = 0L,
+  val lastSyncedEpochMillis: Long = 0L,
+)
+
+/**
+ * Which device is primary. A device takes over by writing a claim with a higher [epoch], so the
+ * newest claim wins without the old primary having to be reachable.
+ */
+@Serializable
+data class PrimaryClaim(
+  val deviceId: String,
+  val epoch: Long,
+  val claimedAtEpochMillis: Long,
+) {
+  /** Total order: higher epoch wins; equal epochs (simultaneous claims) break by device id. */
+  fun supersedes(other: PrimaryClaim?): Boolean =
+    other == null || epoch > other.epoch || (epoch == other.epoch && deviceId > other.deviceId)
+}
+
+/**
+ * Everything a backup or sync carries. [settings] is the exporting device's own settings, used
+ * only when restoring a full backup onto a device; [sharedSettings] is what syncs.
+ */
 @Serializable
 data class RegimenBackupBundle(
-  val version: Int = 2,
+  val version: Int = CURRENT_VERSION,
   val exportedAtEpochMillis: Long = System.currentTimeMillis(),
+  val sourceDeviceId: String? = null,
   val settings: AppSettings = AppSettings(),
+  val sharedSettings: SharedSettings = SharedSettings(),
+  val devices: List<SyncDevice> = emptyList(),
+  val primary: PrimaryClaim? = null,
   val medications: List<Medication> = emptyList(),
   val prescribers: List<Prescriber> = emptyList(),
   val conditions: List<Condition> = emptyList(),
   val buckets: List<TimeOfDayBucket> = emptyList(),
   val schedules: List<MedicationSchedule> = emptyList(),
   val doseLogs: List<DoseLog> = emptyList(),
-)
+) {
+  companion object {
+    const val CURRENT_VERSION = 1
+  }
+}
 
 fun formatNum(value: Double): String {
   return if (value % 1.0 == 0.0) {

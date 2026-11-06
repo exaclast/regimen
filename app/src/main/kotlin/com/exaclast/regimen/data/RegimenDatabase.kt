@@ -98,10 +98,26 @@ class RegimenDatabase(context: Context) :
     // Future schema migrations go here
   }
 
-  fun getAllMedications(): List<Medication> {
+  /** Runs [block] in one transaction: much faster for bulk writes, and all-or-nothing. */
+  fun <T> inTransaction(block: () -> T): T {
+    val db = writableDatabase
+    db.beginTransaction()
+    try {
+      val result = block()
+      db.setTransactionSuccessful()
+      return result
+    } finally {
+      db.endTransaction()
+    }
+  }
+
+  /** Soft-deleted rows are tombstones: hidden from the app, but kept so deletions can sync. */
+  private fun liveOnly(includeDeleted: Boolean) = if (includeDeleted) "" else "WHERE deleted_at IS NULL"
+
+  fun getAllMedications(includeDeleted: Boolean = false): List<Medication> {
     val result = mutableListOf<Medication>()
     readableDatabase.rawQuery(
-      "SELECT payload_json FROM medications WHERE deleted_at IS NULL ORDER BY formula_name COLLATE NOCASE ASC",
+      "SELECT payload_json FROM medications ${liveOnly(includeDeleted)} ORDER BY formula_name COLLATE NOCASE ASC",
       null
     ).use { cursor ->
       while (cursor.moveToNext()) {
@@ -125,11 +141,11 @@ class RegimenDatabase(context: Context) :
     writableDatabase.insertWithOnConflict("medications", null, values, SQLiteDatabase.CONFLICT_REPLACE)
   }
 
-  fun getAllPrescribers(): List<Prescriber> {
+  fun getAllPrescribers(includeDeleted: Boolean = false): List<Prescriber> {
     val result = mutableListOf<Prescriber>()
     readableDatabase.rawQuery(
-      "SELECT payload_json FROM prescribers WHERE deleted_at IS NULL ORDER BY is_pcp_sort DESC, name COLLATE NOCASE ASC".let {
-        "SELECT payload_json FROM prescribers WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE ASC"
+      "SELECT payload_json FROM prescribers ${liveOnly(includeDeleted)} ORDER BY is_pcp_sort DESC, name COLLATE NOCASE ASC".let {
+        "SELECT payload_json FROM prescribers ${liveOnly(includeDeleted)} ORDER BY name COLLATE NOCASE ASC"
       },
       null
     ).use { cursor ->
@@ -153,10 +169,10 @@ class RegimenDatabase(context: Context) :
     writableDatabase.insertWithOnConflict("prescribers", null, values, SQLiteDatabase.CONFLICT_REPLACE)
   }
 
-  fun getAllConditions(): List<Condition> {
+  fun getAllConditions(includeDeleted: Boolean = false): List<Condition> {
     val result = mutableListOf<Condition>()
     readableDatabase.rawQuery(
-      "SELECT payload_json FROM conditions WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE ASC",
+      "SELECT payload_json FROM conditions ${liveOnly(includeDeleted)} ORDER BY name COLLATE NOCASE ASC",
       null
     ).use { cursor ->
       while (cursor.moveToNext()) {
@@ -207,10 +223,10 @@ class RegimenDatabase(context: Context) :
     writableDatabase.delete("time_buckets", "id = ?", arrayOf(bucketId))
   }
 
-  fun getAllSchedules(): List<MedicationSchedule> {
+  fun getAllSchedules(includeDeleted: Boolean = false): List<MedicationSchedule> {
     val result = mutableListOf<MedicationSchedule>()
     readableDatabase.rawQuery(
-      "SELECT payload_json FROM schedules WHERE deleted_at IS NULL",
+      "SELECT payload_json FROM schedules ${liveOnly(includeDeleted)}",
       null
     ).use { cursor ->
       while (cursor.moveToNext()) {
@@ -233,10 +249,10 @@ class RegimenDatabase(context: Context) :
     writableDatabase.insertWithOnConflict("schedules", null, values, SQLiteDatabase.CONFLICT_REPLACE)
   }
 
-  fun getAllDoseLogs(): List<DoseLog> {
+  fun getAllDoseLogs(includeDeleted: Boolean = false): List<DoseLog> {
     val result = mutableListOf<DoseLog>()
     readableDatabase.rawQuery(
-      "SELECT payload_json FROM dose_logs WHERE deleted_at IS NULL ORDER BY action_timestamp DESC",
+      "SELECT payload_json FROM dose_logs ${liveOnly(includeDeleted)} ORDER BY action_timestamp DESC",
       null
     ).use { cursor ->
       while (cursor.moveToNext()) {
