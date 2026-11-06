@@ -565,13 +565,17 @@ fun MedicationEditorScreen(
   val invalidFieldLabels = buildList {
     if (!doseCheck.isValid) add("Default Dose")
     if (form.isInjectable) {
+      val pen = form.isPrefilledInjector
       if (!concentrationCheck.isValid) add("Concentration")
-      if (!vialVolumeCheck.isValid) add("Vial Size")
-      if (!syringeVolumeCheck.isValid) add("Syringe")
-      if (!drawGaugeCheck.isValid) add("Draw Gauge")
-      if (!drawLengthCheck.isValid) add("Draw Length")
-      if (!injectGaugeCheck.isValid) add("Inject Gauge")
-      if (!injectLengthCheck.isValid) add("Inject Length")
+      if (!vialVolumeCheck.isValid) add(if (pen) "Device Volume" else "Vial Size")
+      // Syringe and draw-needle fields are hidden for prefilled devices, so they can't block Save.
+      if (!pen) {
+        if (!syringeVolumeCheck.isValid) add("Syringe")
+        if (!drawGaugeCheck.isValid) add("Draw Gauge")
+        if (!drawLengthCheck.isValid) add("Draw Length")
+      }
+      if (!injectGaugeCheck.isValid) add(if (pen) "Needle Gauge" else "Inject Gauge")
+      if (!injectLengthCheck.isValid) add(if (pen) "Needle Length" else "Inject Length")
     }
     if (!minIntervalCheck.isValid) add("Min Interval")
     if (!maxDailyDosesCheck.isValid) add("Max Daily Doses")
@@ -843,8 +847,11 @@ fun MedicationEditorScreen(
             )
           }
 
-          // 2. Injectable / Vial Specifications (only when Form is Injectable)
+          // 2. Injectable specifications (only when Form is Injectable). Prefilled devices
+          // (pens, auto-injectors, prefilled syringes) have no vial to draw from, so the
+          // syringe and draw-needle fields are hidden; their stored values are kept.
           if (form.isInjectable) {
+            val pen = form.isPrefilledInjector
             Surface(
               shape = MaterialTheme.shapes.medium,
               color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -855,7 +862,7 @@ fun MedicationEditorScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
               ) {
                 Text(
-                  text = "Injectable & Syringe / Needle Details",
+                  text = if (pen) "Pen / Auto-injector Details" else "Vial, Syringe & Needle Details",
                   style = MaterialTheme.typography.titleSmall,
                   fontWeight = FontWeight.Bold,
                   color = MaterialTheme.colorScheme.primary,
@@ -886,14 +893,14 @@ fun MedicationEditorScreen(
                     keyboardType = KeyboardType.Decimal,
                     value = vialVolumeText,
                     onValueChange = { vialVolumeText = it },
-                    label = { Text("Vial Size (mL)") },
-                    placeholder = { Text("10") },
+                    label = { Text(if (pen) "Device Volume (mL)" else "Vial Size (mL)") },
+                    placeholder = { Text(if (pen) "3" else "10") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                   )
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (!pen) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                   ValidatedNumberField(
                     check = syringeVolumeCheck,
                     keyboardType = KeyboardType.Decimal,
@@ -914,7 +921,7 @@ fun MedicationEditorScreen(
                   )
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (!pen) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                   ValidatedNumberField(
                     check = drawGaugeCheck,
                     keyboardType = KeyboardType.Number,
@@ -937,14 +944,22 @@ fun MedicationEditorScreen(
                   )
                 }
 
+                if (pen) {
+                  Text(
+                    text = "Pen needle — only for multi-dose pens with screw-on needles (e.g. insulin). " +
+                      "Leave blank for auto-injectors.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                   ValidatedNumberField(
                     check = injectGaugeCheck,
                     keyboardType = KeyboardType.Number,
                     value = injectGaugeText,
                     onValueChange = { injectGaugeText = it },
-                    label = { Text("Inject Gauge (G)") },
-                    placeholder = { Text("25") },
+                    label = { Text(if (pen) "Needle Gauge (G)" else "Inject Gauge (G)") },
+                    placeholder = { Text(if (pen) "32" else "25") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                   )
@@ -953,8 +968,8 @@ fun MedicationEditorScreen(
                     keyboardType = KeyboardType.Decimal,
                     value = injectLengthText,
                     onValueChange = { injectLengthText = it },
-                    label = { Text("Inject Length (in)") },
-                    placeholder = { Text("1.0") },
+                    label = { Text(if (pen) "Needle Length (in)" else "Inject Length (in)") },
+                    placeholder = { Text(if (pen) "0.16" else "1.0") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                   )

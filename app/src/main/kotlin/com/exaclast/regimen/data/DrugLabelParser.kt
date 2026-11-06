@@ -96,7 +96,7 @@ object DrugLabelParser {
         "formulaName": "Generic / active ingredient name(s) in Title Case without strength (e.g. \"Amoxicillin / Clavulanate\", \"Fexofenadine HCl\", \"Acetaminophen / Ibuprofen\"), or null. NEVER put the patient name or pharmacy here.",
         "brandName": "Proprietary commercial brand name if printed on the label (e.g. \"Allegra\", \"Advil Dual Action\"), or null for generic prescriptions. NEVER put the patient name, prescriber name, or pharmacy name here.",
         "strength": "Strength per unit or concentration (e.g. \"1 mg\", \"180 mg\", \"250 mg / 125 mg\", \"200 mg/mL\"), or null",
-        "form": "One of: TABLET, CAPSULE, INJECTABLE_VIAL, INJECTABLE_PEN, TOPICAL, LIQUID, INHALER, DROPS, OTHER",
+        "form": "One of: TABLET, CAPSULE, INJECTABLE_VIAL, INJECTABLE_PEN, TOPICAL, LIQUID, INHALER, DROPS, OTHER. Use INJECTABLE_PEN for pens, auto-injectors and prefilled syringes; INJECTABLE_VIAL only for vials drawn up with a syringe.",
         "defaultDoseAmount": 1.0,
         "manufacturer": "Manufacturer, labeler (after MFG / Dist. By), or compounding pharmacy LLC name, or null",
         "prescriberName": "Prescriber / doctor name formatted as \"First Last\" without credentials, or null",
@@ -274,12 +274,15 @@ object DrugLabelParser {
     }
   }
 
-  private fun mapFormString(raw: String?): MedicationForm? {
+  internal fun mapFormString(raw: String?): MedicationForm? {
     val upper = raw?.trim()?.uppercase() ?: return null
     return MedicationForm.entries.firstOrNull { it.name == upper }
       ?: when {
+        // Device words first: "pen injector" / "auto-injector" also contain "INJECT".
+        upper.contains("PEN") || upper.contains("AUTO") || upper.contains("PREFILL") ||
+          upper.contains("PRE-FILL") || upper.contains("INJECTOR") || upper.contains("SYRINGE") ->
+          MedicationForm.INJECTABLE_PEN
         upper.contains("VIAL") || upper.contains("INJECT") -> MedicationForm.INJECTABLE_VIAL
-        upper.contains("PEN") -> MedicationForm.INJECTABLE_PEN
         upper.contains("TAB") || upper.contains("CHEW") || upper.contains("GELCAP") || upper.contains("CAPLET") ->
           MedicationForm.TABLET
         upper.contains("CAP") -> MedicationForm.CAPSULE

@@ -24,7 +24,7 @@ enum class MedicationForm(val displayName: String, val supportsSiteRotation: Boo
   TABLET("Tablet", false),
   CAPSULE("Capsule", false),
   INJECTABLE_VIAL("Injectable (Vial)", true),
-  INJECTABLE_PEN("Injectable (Pen / Auto-injector)", true),
+  INJECTABLE_PEN("Injectable (Pen / Auto-injector / Prefilled syringe)", true),
   TOPICAL("Topical (Gel / Cream / Patch)", true),
   LIQUID("Oral Liquid / Solution", false),
   INHALER("Inhaler / Nasal Spray", false),
@@ -33,6 +33,10 @@ enum class MedicationForm(val displayName: String, val supportsSiteRotation: Boo
 
   val isInjectable: Boolean
     get() = this == INJECTABLE_VIAL || this == INJECTABLE_PEN
+
+  /** Prefilled devices (pens, auto-injectors, prefilled syringes) have nothing to draw up. */
+  val isPrefilledInjector: Boolean
+    get() = this == INJECTABLE_PEN
 }
 
 @Serializable

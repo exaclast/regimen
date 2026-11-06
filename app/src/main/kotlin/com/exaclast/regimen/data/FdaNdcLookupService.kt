@@ -830,7 +830,8 @@ object FdaNdcLookupService {
       .let { normalizeStrengthText(it) }
       .ifBlank { "See package" }
 
-    val form = mapDosageForm(item.dosageForm)
+    val packageDesc = chosenPackage?.description
+    val form = mapDosageForm(item.dosageForm, packageDesc, item.route)
     val route = mapRoute(item.route, form)
     val defaultUnit = when {
       form.isInjectable -> DoseUnit.MG
@@ -844,7 +845,6 @@ object FdaNdcLookupService {
     }
 
     val concentrationMgPerMl = parseConcentrationMgPerMl(rawStrength)
-    val packageDesc = chosenPackage?.description
     val vialVolumeMl = parseVialVolumeMl(packageDesc)
 
     return FdaDrugLookupResult(
@@ -882,10 +882,26 @@ object FdaNdcLookupService {
     }
   }
 
-  internal fun mapDosageForm(rawDosageForm: String?): MedicationForm {
+  /**
+   * FDA dosage forms describe the drug ("INJECTION, SOLUTION"), not the device. Pens,
+   * auto-injectors and prefilled syringes only show up in the packaging container type
+   * ("3 mL in 1 SYRINGE, PLASTIC"), while vials say "VIAL". Some devices are listed as a KIT.
+   */
+  internal fun mapDosageForm(
+    rawDosageForm: String?,
+    packageDescription: String? = null,
+    routes: List<String> = emptyList(),
+  ): MedicationForm {
     val upper = rawDosageForm?.uppercase().orEmpty()
+    // Some injectables are listed as a plain "SOLUTION" (e.g. Enbrel); the route gives them away.
+    val parenteral = routes.any { r -> PARENTERAL_ROUTES.any { r.uppercase().contains(it) } }
+    val injectable = upper.contains("INJECTION") || upper.contains("INJECTABLE") || parenteral
     return when {
-      upper.contains("INJECTION") || upper.contains("INJECTABLE") -> MedicationForm.INJECTABLE_VIAL
+      injectable || upper == "KIT" -> when (injectionDevice(packageDescription)) {
+        MedicationForm.INJECTABLE_PEN -> MedicationForm.INJECTABLE_PEN
+        MedicationForm.INJECTABLE_VIAL -> MedicationForm.INJECTABLE_VIAL
+        else -> if (injectable) MedicationForm.INJECTABLE_VIAL else MedicationForm.OTHER
+      }
       upper.contains("TABLET") -> MedicationForm.TABLET
       upper.contains("CAPSULE") -> MedicationForm.CAPSULE
       upper.contains("GEL") || upper.contains("CREAM") || upper.contains("OINTMENT") ||
@@ -925,9 +941,27 @@ object FdaNdcLookupService {
     return match.groupValues.getOrNull(1)?.toDoubleOrNull()
   }
 
+  private val PARENTERAL_ROUTES = listOf("SUBCUTANEOUS", "INTRAMUSCULAR", "INTRAVENOUS", "INTRADERMAL")
+
+  /** The innermost container in a package description: a vial, or a prefilled device. */
+  internal fun injectionDevice(packageDescription: String?): MedicationForm? {
+    val upper = packageDescription?.uppercase() ?: return null
+    val vial = upper.lastIndexOf("VIAL")
+    val device = listOf("SYRINGE", "CARTRIDGE", "INJECTOR", " PEN").maxOf { upper.lastIndexOf(it) }
+    return when {
+      vial < 0 && device < 0 -> null
+      device > vial -> MedicationForm.INJECTABLE_PEN
+      else -> MedicationForm.INJECTABLE_VIAL
+    }
+  }
+
+  /** Volume of one vial or prefilled device, e.g. "10 mL in 1 VIAL" or ".3 mL in 1 SYRINGE". */
   internal fun parseVialVolumeMl(packageDescription: String?): Double? {
     if (packageDescription.isNullOrBlank()) return null
-    val regex = Regex("""([0-9]+(?:\.[0-9]+)?)\s*mL\s+in\s+1\s+VIAL""", RegexOption.IGNORE_CASE)
+    val regex = Regex(
+      """([0-9]*\.?[0-9]+)\s*mL\s+in\s+1\s+(?:VIAL|SYRINGE|CARTRIDGE|INJECTOR|PEN)""",
+      RegexOption.IGNORE_CASE,
+    )
     val match = regex.find(packageDescription) ?: return null
     return match.groupValues.getOrNull(1)?.toDoubleOrNull()
   }

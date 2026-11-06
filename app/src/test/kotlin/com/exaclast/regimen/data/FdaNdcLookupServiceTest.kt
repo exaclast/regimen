@@ -386,4 +386,59 @@ class FdaNdcLookupServiceTest {
     // Spaces instead of hyphens fall back to the three-layout search.
     assertEquals(3, FdaNdcLookupService.candidateNdc11s("45802 112 22").size)
   }
+
+  @Test
+  fun mapDosageForm_usesPackagingToTellPensFromVials() {
+    val svc = FdaNdcLookupService
+    // Lantus vial vs SoloStar pen share the dosage form; only packaging differs.
+    assertEquals(
+      MedicationForm.INJECTABLE_VIAL,
+      svc.mapDosageForm("INJECTION, SOLUTION", "1 VIAL, GLASS in 1 CARTON (0088-2220-33)  / 10 mL in 1 VIAL, GLASS"),
+    )
+    assertEquals(
+      MedicationForm.INJECTABLE_PEN,
+      svc.mapDosageForm("INJECTION, SOLUTION", "5 SYRINGE in 1 CARTON (0088-2219-05)  / 3 mL in 1 SYRINGE"),
+    )
+    // EpiPen: auto-injector listed as a glass syringe inside a container.
+    assertEquals(
+      MedicationForm.INJECTABLE_PEN,
+      svc.mapDosageForm("INJECTION", "2 CONTAINER in 1 CARTON / 1 SYRINGE, GLASS in 1 CONTAINER / .3 mL in 1 SYRINGE, GLASS"),
+    )
+    // Enbrel: plain "SOLUTION", identified as injectable by its route.
+    assertEquals(
+      MedicationForm.INJECTABLE_PEN,
+      svc.mapDosageForm("SOLUTION", "4 CARTRIDGE in 1 CARTON / 1 mL in 1 CARTRIDGE", listOf("SUBCUTANEOUS")),
+    )
+    assertEquals(
+      MedicationForm.INJECTABLE_VIAL,
+      svc.mapDosageForm("SOLUTION", "4 VIAL, SINGLE-DOSE in 1 CARTON / .5 mL in 1 VIAL, SINGLE-DOSE", listOf("SUBCUTANEOUS")),
+    )
+    // Humira: listed as a KIT containing a syringe.
+    assertEquals(
+      MedicationForm.INJECTABLE_PEN,
+      svc.mapDosageForm("KIT", "2 KIT in 1 CARTON / 1 KIT in 1 KIT *  1 SYRINGE in 1 TRAY / .8 mL in 1 SYRINGE *  1 mL in 1 PACKET"),
+    )
+    // No packaging: injection defaults to vial; an oral solution stays liquid.
+    assertEquals(MedicationForm.INJECTABLE_VIAL, svc.mapDosageForm("INJECTION", null))
+    assertEquals(MedicationForm.LIQUID, svc.mapDosageForm("SOLUTION", "118 mL in 1 BOTTLE", listOf("ORAL")))
+  }
+
+  @Test
+  fun parseVialVolumeMl_readsVialAndDeviceVolumes() {
+    val svc = FdaNdcLookupService
+    assertEquals(10.0, svc.parseVialVolumeMl("1 VIAL, GLASS in 1 CARTON / 10 mL in 1 VIAL, GLASS")!!, 0.0001)
+    assertEquals(3.0, svc.parseVialVolumeMl("1 SYRINGE, PLASTIC in 1 CARTON / 3 mL in 1 SYRINGE, PLASTIC")!!, 0.0001)
+    assertEquals(0.3, svc.parseVialVolumeMl("1 SYRINGE, GLASS in 1 CONTAINER / .3 mL in 1 SYRINGE, GLASS")!!, 0.0001)
+    assertEquals(1.0, svc.parseVialVolumeMl("4 CARTRIDGE in 1 CARTON / 1 mL in 1 CARTRIDGE")!!, 0.0001)
+  }
+
+  @Test
+  fun labelFormText_prefersDeviceOverGenericInjection() {
+    assertEquals(MedicationForm.INJECTABLE_PEN, DrugLabelParser.mapFormString("INJECTABLE_PEN"))
+    assertEquals(MedicationForm.INJECTABLE_PEN, DrugLabelParser.mapFormString("Pen injector"))
+    assertEquals(MedicationForm.INJECTABLE_PEN, DrugLabelParser.mapFormString("auto-injector"))
+    assertEquals(MedicationForm.INJECTABLE_PEN, DrugLabelParser.mapFormString("prefilled syringe"))
+    assertEquals(MedicationForm.INJECTABLE_VIAL, DrugLabelParser.mapFormString("injection vial"))
+    assertEquals(MedicationForm.INJECTABLE_VIAL, DrugLabelParser.mapFormString("injectable"))
+  }
 }

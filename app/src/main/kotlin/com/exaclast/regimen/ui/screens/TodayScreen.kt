@@ -593,6 +593,13 @@ private fun DoseCard(
   // recorded at the window's end.
   val windowEnd = if (missed) DoseAlarmTiming.windowEndMillis(item.bucket, item.dateIso) else null
   val canLogOnTime = canAct && windowEnd != null
+  // Flipping a logged dose between taken and skipped directly; take and skip overwrite the
+  // existing log (with Undo), so there's no need to clear it first.
+  val canMarkTaken = item.isSkipped && !isFutureDate
+  val canMarkSkipped = item.isTaken && !isFutureDate
+  val markTakenOnTimeAt = if (canMarkTaken) {
+    DoseAlarmTiming.windowEndMillis(item.bucket, item.dateIso)?.takeIf { it <= nowMillis }
+  } else null
 
   val a11yActions = buildList {
     if (canAct) add(CustomAccessibilityAction(takeLabel.removeSuffix("…")) { onTake(); true })
@@ -601,6 +608,15 @@ private fun DoseCard(
     }
     if (canSnooze) add(CustomAccessibilityAction("Snooze $snoozeMinutes minutes") { onSnooze(); true })
     if (canAct) add(CustomAccessibilityAction("Skip") { onSkip(); true })
+    if (canMarkTaken) {
+      if (markTakenOnTimeAt != null) {
+        add(CustomAccessibilityAction("Mark as taken on time, at ${UiFormat.time(markTakenOnTimeAt)}") { onTakenOnTime(); true })
+        add(CustomAccessibilityAction("Mark as taken now") { onTake(); true })
+      } else {
+        add(CustomAccessibilityAction("Mark as taken") { onTake(); true })
+      }
+    }
+    if (canMarkSkipped) add(CustomAccessibilityAction("Mark as skipped") { onSkip(); true })
     if (item.existingLog != null) add(CustomAccessibilityAction("Mark as not taken") { onClearLog(); true })
   }
   val a11yDescription = listOfNotNull(
@@ -663,6 +679,33 @@ private fun DoseCard(
                 text = { Text("Take at a different site…") },
                 leadingIcon = { Icon(Icons.Default.Autorenew, contentDescription = null) },
                 onClick = { menuOpen = false; onChangeSite() },
+              )
+            }
+            if (canMarkTaken) {
+              if (markTakenOnTimeAt != null) {
+                DropdownMenuItem(
+                  text = { Text("Mark as taken on time (${UiFormat.time(markTakenOnTimeAt)})") },
+                  leadingIcon = { Icon(Icons.Default.Check, contentDescription = null) },
+                  onClick = { menuOpen = false; onTakenOnTime() },
+                )
+                DropdownMenuItem(
+                  text = { Text("Mark as taken now") },
+                  leadingIcon = { Icon(Icons.Default.Check, contentDescription = null) },
+                  onClick = { menuOpen = false; onTake() },
+                )
+              } else {
+                DropdownMenuItem(
+                  text = { Text("Mark as taken") },
+                  leadingIcon = { Icon(Icons.Default.Check, contentDescription = null) },
+                  onClick = { menuOpen = false; onTake() },
+                )
+              }
+            }
+            if (canMarkSkipped) {
+              DropdownMenuItem(
+                text = { Text("Mark as skipped") },
+                leadingIcon = { Icon(Icons.Default.Close, contentDescription = null) },
+                onClick = { menuOpen = false; onSkip() },
               )
             }
             if (item.existingLog != null) {

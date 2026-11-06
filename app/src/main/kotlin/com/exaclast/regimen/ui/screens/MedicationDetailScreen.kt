@@ -229,17 +229,22 @@ fun MedicationDetailScreen(
       medication.injectableDetails?.let { inj ->
         item(key = "injection") {
           SectionHeader("Injection")
+          val pen = medication.form.isPrefilledInjector
           val rows = buildList {
             add("Route" to inj.route.displayName)
             inj.concentrationMgPerMl?.let { add("Concentration" to "${formatNum(it)} mg/mL") }
-            inj.vialVolumeMl?.let { add("Vial size" to "${formatNum(it)} mL") }
-            inj.calculateVolumeMl(medication.defaultDoseAmount, medication.defaultDoseUnit)?.let {
-              add("Draw volume" to "${formatNum(it)} mL (${formatNum(it * 100.0)} units on a U-100 syringe)")
+            inj.vialVolumeMl?.let { add((if (pen) "Device volume" else "Vial size") to "${formatNum(it)} mL") }
+            if (pen) {
+              inj.formattedInjectNeedle()?.let { add("Pen needle" to it) }
+            } else {
+              inj.calculateVolumeMl(medication.defaultDoseAmount, medication.defaultDoseUnit)?.let {
+                add("Draw volume" to "${formatNum(it)} mL (${formatNum(it * 100.0)} units on a U-100 syringe)")
+              }
+              val syringe = listOfNotNull(inj.syringeVolumeMl?.let { "${formatNum(it)} mL" }, inj.syringeDescription)
+              if (syringe.isNotEmpty()) add("Syringe" to syringe.joinToString(" · "))
+              inj.formattedDrawNeedle()?.let { add("Draw needle" to it) }
+              inj.formattedInjectNeedle()?.let { add("Injection needle" to it) }
             }
-            val syringe = listOfNotNull(inj.syringeVolumeMl?.let { "${formatNum(it)} mL" }, inj.syringeDescription)
-            if (syringe.isNotEmpty()) add("Syringe" to syringe.joinToString(" · "))
-            inj.formattedDrawNeedle()?.let { add("Draw needle" to it) }
-            inj.formattedInjectNeedle()?.let { add("Injection needle" to it) }
           }
           GroupedColumn {
             rows.forEachIndexed { i, (label, value) ->
