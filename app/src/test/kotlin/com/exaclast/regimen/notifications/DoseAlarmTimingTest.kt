@@ -1,16 +1,58 @@
 package com.exaclast.regimen.notifications
 
+import com.exaclast.regimen.model.DoseLog
+import com.exaclast.regimen.model.DoseStatus
+import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.TimeOfDayBucket
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DoseAlarmTimingTest {
 
   private val zone = ZoneId.of("America/New_York")
+
+  private fun snoozedLog(
+    until: Long?,
+    status: DoseStatus = DoseStatus.SNOOZED,
+    scheduleId: String? = "s1",
+    deletedAt: Long? = null,
+  ) = DoseLog(
+    medicationId = "m1",
+    scheduleId = scheduleId,
+    bucketId = "b1",
+    scheduledDateIso = "2026-11-05",
+    status = status,
+    snoozedUntilMillis = until,
+    amountTaken = 1.0,
+    amountUnit = DoseUnit.TABLET,
+    deletedAtEpochMillis = deletedAt,
+  )
+
+  @Test
+  fun pendingSnoozes_includesRunningSnoozeWithItsDoseDate() {
+    val snooze = DoseAlarmTiming.pendingSnoozes(listOf(snoozedLog(until = 2_000)), nowMillis = 1_000).single()
+    assertEquals("s1_b1_2026-11-05", snooze.itemKey)
+    assertEquals("b1", snooze.bucketId)
+    assertEquals("2026-11-05", snooze.dateIso)
+    assertEquals(2_000L, snooze.triggerAtMillis)
+  }
+
+  @Test
+  fun pendingSnoozes_skipsEverythingWithNothingToWakeFor() {
+    val logs = listOf(
+      snoozedLog(until = 500), // already over
+      snoozedLog(until = null),
+      snoozedLog(until = 2_000, status = DoseStatus.TAKEN),
+      snoozedLog(until = 2_000, deletedAt = 900),
+      snoozedLog(until = 2_000, scheduleId = null),
+    )
+    assertTrue(DoseAlarmTiming.pendingSnoozes(logs, nowMillis = 1_000).isEmpty())
+  }
 
   @Test
   fun dateIsoFromItemKey_handlesUnderscoredBucketIdsAndUuids() {

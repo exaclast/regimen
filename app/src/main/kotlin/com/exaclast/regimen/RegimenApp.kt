@@ -118,7 +118,10 @@ fun RegimenApp(
           visibleTabs.forEach { tab ->
             item(
               selected = navigator.currentTab == tab,
-              onClick = { navigator.selectTab(tab) },
+              onClick = {
+                if (tab == TopLevel.TODAY) viewModel.goToToday()
+                navigator.selectTab(tab)
+              },
               icon = {
                 if (tab == TopLevel.TODAY && uiState.todayPendingCount > 0) {
                   BadgedBox(badge = { Badge { Text(uiState.todayPendingCount.toString()) } }) {
@@ -150,8 +153,8 @@ fun RegimenApp(
                 onSnooze = { viewModel.snoozeScheduledDose(it) },
                 onClearLog = viewModel::clearScheduledDoseLog,
                 onTakeAll = viewModel::takeAllPending,
-                onLogPrn = { med, amount, site ->
-                  viewModel.logPrnOrCustomDose(med, amount, med.defaultDoseUnit, site, uiState.selectedDateIso)
+                onLogPrn = { item, site ->
+                  viewModel.logPrnOrCustomDose(item.medication, item.doseAmount, item.doseUnit, site, uiState.selectedDateIso)
                 },
                 onDeleteLog = viewModel::deleteDoseLog,
                 onOpenMedication = { navigator.navigate(Route.MedicationDetail(it)) },

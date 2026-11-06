@@ -5,7 +5,6 @@ package com.exaclast.regimen.ui.screens
 import android.Manifest
 import android.content.Context
 import android.net.Uri
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -372,7 +371,7 @@ fun SettingsScreen(
           GroupItem(1, 2) {
             SwitchRow(
               title = "Wallpaper colors",
-              subtitle = "Match your device's color palette (Android 12+)",
+              subtitle = "Match your device's color palette",
               checked = settings.dynamicColor,
               onCheckedChange = { onSaveSettings(settings.copy(dynamicColor = it)) },
             )
@@ -567,7 +566,7 @@ fun SettingsScreen(
   if (confirmResetWindows) {
     ConfirmDialog(
       title = "Restore default windows?",
-      text = "Replaces your windows with Morning, Afternoon, Evening and Bedtime. Schedules move to the defaults.",
+      text = "Morning, Afternoon, Evening and Bedtime go back to their default times. Custom windows are removed unless a medication is scheduled in them.",
       confirmLabel = "Restore",
       onConfirm = {
         confirmResetWindows = false
@@ -1064,11 +1063,7 @@ fun PermissionsChecklistSection(
       isGranted = notifGranted,
       actionLabel = "Allow",
       onActionClick = {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-          notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-          DoseNotificationManager.openAppNotificationSettings(context)
-        }
+        notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
       },
     )
 

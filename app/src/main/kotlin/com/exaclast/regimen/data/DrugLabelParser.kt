@@ -69,6 +69,15 @@ object DrugLabelParser {
   )
 
   /**
+   * Label words that are never a brand. Compared as whole words: as substrings, "dr" would throw
+   * out Androgel, Hydrea and Dramamine.
+   */
+  private val NON_BRAND_WORDS = setOf(
+    "patient", "patients", "customer", "doctor", "dr", "take", "capsule", "capsules",
+    "tablet", "tablets", "refill", "refills", "generic",
+  )
+
+  /**
    * Builds the system/extraction prompt for on-device Gemini Nano (via ML Kit GenAI Prompt API).
    */
   fun buildLabelExtractionPrompt(
@@ -189,15 +198,6 @@ object DrugLabelParser {
     val otherDisallowedTokens = buildSet {
       prescriber?.let { addAll(extractMeaningfulTokens(it)) }
       pharmacy?.let { addAll(extractMeaningfulTokens(it)) }
-      add("patient")
-      add("customer")
-      add("doctor")
-      add("dr")
-      add("take")
-      add("capsule")
-      add("tablet")
-      add("refill")
-      add("generic")
     }
 
     var cleanBrand = brand
@@ -211,7 +211,10 @@ object DrugLabelParser {
       val brandMatchesOtherDisallowed = brandTokens.isNotEmpty() && brandTokens.any { bt ->
         otherDisallowedTokens.any { dt -> tokensMatchFuzzy(bt, dt) }
       }
-      if (brandMatchesPatient || brandMatchesOtherDisallowed) {
+      val brandHasNonBrandWord = cleanBrand.lowercase()
+        .split(Regex("""[^\p{L}\p{N}]+"""))
+        .any { it in NON_BRAND_WORDS }
+      if (brandMatchesPatient || brandMatchesOtherDisallowed || brandHasNonBrandWord) {
         cleanBrand = null
       }
     }
@@ -237,11 +240,10 @@ object DrugLabelParser {
   }
 
   internal fun tokensMatchFuzzy(a: String, b: String): Boolean {
-    if (a == b || a.contains(b) || b.contains(a)) return true
-    if (a.length >= 4 && b.length >= 4) {
-      return levenshteinDistance(a, b) <= 1
-    }
-    return false
+    if (a == b) return true
+    // Short names only match whole words: a patient named Ann shouldn't remove "Mannitol".
+    if (a.length < 4 || b.length < 4) return false
+    return a.contains(b) || b.contains(a) || levenshteinDistance(a, b) <= 1
   }
 
   internal fun levenshteinDistance(a: String, b: String): Int {

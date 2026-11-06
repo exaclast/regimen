@@ -102,6 +102,7 @@ import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
+import com.exaclast.regimen.model.formatExact
 import com.exaclast.regimen.model.formatNum
 import com.exaclast.regimen.ui.components.DatePickerField
 import com.exaclast.regimen.ui.components.DateRangePickerDialog
@@ -254,7 +255,7 @@ fun MedicationEditorScreen(
   var strength by rememberSaveable { mutableStateOf(initialMedication?.strength.orEmpty()) }
   var form by rememberSaveable { mutableStateOf(initialMedication?.form ?: MedicationForm.TABLET) }
   var defaultDoseAmountText by rememberSaveable {
-    mutableStateOf(initialMedication?.defaultDoseAmount?.let { formatNum(it) } ?: "1")
+    mutableStateOf(initialMedication?.defaultDoseAmount?.let { formatExact(it) } ?: "1")
   }
   var defaultDoseUnit by rememberSaveable {
     mutableStateOf(initialMedication?.defaultDoseUnit ?: DoseUnit.TABLET)
@@ -264,22 +265,22 @@ fun MedicationEditorScreen(
   val initInj = initialMedication?.injectableDetails
   var route by rememberSaveable { mutableStateOf(initInj?.route ?: InjectionRoute.IM) }
   var concentrationText by rememberSaveable {
-    mutableStateOf(initInj?.concentrationMgPerMl?.let { formatNum(it) }.orEmpty())
+    mutableStateOf(initInj?.concentrationMgPerMl?.let { formatExact(it) }.orEmpty())
   }
   var vialVolumeText by rememberSaveable {
-    mutableStateOf(initInj?.vialVolumeMl?.let { formatNum(it) }.orEmpty())
+    mutableStateOf(initInj?.vialVolumeMl?.let { formatExact(it) }.orEmpty())
   }
   var syringeVolumeText by rememberSaveable {
-    mutableStateOf(initInj?.syringeVolumeMl?.let { formatNum(it) }.orEmpty())
+    mutableStateOf(initInj?.syringeVolumeMl?.let { formatExact(it) }.orEmpty())
   }
   var syringeDesc by rememberSaveable { mutableStateOf(initInj?.syringeDescription.orEmpty()) }
   var drawGaugeText by rememberSaveable { mutableStateOf(initInj?.drawNeedleGauge?.toString().orEmpty()) }
   var drawLengthText by rememberSaveable {
-    mutableStateOf(initInj?.drawNeedleLengthInches?.let { formatNum(it) }.orEmpty())
+    mutableStateOf(initInj?.drawNeedleLengthInches?.let { formatExact(it) }.orEmpty())
   }
   var injectGaugeText by rememberSaveable { mutableStateOf(initInj?.injectNeedleGauge?.toString().orEmpty()) }
   var injectLengthText by rememberSaveable {
-    mutableStateOf(initInj?.injectNeedleLengthInches?.let { formatNum(it) }.orEmpty())
+    mutableStateOf(initInj?.injectNeedleLengthInches?.let { formatExact(it) }.orEmpty())
   }
 
   // Site Rotation
@@ -296,14 +297,15 @@ fun MedicationEditorScreen(
   // Pacing & Safety Limits (on Medication object)
   var minIntervalHoursText by rememberSaveable {
     mutableStateOf(
+      // Rounded for reading; converting back to whole minutes on save still gives the same value.
       initialMedication?.minIntervalMinutes?.let { formatNum(it / 60.0) }.orEmpty()
     )
   }
   var maxDailyDosesText by rememberSaveable {
-    mutableStateOf(initialMedication?.maxDailyDoses?.let { formatNum(it) }.orEmpty())
+    mutableStateOf(initialMedication?.maxDailyDoses?.let { formatExact(it) }.orEmpty())
   }
   var maxDailyAmountText by rememberSaveable {
-    mutableStateOf(initialMedication?.maxDailyAmount?.let { formatNum(it) }.orEmpty())
+    mutableStateOf(initialMedication?.maxDailyAmount?.let { formatExact(it) }.orEmpty())
   }
 
   // Indication & Provider
@@ -341,8 +343,8 @@ fun MedicationEditorScreen(
     form = fda.form
     defaultDoseUnit = fda.defaultDoseUnit
     fda.route?.let { route = it }
-    fda.concentrationMgPerMl?.let { concentrationText = formatNum(it) }
-    fda.vialVolumeMl?.let { vialVolumeText = formatNum(it) }
+    fda.concentrationMgPerMl?.let { concentrationText = formatExact(it) }
+    fda.vialVolumeMl?.let { vialVolumeText = formatExact(it) }
     if (fda.form.supportsSiteRotation) {
       siteRotationEnabled = true
     }
@@ -409,7 +411,7 @@ fun MedicationEditorScreen(
       }
     }
     parsedLabel.defaultDoseUnit?.let { defaultDoseUnit = it }
-    parsedLabel.defaultDoseAmount?.let { defaultDoseAmountText = formatNum(it) }
+    parsedLabel.defaultDoseAmount?.let { defaultDoseAmountText = formatExact(it) }
     parsedLabel.manufacturer?.let { manufacturer = it }
 
     // Auto-link prescriber if name matches an existing prescriber in snapshot
@@ -1644,7 +1646,7 @@ fun ScheduleEditorScreen(
     }
   }
   var doseAmountText by rememberSaveable {
-    mutableStateOf(formatNum(initialSchedule?.doseAmount ?: medication.defaultDoseAmount))
+    mutableStateOf(formatExact(initialSchedule?.doseAmount ?: medication.defaultDoseAmount))
   }
   var doseUnit by rememberSaveable { mutableStateOf(initialSchedule?.doseUnit ?: medication.defaultDoseUnit) }
   var intervalDaysText by rememberSaveable { mutableStateOf((initialSchedule?.intervalDays ?: 7).toString()) }

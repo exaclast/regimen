@@ -115,7 +115,7 @@ fun TodayScreen(
   onSnooze: (ScheduledDoseItem) -> Unit,
   onClearLog: (ScheduledDoseItem) -> Unit,
   onTakeAll: (List<ScheduledDoseItem>) -> Unit,
-  onLogPrn: (Medication, Double, String?) -> Unit,
+  onLogPrn: (PrnDoseItem, String?) -> Unit,
   onDeleteLog: (DoseLog) -> Unit,
   onOpenMedication: (String) -> Unit,
   onOpenWindow: (String) -> Unit,
@@ -138,7 +138,7 @@ fun TodayScreen(
   fun commit(request: TakeRequest, site: String?) {
     when (request) {
       is TakeRequest.Scheduled -> onTake(request.item, site, request.takenAtMillis)
-      is TakeRequest.Prn -> onLogPrn(request.item.medication, request.item.doseAmount, site)
+      is TakeRequest.Prn -> onLogPrn(request.item, site)
     }
   }
 

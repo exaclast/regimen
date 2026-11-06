@@ -1,6 +1,7 @@
 package com.exaclast.regimen.sync
 
 import com.exaclast.regimen.model.DoseLog
+import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.PrimaryClaim
 import com.exaclast.regimen.model.RegimenBackupBundle
 import com.exaclast.regimen.model.SharedSettings
@@ -36,7 +37,9 @@ data class MergeResult(
  *   claimed yet, the newer edit wins.
  *
  * Then, two devices that each logged the same scheduled dose (different log ids, same slot) keep
- * one log by the same precedence; the other is tombstoned so it syncs as deleted.
+ * one log; the other is tombstoned so it syncs as deleted. What was done to the dose decides first
+ * (taken, then skipped, then snoozed), then the same precedence: losing a real "taken" record to a
+ * newer snooze would invite a second dose.
  */
 object BundleMerger {
 
@@ -71,7 +74,12 @@ object BundleMerger {
       remoteList: List<T>,
       id: (T) -> String,
       updatedAt: (T) -> Long,
+      /** Decides a conflict before the usual precedence, when the record type requires it. */
+      overrideConflict: (local: T, remote: T) -> Side? = { _, _ -> null },
     ): List<T> {
+      fun choose(lv: T?, rv: T?): Side =
+        (if (lv != null && rv != null) overrideConflict(lv, rv) else null) ?: decide(lv, rv, updatedAt)
+
       val b = baseList?.associateBy(id)
       val l = localList.associateBy(id)
       val r = remoteList.associateBy(id)
@@ -89,12 +97,12 @@ object BundleMerger {
             // No common ancestor: absence means "never had it", not "deleted".
             lv == null -> rv
             rv == null -> lv
-            else -> if (decide(lv, rv, updatedAt) == Side.LOCAL) lv else rv
+            else -> if (choose(lv, rv) == Side.LOCAL) lv else rv
           }
           lv == b[key] -> rv
           rv == b[key] -> lv
           else -> {
-            val side = decide(lv, rv, updatedAt)
+            val side = choose(lv, rv)
             conflicts += MergeConflict(
               kind = kind,
               id = key,
@@ -129,7 +137,7 @@ object BundleMerger {
     )
     val mergedLogs = mergeRecords(
       "Dose log", base?.doseLogs, local.doseLogs, remote.doseLogs,
-      { it.id }, { it.updatedAtEpochMillis },
+      { it.id }, { it.updatedAtEpochMillis }, ::snoozeNeverOverwrites,
     )
 
     val localLogIds = local.doseLogs.mapTo(HashSet()) { it.id }
@@ -178,9 +186,25 @@ object BundleMerger {
     )
   }
 
+  /** The same log snoozed on one device and completed on another stays completed. */
+  private fun snoozeNeverOverwrites(local: DoseLog, remote: DoseLog): Side? {
+    if (local.deletedAtEpochMillis != null || remote.deletedAtEpochMillis != null) return null
+    return when {
+      local.status == DoseStatus.SNOOZED && remote.status != DoseStatus.SNOOZED -> Side.REMOTE
+      remote.status == DoseStatus.SNOOZED && local.status != DoseStatus.SNOOZED -> Side.LOCAL
+      else -> null
+    }
+  }
+
+  private fun statusRank(status: DoseStatus): Int = when (status) {
+    DoseStatus.TAKEN -> 2
+    DoseStatus.SKIPPED -> 1
+    DoseStatus.SNOOZED -> 0
+  }
+
   /**
-   * Keeps one live log per scheduled dose slot. [preferred] is the side whose logs win (null =
-   * no primary: the most recently updated wins).
+   * Keeps one live log per scheduled dose slot: the strongest status first, then [preferred], the
+   * side whose logs win (null = no primary: the most recently updated wins).
    */
   private fun resolveDuplicateSlots(
     logs: List<DoseLog>,
@@ -198,7 +222,12 @@ object BundleMerger {
       .filter { it.size > 1 }
       .forEach { group ->
         val winner = group.maxWith(
-          compareBy<DoseLog>({ preferred?.contains(it.id) == true }, { it.updatedAtEpochMillis }, { it.id }),
+          compareBy<DoseLog>(
+            { statusRank(it.status) },
+            { preferred?.contains(it.id) == true },
+            { it.updatedAtEpochMillis },
+            { it.id },
+          ),
         )
         group.filter { it.id != winner.id }.forEach { losers += it.id }
         conflicts += MergeConflict(

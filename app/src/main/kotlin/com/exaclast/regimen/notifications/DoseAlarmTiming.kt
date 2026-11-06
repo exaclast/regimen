@@ -1,9 +1,19 @@
 package com.exaclast.regimen.notifications
 
+import com.exaclast.regimen.model.DoseLog
+import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.TimeOfDayBucket
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
+
+/** A scheduled dose snoozed into the future, which needs an alarm for when the snooze ends. */
+data class PendingSnooze(
+  val itemKey: String,
+  val bucketId: String,
+  val dateIso: String,
+  val triggerAtMillis: Long,
+)
 
 /**
  * Pure date/time helpers for alarm handling, kept free of Android dependencies so they can be
@@ -32,6 +42,23 @@ object DoseAlarmTiming {
       ?.let { runCatching { LocalDate.parse(it).toString() }.getOrNull() }
       ?.let { return it }
     return dateIsoFromItemKey(itemKey) ?: fallbackToday.toString()
+  }
+
+  /**
+   * Every snooze still running at [nowMillis]. Android clears alarms on reboot, so these are re-armed
+   * from the data on each refresh rather than only when the snooze is first set.
+   */
+  fun pendingSnoozes(logs: List<DoseLog>, nowMillis: Long): List<PendingSnooze> = logs.mapNotNull { log ->
+    if (log.deletedAtEpochMillis != null || log.status != DoseStatus.SNOOZED) return@mapNotNull null
+    val until = log.snoozedUntilMillis?.takeIf { it > nowMillis } ?: return@mapNotNull null
+    val scheduleId = log.scheduleId ?: return@mapNotNull null
+    val bucketId = log.bucketId ?: return@mapNotNull null
+    PendingSnooze(
+      itemKey = "${scheduleId}_${bucketId}_${log.scheduledDateIso}",
+      bucketId = bucketId,
+      dateIso = log.scheduledDateIso,
+      triggerAtMillis = until,
+    )
   }
 
   /** Epoch millis at which [bucket]'s window opens for doses scheduled on [dateIso]. */

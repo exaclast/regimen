@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
-import android.os.Build
 import android.os.PersistableBundle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -247,9 +246,7 @@ private fun RecoveryCodeCard(code: String) {
 /** Copies text flagged as sensitive, so Android hides it from the clipboard preview. */
 private fun copySensitive(context: Context, label: String, text: String) {
   val clip = ClipData.newPlainText(label, text)
-  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-    clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
-  }
+  clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
   (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(clip)
 }
 

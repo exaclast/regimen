@@ -39,7 +39,7 @@ android {
   }
   defaultConfig {
     applicationId = "com.exaclast.regimen"
-    minSdk = 26
+    minSdk = 35
     targetSdk = 37
     versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
     versionName = System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.0.0"

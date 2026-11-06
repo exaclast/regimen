@@ -6,7 +6,6 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
-import android.os.Build
 import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -71,21 +70,11 @@ object AlarmRingtonePlayer {
     // 3. Vibration Pattern (vibrate 600ms, pause 400ms). Tagged as an alarm so it isn't
     // suppressed by silent/vibrate-off ringer modes the way plain vibrations can be.
     runCatching {
-      vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        val vm = appContext.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-        vm?.defaultVibrator
-      } else {
-        @Suppress("DEPRECATION")
-        appContext.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-      }
+      val vm = appContext.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+      vibrator = vm?.defaultVibrator
 
       val effect = VibrationEffect.createWaveform(longArrayOf(0, 600, 400, 600, 400), 0)
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        vibrator?.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM))
-      } else {
-        @Suppress("DEPRECATION")
-        vibrator?.vibrate(effect, alarmAttrs)
-      }
+      vibrator?.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM))
     }
   }
 

@@ -5,8 +5,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.ImageDecoder
 import android.net.Uri
-import android.os.Build
-import android.provider.MediaStore
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.google.mlkit.genai.common.DownloadStatus
@@ -230,39 +228,24 @@ object DrugBarcodeScanner {
     }
   }
 
-  @Suppress("DEPRECATION")
   private fun loadScaledBitmap(
     context: Context,
     imageUri: Uri,
     maxDimension: Int,
   ): Bitmap {
-    val rawBitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-      val source = ImageDecoder.createSource(context.contentResolver, imageUri)
-      ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-        val w = info.size.width
-        val h = info.size.height
-        val longest = maxOf(w, h)
-        if (longest > maxDimension) {
-          val scale = maxDimension.toFloat() / longest.toFloat()
-          decoder.setTargetSize(
-            (w * scale).toInt().coerceAtLeast(1),
-            (h * scale).toInt().coerceAtLeast(1),
-          )
-        }
+    val source = ImageDecoder.createSource(context.contentResolver, imageUri)
+    return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+      decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+      val w = info.size.width
+      val h = info.size.height
+      val longest = maxOf(w, h)
+      if (longest > maxDimension) {
+        val scale = maxDimension.toFloat() / longest.toFloat()
+        decoder.setTargetSize(
+          (w * scale).toInt().coerceAtLeast(1),
+          (h * scale).toInt().coerceAtLeast(1),
+        )
       }
-    } else {
-      MediaStore.Images.Media.getBitmap(context.contentResolver, imageUri)
     }
-
-    val longest = maxOf(rawBitmap.width, rawBitmap.height)
-    if (longest <= maxDimension) return rawBitmap
-    val scale = maxDimension.toFloat() / longest.toFloat()
-    return Bitmap.createScaledBitmap(
-      rawBitmap,
-      (rawBitmap.width * scale).toInt().coerceAtLeast(1),
-      (rawBitmap.height * scale).toInt().coerceAtLeast(1),
-      true,
-    )
   }
 }

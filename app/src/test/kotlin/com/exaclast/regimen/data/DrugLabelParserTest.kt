@@ -122,6 +122,36 @@ class DrugLabelParserTest {
     assertNull(parsed.brandName)
   }
 
+  private fun cleanBrand(brand: String, patient: String? = null): String? =
+    DrugLabelParser.sanitizeNames(
+      formula = "Generic",
+      brand = brand,
+      patientNameOnLabel = patient,
+      userConfiguredPatientName = null,
+      prescriber = null,
+      pharmacy = null,
+    ).second
+
+  @Test
+  fun sanitizeNames_keepsBrandsThatContainDr() {
+    listOf("Androgel", "Androderm", "Hydrea", "Dramamine", "Drisdol").forEach { brand ->
+      assertEquals(brand, cleanBrand(brand))
+    }
+  }
+
+  @Test
+  fun sanitizeNames_stillDropsLabelWordsUsedAsBrand() {
+    listOf("Dr. Smith", "Dr Smith", "Tablet", "Tablets", "Patient Copy", "Take Daily", "Refill").forEach { brand ->
+      assertNull(brand, cleanBrand(brand))
+    }
+  }
+
+  @Test
+  fun sanitizeNames_shortNamesOnlyMatchWholeWords() {
+    assertEquals("Mannitol", cleanBrand("Mannitol", patient = "Ann Lee"))
+    assertNull(cleanBrand("Ann Lee", patient = "Ann Lee"))
+  }
+
   @Test
   fun timeOfDayBucket_crossesMidnightCalculation() {
     val morningBucket = TimeOfDayBucket(

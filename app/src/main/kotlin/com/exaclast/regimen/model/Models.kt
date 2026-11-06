@@ -1,5 +1,7 @@
 package com.exaclast.regimen.model
 
+import java.math.MathContext
+import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
@@ -340,6 +342,19 @@ data class TimeOfDayBucket(
         sortOrder = 3,
       ),
     )
+
+    /**
+     * The windows left after "Restore default windows": the four defaults, plus any custom window
+     * a schedule still uses. Removing one of those would silently stop that medication's doses.
+     */
+    fun windowsAfterRestoringDefaults(
+      current: List<TimeOfDayBucket>,
+      usedWindowIds: Set<String>,
+    ): List<TimeOfDayBucket> {
+      val defaults = defaultBuckets()
+      val defaultIds = defaults.mapTo(HashSet()) { it.id }
+      return defaults + current.filter { it.id !in defaultIds && it.id in usedWindowIds }
+    }
   }
 }
 
@@ -561,11 +576,25 @@ data class RegimenBackupBundle(
   }
 }
 
+/**
+ * A number for display: at most three decimals, or three significant digits below 1 so very small
+ * volumes don't round away. Removes floating-point noise (7.000000000000001 → 7). To pre-fill an
+ * editable field, use [formatExact] so saving doesn't change the stored value.
+ */
 fun formatNum(value: Double): String {
-  return if (value % 1.0 == 0.0) {
-    value.toLong().toString()
+  if (!value.isFinite()) return value.toString()
+  val exact = value.toBigDecimal()
+  val rounded = if (kotlin.math.abs(value) >= 1.0) {
+    exact.setScale(3, RoundingMode.HALF_UP)
   } else {
-    value.toBigDecimal().stripTrailingZeros().toPlainString()
+    exact.round(MathContext(3, RoundingMode.HALF_UP))
   }
+  return rounded.stripTrailingZeros().toPlainString()
+}
+
+/** The stored value with nothing rounded, for pre-filling editable fields. */
+fun formatExact(value: Double): String {
+  if (!value.isFinite()) return value.toString()
+  return value.toBigDecimal().stripTrailingZeros().toPlainString()
 }
 

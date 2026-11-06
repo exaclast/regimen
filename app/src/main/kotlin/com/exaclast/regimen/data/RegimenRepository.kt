@@ -87,7 +87,9 @@ class RegimenRepository private constructor(context: Context) {
       // Don't load demo data by default; leave data empty for initial user setup
       prefs.edit().putBoolean(KEY_SEEDED_INITIAL, true).apply()
     }
-    reloadSnapshot()
+    // Load only. Every caller refreshes for itself, and a receiver must do so first with the window
+    // it's about to alert for: refreshing here would post that notification silently beforehand.
+    _snapshot.value = readSnapshot()
   }
 
   private fun loadSettings(): AppSettings {
@@ -107,18 +109,19 @@ class RegimenRepository private constructor(context: Context) {
     reloadSnapshot()
   }
 
+  private fun readSnapshot(): RegimenSnapshot = RegimenSnapshot(
+    settings = loadSettings(),
+    medications = db.getAllMedications(),
+    providers = db.getAllProviders(),
+    conditions = db.getAllConditions(),
+    buckets = db.getAllBuckets().ifEmpty { TimeOfDayBucket.defaultBuckets() },
+    schedules = db.getAllSchedules(),
+    doseLogs = db.getAllDoseLogs(),
+  )
+
   @Synchronized
   fun reloadSnapshot() {
-    val loadedSettings = loadSettings()
-    val nextSnapshot = RegimenSnapshot(
-      settings = loadedSettings,
-      medications = db.getAllMedications(),
-      providers = db.getAllProviders(),
-      conditions = db.getAllConditions(),
-      buckets = db.getAllBuckets().ifEmpty { TimeOfDayBucket.defaultBuckets() },
-      schedules = db.getAllSchedules(),
-      doseLogs = db.getAllDoseLogs(),
-    )
+    val nextSnapshot = readSnapshot()
     _snapshot.value = nextSnapshot
     DoseNotificationManager.refresh(appContext, nextSnapshot)
   }
@@ -244,10 +247,16 @@ class RegimenRepository private constructor(context: Context) {
   }
 
   fun resetBucketsToDefault() {
-    val currentBuckets = db.getAllBuckets()
-    currentBuckets.forEach { DoseNotificationManager.cancelBucketAlarms(appContext, it.id) }
-    currentBuckets.forEach { db.deleteBucket(it.id) }
-    TimeOfDayBucket.defaultBuckets().forEach { db.upsertBucket(it) }
+    val current = db.getAllBuckets()
+    val usedWindowIds = db.getAllSchedules().flatMapTo(HashSet()) { it.bucketIds }
+    val restored = TimeOfDayBucket.windowsAfterRestoringDefaults(current, usedWindowIds)
+    val keepIds = restored.mapTo(HashSet()) { it.id }
+    val removed = current.filter { it.id !in keepIds }
+    db.inTransaction {
+      removed.forEach { db.deleteBucket(it.id) }
+      restored.forEach { db.upsertBucket(it) }
+    }
+    removed.forEach { DoseNotificationManager.cancelBucketAlarms(appContext, it.id) }
     reloadSnapshot()
   }
 
@@ -298,15 +307,8 @@ class RegimenRepository private constructor(context: Context) {
     if (scheduleId != null && bucketId != null) {
       val itemKey = "${scheduleId}_${bucketId}_$scheduledDateIso"
       DoseNotificationManager.cancelNotificationForItem(appContext, itemKey)
-      if (status == DoseStatus.SNOOZED && snoozedUntilMillis != null) {
-        DoseNotificationManager.scheduleSnoozeAlarm(
-          context = appContext,
-          itemKey = itemKey,
-          bucketId = bucketId,
-          scheduledDateIso = scheduledDateIso,
-          triggerAtMillis = snoozedUntilMillis,
-        )
-      } else {
+      // A new snooze is armed by the refresh in reloadSnapshot.
+      if (status != DoseStatus.SNOOZED) {
         DoseNotificationManager.cancelSnoozeAlarm(appContext, itemKey, bucketId)
       }
     }
@@ -324,25 +326,15 @@ class RegimenRepository private constructor(context: Context) {
 
   /**
    * Restores [log] exactly as it was (used by Undo): un-deletes it, or puts back the state a newer action
-   * overwrote. A restored future snooze re-arms its alarm.
+   * overwrote. A restored future snooze is re-armed by the refresh in reloadSnapshot.
    */
   fun restoreDoseLog(log: DoseLog) {
     val now = System.currentTimeMillis()
     val restored = log.copy(deletedAtEpochMillis = null, updatedAtEpochMillis = now)
     db.upsertDoseLog(restored)
-    itemKeyFor(restored)?.let { key ->
-      val snoozeUntil = restored.snoozedUntilMillis
-      if (restored.status == DoseStatus.SNOOZED && snoozeUntil != null && snoozeUntil > now) {
-        DoseNotificationManager.scheduleSnoozeAlarm(
-          context = appContext,
-          itemKey = key,
-          bucketId = restored.bucketId,
-          scheduledDateIso = restored.scheduledDateIso,
-          triggerAtMillis = snoozeUntil,
-        )
-      } else {
-        DoseNotificationManager.cancelSnoozeAlarm(appContext, key, restored.bucketId)
-      }
+    val stillSnoozed = restored.status == DoseStatus.SNOOZED && (restored.snoozedUntilMillis ?: 0L) > now
+    if (!stillSnoozed) {
+      itemKeyFor(restored)?.let { key -> DoseNotificationManager.cancelSnoozeAlarm(appContext, key, restored.bucketId) }
     }
     reloadSnapshot()
   }

@@ -12,7 +12,6 @@ import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
@@ -117,52 +116,36 @@ object DoseNotificationManager {
   // region Permissions
 
   fun hasNotificationPermission(context: Context): Boolean {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      ContextCompat.checkSelfPermission(
-        context,
-        Manifest.permission.POST_NOTIFICATIONS
-      ) == PackageManager.PERMISSION_GRANTED
-    } else {
-      true
-    }
+    return ContextCompat.checkSelfPermission(
+      context,
+      Manifest.permission.POST_NOTIFICATIONS
+    ) == PackageManager.PERMISSION_GRANTED
   }
 
   fun canScheduleExactAlarms(context: Context): Boolean {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-      val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-      alarmManager.canScheduleExactAlarms()
-    } else {
-      true
-    }
+    val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+    return alarmManager.canScheduleExactAlarms()
   }
 
-  /** Android 14+ restricts full-screen intents; without it the end alarm is a heads-up only. */
+  /** Full-screen intents are restricted; without this the end alarm is a heads-up only. */
   fun canUseFullScreenIntent(context: Context): Boolean {
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-      context.getSystemService(NotificationManager::class.java)?.canUseFullScreenIntent() ?: true
-    } else {
-      true
-    }
+    return context.getSystemService(NotificationManager::class.java)?.canUseFullScreenIntent() ?: true
   }
 
   fun openFullScreenIntentSettings(context: Context) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-      val intent = Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
-        data = Uri.parse("package:${context.packageName}")
-        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-      }
-      runCatching { context.startActivity(intent) }
+    val intent = Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT).apply {
+      data = Uri.parse("package:${context.packageName}")
+      flags = Intent.FLAG_ACTIVITY_NEW_TASK
     }
+    runCatching { context.startActivity(intent) }
   }
 
   fun openExactAlarmSettings(context: Context) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-      val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
-        data = Uri.parse("package:${context.packageName}")
-        flags = Intent.FLAG_ACTIVITY_NEW_TASK
-      }
-      runCatching { context.startActivity(intent) }
+    val intent = Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+      data = Uri.parse("package:${context.packageName}")
+      flags = Intent.FLAG_ACTIVITY_NEW_TASK
     }
+    runCatching { context.startActivity(intent) }
   }
 
   fun openAppNotificationSettings(context: Context) {
@@ -207,7 +190,15 @@ object DoseNotificationManager {
     val nowMillis = System.currentTimeMillis()
     val today = LocalDate.now()
     scheduleBucketAlarms(context, snapshot, boards, nowMillis, today)
+    armPendingSnoozes(context, snapshot, nowMillis)
     reconcileNotifications(context, snapshot, boards, nowMillis, today, alertingBucketId)
+  }
+
+  private fun armPendingSnoozes(context: Context, snapshot: RegimenSnapshot, nowMillis: Long) {
+    if (!snapshot.settings.notificationsEnabled) return
+    DoseAlarmTiming.pendingSnoozes(snapshot.doseLogs, nowMillis).forEach { snooze ->
+      scheduleSnoozeAlarm(context, snooze.itemKey, snooze.bucketId, snooze.dateIso, snooze.triggerAtMillis)
+    }
   }
 
   /** A dose that still needs the user: not taken/skipped and not snoozed beyond [nowMillis]. */
@@ -703,7 +694,7 @@ object DoseNotificationManager {
    * The dose's scheduled date travels with the alarm: a snooze can expire after midnight (or
    * belong to an overnight window), so the receiver must not infer the date from the clock.
    */
-  fun scheduleSnoozeAlarm(
+  private fun scheduleSnoozeAlarm(
     context: Context,
     itemKey: String,
     bucketId: String?,

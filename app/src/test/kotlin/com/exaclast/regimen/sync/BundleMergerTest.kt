@@ -145,6 +145,71 @@ class BundleMergerTest {
   }
 
   @Test
+  fun takenDoseBeatsNewerSnoozeFromAnotherDevice() {
+    val result = BundleMerger.merge(
+      bundle(primary = null),
+      bundle(primary = null, logs = listOf(log("taken", 200))),
+      bundle(primary = null, logs = listOf(log("snoozed", 300, status = DoseStatus.SNOOZED))),
+      localDeviceId = tablet,
+    )
+    assertEquals("taken", result.bundle.doseLogs.single { it.deletedAtEpochMillis == null }.id)
+  }
+
+  @Test
+  fun takenDoseBeatsSnoozeFromThePrimary() {
+    val result = BundleMerger.merge(
+      bundle(),
+      bundle(logs = listOf(log("taken", 200))),
+      bundle(logs = listOf(log("snoozed", 300, status = DoseStatus.SNOOZED))),
+      localDeviceId = tablet,
+    )
+    assertEquals("taken", result.bundle.doseLogs.single { it.deletedAtEpochMillis == null }.id)
+  }
+
+  @Test
+  fun takenDoseBeatsNewerSkip() {
+    val result = BundleMerger.merge(
+      bundle(primary = null),
+      bundle(primary = null, logs = listOf(log("taken", 200))),
+      bundle(primary = null, logs = listOf(log("skipped", 300, status = DoseStatus.SKIPPED))),
+      localDeviceId = tablet,
+    )
+    assertEquals("taken", result.bundle.doseLogs.single { it.deletedAtEpochMillis == null }.id)
+  }
+
+  @Test
+  fun snoozingTheSameLogAgainDoesNotOverwriteTaken() {
+    val shared = log("a", 100, status = DoseStatus.SNOOZED)
+    val result = BundleMerger.merge(
+      bundle(primary = null, logs = listOf(shared)),
+      bundle(primary = null, logs = listOf(log("a", 200))),
+      bundle(primary = null, logs = listOf(log("a", 300, status = DoseStatus.SNOOZED))),
+      localDeviceId = tablet,
+    )
+    assertEquals(DoseStatus.TAKEN, result.bundle.doseLogs.single().status)
+  }
+
+  @Test
+  fun backupMergeKeepsTakenDoseOverNewerSnoozeInFile() {
+    val device = bundle(primary = null, logs = listOf(log("taken", 200)))
+    val file = bundle(primary = null, logs = listOf(log("snoozed", 300, status = DoseStatus.SNOOZED)))
+    val result = BackupFiles.mergeIntoDevice(device, file, deviceId = tablet)
+    assertEquals("taken", result.bundle.doseLogs.single { it.deletedAtEpochMillis == null }.id)
+  }
+
+  @Test
+  fun correctingTakenToSkippedOnOneDeviceStillApplies() {
+    val shared = log("a", 100)
+    val result = BundleMerger.merge(
+      bundle(primary = null, logs = listOf(shared)),
+      bundle(primary = null, logs = listOf(log("a", 200, status = DoseStatus.SKIPPED))),
+      bundle(primary = null, logs = listOf(shared)),
+      localDeviceId = tablet,
+    )
+    assertEquals(DoseStatus.SKIPPED, result.bundle.doseLogs.single().status)
+  }
+
+  @Test
   fun tombstonedDuplicateDoesNotConflictAgain() {
     val keep = log("keep", 200)
     val dropped = log("drop", 300).copy(deletedAtEpochMillis = 400, updatedAtEpochMillis = 400)
