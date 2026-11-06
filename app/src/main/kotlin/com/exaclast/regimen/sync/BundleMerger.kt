@@ -111,8 +111,8 @@ object BundleMerger {
       "Medication", base?.medications, local.medications, remote.medications,
       { it.id }, { it.updatedAtEpochMillis },
     )
-    val prescribers = mergeRecords(
-      "Prescriber", base?.prescribers, local.prescribers, remote.prescribers,
+    val providers = mergeRecords(
+      "Provider", base?.providers, local.providers, remote.providers,
       { it.id }, { it.updatedAtEpochMillis },
     )
     val conditions = mergeRecords(
@@ -164,7 +164,7 @@ object BundleMerger {
       devices = mergeDevices(local.devices + remote.devices),
       primary = primary,
       medications = medications,
-      prescribers = prescribers,
+      providers = providers,
       conditions = conditions,
       buckets = buckets,
       schedules = schedules,
@@ -227,7 +227,7 @@ object BundleMerger {
       a.primary == b.primary &&
       a.devices.toSet() == b.devices.toSet() &&
       a.medications.toSet() == b.medications.toSet() &&
-      a.prescribers.toSet() == b.prescribers.toSet() &&
+      a.providers.toSet() == b.providers.toSet() &&
       a.conditions.toSet() == b.conditions.toSet() &&
       a.buckets.toSet() == b.buckets.toSet() &&
       a.schedules.toSet() == b.schedules.toSet() &&

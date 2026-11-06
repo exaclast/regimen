@@ -8,7 +8,7 @@ import com.exaclast.regimen.model.Condition
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
-import com.exaclast.regimen.model.Prescriber
+import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.TimeOfDayBucket
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -36,7 +36,7 @@ class RegimenDatabase(context: Context) :
     )
     db.execSQL(
       """
-      CREATE TABLE prescribers (
+      CREATE TABLE providers (
         id TEXT PRIMARY KEY NOT NULL,
         name TEXT NOT NULL,
         updated_at INTEGER NOT NULL,
@@ -95,7 +95,8 @@ class RegimenDatabase(context: Context) :
   }
 
   override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-    // Future schema migrations go here
+    // Pre-release: only keeps development installs working across the prescriber → provider rename.
+    if (oldVersion < 2) db.execSQL("ALTER TABLE prescribers RENAME TO providers")
   }
 
   /** Runs [block] in one transaction: much faster for bulk writes, and all-or-nothing. */
@@ -141,32 +142,32 @@ class RegimenDatabase(context: Context) :
     writableDatabase.insertWithOnConflict("medications", null, values, SQLiteDatabase.CONFLICT_REPLACE)
   }
 
-  fun getAllPrescribers(includeDeleted: Boolean = false): List<Prescriber> {
-    val result = mutableListOf<Prescriber>()
+  fun getAllProviders(includeDeleted: Boolean = false): List<Provider> {
+    val result = mutableListOf<Provider>()
     readableDatabase.rawQuery(
-      "SELECT payload_json FROM prescribers ${liveOnly(includeDeleted)} ORDER BY is_pcp_sort DESC, name COLLATE NOCASE ASC".let {
-        "SELECT payload_json FROM prescribers ${liveOnly(includeDeleted)} ORDER BY name COLLATE NOCASE ASC"
+      "SELECT payload_json FROM providers ${liveOnly(includeDeleted)} ORDER BY is_pcp_sort DESC, name COLLATE NOCASE ASC".let {
+        "SELECT payload_json FROM providers ${liveOnly(includeDeleted)} ORDER BY name COLLATE NOCASE ASC"
       },
       null
     ).use { cursor ->
       while (cursor.moveToNext()) {
         runCatching {
-          json.decodeFromString<Prescriber>(cursor.getString(0))
+          json.decodeFromString<Provider>(cursor.getString(0))
         }.getOrNull()?.let { result.add(it) }
       }
     }
-    return result.sortedWith(compareByDescending<Prescriber> { it.isPcp }.thenBy { it.name.lowercase() })
+    return result.sortedWith(compareByDescending<Provider> { it.isPcp }.thenBy { it.name.lowercase() })
   }
 
-  fun upsertPrescriber(prescriber: Prescriber) {
+  fun upsertProvider(provider: Provider) {
     val values = ContentValues().apply {
-      put("id", prescriber.id)
-      put("name", prescriber.name)
-      put("updated_at", prescriber.updatedAtEpochMillis)
-      put("deleted_at", prescriber.deletedAtEpochMillis)
-      put("payload_json", json.encodeToString(prescriber))
+      put("id", provider.id)
+      put("name", provider.name)
+      put("updated_at", provider.updatedAtEpochMillis)
+      put("deleted_at", provider.deletedAtEpochMillis)
+      put("payload_json", json.encodeToString(provider))
     }
-    writableDatabase.insertWithOnConflict("prescribers", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    writableDatabase.insertWithOnConflict("providers", null, values, SQLiteDatabase.CONFLICT_REPLACE)
   }
 
   fun getAllConditions(includeDeleted: Boolean = false): List<Condition> {
@@ -284,7 +285,7 @@ class RegimenDatabase(context: Context) :
       db.delete("dose_logs", null, null)
       db.delete("schedules", null, null)
       db.delete("medications", null, null)
-      db.delete("prescribers", null, null)
+      db.delete("providers", null, null)
       db.delete("conditions", null, null)
       db.setTransactionSuccessful()
     } finally {
@@ -294,7 +295,7 @@ class RegimenDatabase(context: Context) :
 
   companion object {
     private const val DB_NAME = "regimen_store.db"
-    private const val DB_VERSION = 1
+    private const val DB_VERSION = 2
   }
 }
 

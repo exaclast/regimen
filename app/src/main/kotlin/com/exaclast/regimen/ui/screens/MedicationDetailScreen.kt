@@ -87,7 +87,7 @@ fun MedicationDetailScreen(
   onEditSchedule: (MedicationSchedule) -> Unit,
   onDeleteSchedule: (MedicationSchedule) -> Unit,
   onLogDose: (Medication, String?) -> Unit,
-  onOpenPrescriber: (String) -> Unit,
+  onOpenProvider: (String) -> Unit,
   onOpenCondition: (String) -> Unit,
 ) {
   val medication = snapshot.medications.find { it.id == medicationId }
@@ -97,7 +97,7 @@ fun MedicationDetailScreen(
     return
   }
   val condition = snapshot.conditions.find { it.id == medication.indicationConditionId }
-  val prescriber = snapshot.prescribers.find { it.id == medication.prescriberId }
+  val prescriber = snapshot.providers.find { it.id == medication.prescriberId }
   val schedules = snapshot.schedules.filter { it.medicationId == medication.id && it.deletedAtEpochMillis == null }
   val logs = snapshot.doseLogs
     .filter { it.medicationId == medication.id && it.status != DoseStatus.SNOOZED }
@@ -298,12 +298,12 @@ fun MedicationDetailScreen(
             add(Triple("Condition", condition?.name ?: "Not linked", condition?.let { c -> { onOpenCondition(c.id) } }))
           }
           if (medication.indicationText.isNotBlank()) add(Triple("Indication notes", medication.indicationText, null))
-          if (snapshot.tracksPrescribers) {
+          if (snapshot.tracksProviders) {
             add(
               Triple(
                 "Prescriber",
                 prescriber?.let { if (it.isPcp) "${it.name} (PCP)" else it.name } ?: "Not set",
-                prescriber?.let { p -> { onOpenPrescriber(p.id) } },
+                prescriber?.let { p -> { onOpenProvider(p.id) } },
               )
             )
           }

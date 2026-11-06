@@ -232,7 +232,7 @@ fun DoseAlarmScreen(
       buckets = snapshot.buckets,
       logs = snapshot.doseLogs,
       conditions = snapshot.conditions,
-      prescribers = snapshot.prescribers,
+      providers = snapshot.providers,
     )
   }
 

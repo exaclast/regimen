@@ -17,7 +17,7 @@ sealed interface Route : NavKey {
 
   @Serializable data object Medications : Route
 
-  @Serializable data object Prescribers : Route
+  @Serializable data object Providers : Route
 
   @Serializable data object Conditions : Route
 
@@ -27,13 +27,14 @@ sealed interface Route : NavKey {
 
   @Serializable data class ScheduleEditor(val medicationId: String, val scheduleId: String? = null) : Route
 
-  @Serializable data class PrescriberDetail(val id: String) : Route
+  @Serializable data class ProviderDetail(val id: String) : Route
 
-  @Serializable data class PrescriberEditor(val id: String? = null) : Route
+  @Serializable data class ProviderEditor(val id: String? = null) : Route
 
   @Serializable data class ConditionDetail(val id: String) : Route
 
-  @Serializable data class ConditionEditor(val id: String? = null) : Route
+  /** [copyFromId]: start a new episode pre-filled from that (past, acute) condition. */
+  @Serializable data class ConditionEditor(val id: String? = null, val copyFromId: String? = null) : Route
 
   @Serializable data object Settings : Route
 
@@ -50,7 +51,7 @@ sealed interface Route : NavKey {
 enum class TopLevel(val route: Route, val label: String, val icon: ImageVector) {
   TODAY(Route.Today, "Today", Icons.Default.CheckCircle),
   MEDICATIONS(Route.Medications, "Medications", Icons.Default.Medication),
-  PRESCRIBERS(Route.Prescribers, "Prescribers", Icons.Default.Badge),
+  PROVIDERS(Route.Providers, "Providers", Icons.Default.Badge),
   CONDITIONS(Route.Conditions, "Conditions", Icons.Default.Favorite),
 }
 
@@ -58,7 +59,7 @@ enum class TopLevel(val route: Route, val label: String, val icon: ImageVector) 
 val Route.isFullScreenTask: Boolean
   get() = this is Route.MedicationEditor ||
     this is Route.ScheduleEditor ||
-    this is Route.PrescriberEditor ||
+    this is Route.ProviderEditor ||
     this is Route.ConditionEditor ||
     this is Route.Settings ||
     this is Route.DoseWindowEditor ||

@@ -798,7 +798,7 @@ object DoseNotificationManager {
           buckets = snapshot.buckets,
           logs = snapshot.doseLogs,
           conditions = snapshot.conditions,
-          prescribers = snapshot.prescribers,
+          providers = snapshot.providers,
         )
       }
       return board.bucketGroups.find { it.bucket.id == bucketId }?.items.orEmpty()

@@ -41,7 +41,7 @@ class DoseLogMatchingTest {
     buckets = TimeOfDayBucket.defaultBuckets(),
     logs = logs,
     conditions = emptyList(),
-    prescribers = emptyList(),
+    providers = emptyList(),
   )
 
   private fun DailyDoseBoard.completedByBucket(): Map<String, Boolean> =

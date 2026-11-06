@@ -198,7 +198,7 @@ data class Medication(
 }
 
 @Serializable
-data class Prescriber(
+data class Provider(
   val id: String = UUID.randomUUID().toString(),
   val name: String,
   val specialty: String? = null,
@@ -222,13 +222,36 @@ enum class ConditionStatus(val displayName: String) {
   RESOLVED("Resolved"),
 }
 
+/** Acute conditions (an infection, an injury) are short-lived; chronic ones are ongoing. */
+@Serializable
+enum class ConditionKind(val displayName: String) {
+  ACUTE("Acute"),
+  CHRONIC("Chronic");
+
+  /** Statuses that make sense for this kind: an acute condition is either active or over. */
+  val statuses: List<ConditionStatus>
+    get() = when (this) {
+      ACUTE -> listOf(ConditionStatus.ACTIVE, ConditionStatus.RESOLVED)
+      CHRONIC -> ConditionStatus.entries
+    }
+}
+
 @Serializable
 data class Condition(
   val id: String = UUID.randomUUID().toString(),
   val name: String,
   val details: String? = null,
+  val kind: ConditionKind = ConditionKind.CHRONIC,
   val status: ConditionStatus = ConditionStatus.ACTIVE,
+  /** When it started or was diagnosed. */
   val diagnosedDateIso: String? = null,
+  /**
+   * Last day of the condition (inclusive); after it the condition is archived. An acute condition
+   * without one ends with its linked medication courses (see `ConditionTimeline`).
+   */
+  val endDateIso: String? = null,
+  /** Providers helping manage it. A provider can manage many conditions and vice versa. */
+  val providerIds: List<String> = emptyList(),
   val createdAtEpochMillis: Long = System.currentTimeMillis(),
   val updatedAtEpochMillis: Long = System.currentTimeMillis(),
   val deletedAtEpochMillis: Long? = null,
@@ -447,8 +470,8 @@ data class AppSettings(
   val permissionsPromptDismissedVersion: Int = 0,
   val allowFdaLookup: Boolean = false,
   val patientName: String = "",
-  /** Track prescribers (tab, fields). null = not chosen yet: on only if any prescriber exists. */
-  val trackPrescribers: Boolean? = null,
+  /** Track providers (tab, fields). null = not chosen yet: on only if any provider exists. */
+  val trackProviders: Boolean? = null,
   /** Track conditions (tab, fields). null = not chosen yet: on only if any condition exists. */
   val trackConditions: Boolean? = null,
   /** When a [SharedSettings] field last changed on this device; 0 = never. */
@@ -457,14 +480,14 @@ data class AppSettings(
   /** The settings every synced device shares; everything else (reminders, theme...) is per device. */
   fun shared(): SharedSettings = SharedSettings(
     patientName = patientName,
-    trackPrescribers = trackPrescribers,
+    trackProviders = trackProviders,
     trackConditions = trackConditions,
     updatedAtEpochMillis = sharedSettingsUpdatedAtEpochMillis,
   )
 
   fun withShared(shared: SharedSettings): AppSettings = copy(
     patientName = shared.patientName,
-    trackPrescribers = shared.trackPrescribers,
+    trackProviders = shared.trackProviders,
     trackConditions = shared.trackConditions,
     sharedSettingsUpdatedAtEpochMillis = shared.updatedAtEpochMillis,
   )
@@ -480,7 +503,7 @@ data class AppSettings(
 @Serializable
 data class SharedSettings(
   val patientName: String = "",
-  val trackPrescribers: Boolean? = null,
+  val trackProviders: Boolean? = null,
   val trackConditions: Boolean? = null,
   val updatedAtEpochMillis: Long = 0L,
 ) {
@@ -527,7 +550,7 @@ data class RegimenBackupBundle(
   val devices: List<SyncDevice> = emptyList(),
   val primary: PrimaryClaim? = null,
   val medications: List<Medication> = emptyList(),
-  val prescribers: List<Prescriber> = emptyList(),
+  val providers: List<Provider> = emptyList(),
   val conditions: List<Condition> = emptyList(),
   val buckets: List<TimeOfDayBucket> = emptyList(),
   val schedules: List<MedicationSchedule> = emptyList(),

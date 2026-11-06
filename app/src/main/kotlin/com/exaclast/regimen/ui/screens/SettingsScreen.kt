@@ -105,7 +105,7 @@ data class DiagnosticsTarget(val label: String)
 @Composable
 fun SettingsScreen(
   settings: AppSettings,
-  tracksPrescribers: Boolean,
+  tracksProviders: Boolean,
   tracksConditions: Boolean,
   buckets: List<TimeOfDayBucket>,
   diagnosticsTarget: DiagnosticsTarget?,
@@ -316,10 +316,10 @@ fun SettingsScreen(
         GroupedColumn {
           GroupItem(0, 2) {
             SwitchRow(
-              title = "Prescribers",
-              subtitle = "Keep a list of prescribers and link them to medications",
-              checked = tracksPrescribers,
-              onCheckedChange = { onSaveSettings(settings.copy(trackPrescribers = it)) },
+              title = "Providers",
+              subtitle = "Keep a list of providers and link them to medications",
+              checked = tracksProviders,
+              onCheckedChange = { onSaveSettings(settings.copy(trackProviders = it)) },
             )
           }
           GroupItem(1, 2) {
@@ -555,7 +555,7 @@ fun SettingsScreen(
           }
           GroupItem(1, 2, onClick = { confirmClear = true }) {
             ListItem(
-              supportingContent = { Text("Medications, prescribers, conditions and dose history") },
+              supportingContent = { Text("Medications, providers, conditions and dose history") },
               colors = groupListItemColors(),
             ) { Text("Delete all data", color = MaterialTheme.colorScheme.error) }
           }
@@ -613,7 +613,7 @@ fun SettingsScreen(
   if (confirmClear) {
     ConfirmDialog(
       title = "Delete all data?",
-      text = "This permanently removes every medication, prescriber, condition and dose log. Copy a backup first if you might need it.",
+      text = "This permanently removes every medication, provider, condition and dose log. Copy a backup first if you might need it.",
       confirmLabel = "Delete everything",
       destructive = true,
       onConfirm = {
@@ -808,7 +808,7 @@ fun DoseWindowEditorScreen(
 @Composable
 fun StartupPermissionsDialog(
   settings: AppSettings,
-  tracksPrescribers: Boolean,
+  tracksProviders: Boolean,
   tracksConditions: Boolean,
   onSaveSettings: (AppSettings) -> Unit,
   onDismiss: () -> Unit,
@@ -905,10 +905,10 @@ fun StartupPermissionsDialog(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           SwitchRow(
-            title = "Prescribers",
+            title = "Providers",
             subtitle = "Who prescribed each medication",
-            checked = tracksPrescribers,
-            onCheckedChange = { onSaveSettings(settings.copy(trackPrescribers = it)) },
+            checked = tracksProviders,
+            onCheckedChange = { onSaveSettings(settings.copy(trackProviders = it)) },
           )
           SwitchRow(
             title = "Conditions",

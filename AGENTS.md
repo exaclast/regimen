@@ -80,6 +80,10 @@ This repository is **Regimen**, an Android medication and dose-tracking app buil
   - `BundleMerger` is a three-way merge against the last agreed copy. Changed on one side → that change. Changed on both → the primary device keeps its own; other devices defer to the remote copy; with no primary, newer wins. Two logs for the same scheduled dose keep one and tombstone the other. File imports merge with no base and newer wins.
   - Any device can log; `PrimaryClaim` (highest epoch wins) only decides conflicts.
   - `BundleCrypto`: AES-256-GCM with a random data key wrapped by a PBKDF2 passphrase key in every file's header; the recovery code is the data key plus a checksum. The device caches the data key wrapped by an Android Keystore key. `regimen_device` and `regimen_backup_keys` prefs are excluded from Android Auto Backup.
+- **Providers & Conditions**:
+  - "Provider" everywhere (model, tab, screens). A medication's provider is still labelled **Prescriber** (`Medication.prescriberId`), which is the role.
+  - Providers and conditions are many-to-many, stored on the condition (`Condition.providerIds`) and editable from either side.
+  - Conditions are `ACUTE` (status Active/Resolved) or `CHRONIC`. A condition is archived ("past") when resolved or after its end date; an acute condition without an end date ends with its linked medication courses (`ConditionTimeline`). Pickers skip past conditions and providers unless already linked. "Had this again" starts a new episode of a past acute condition.
 - **Optional Tracking**:
-  - Prescribers and conditions are optional (`AppSettings.trackPrescribers` / `trackConditions`; null = on only if records exist). Use `RegimenSnapshot.tracksPrescribers` / `tracksConditions` to gate tabs and fields. Hiding never deletes data.
+  - Providers and conditions are optional (`AppSettings.trackProviders` / `trackConditions`; null = on only if records exist). Use `RegimenSnapshot.tracksProviders` / `tracksConditions` to gate tabs and fields. Hiding never deletes data.
 

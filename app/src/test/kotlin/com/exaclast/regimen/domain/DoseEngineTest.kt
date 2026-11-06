@@ -275,7 +275,7 @@ class DoseEngineTest {
       buckets = buckets,
       logs = logs,
       conditions = emptyList(),
-      prescribers = emptyList(),
+      providers = emptyList(),
     ).bucketGroups.filter { it.items.isNotEmpty() }.map { it.bucket.id }
 
     assertEquals(listOf(evening.id), windowsOn("2026-11-03")) // pickup day: evening only

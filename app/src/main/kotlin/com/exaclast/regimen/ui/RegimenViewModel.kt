@@ -17,7 +17,7 @@ import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
-import com.exaclast.regimen.model.Prescriber
+import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.RegimenBackupBundle
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.formatNum
@@ -151,7 +151,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
       buckets = snapshot.buckets,
       logs = snapshot.doseLogs,
       conditions = snapshot.conditions,
-      prescribers = snapshot.prescribers,
+      providers = snapshot.providers,
       nowMillis = now,
     )
 
@@ -301,9 +301,12 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     post("Schedule deleted", UndoAction.RestoreSchedule(schedule))
   }
 
-  fun savePrescriber(prescriber: Prescriber) = repository.savePrescriber(prescriber)
+  fun saveProvider(provider: Provider) = repository.saveProvider(provider)
 
-  fun deletePrescriber(prescriberId: String) = repository.deletePrescriber(prescriberId)
+  fun deleteProvider(prescriberId: String) = repository.deleteProvider(prescriberId)
+
+  fun setProviderConditions(providerId: String, conditionIds: Set<String>) =
+    repository.setProviderConditions(providerId, conditionIds)
 
   fun saveCondition(condition: Condition) = repository.saveCondition(condition)
 

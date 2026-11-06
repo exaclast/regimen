@@ -98,7 +98,7 @@ import com.exaclast.regimen.model.InjectionRoute
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationSchedule
-import com.exaclast.regimen.model.Prescriber
+import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
@@ -238,10 +238,10 @@ private fun CollapsibleFormSection(
 fun MedicationEditorScreen(
   initialMedication: Medication?,
   conditions: List<Condition>,
-  prescribers: List<Prescriber>,
+  providers: List<Provider>,
   // Optional tracking: hidden fields keep any existing link untouched.
   showConditions: Boolean = true,
-  showPrescribers: Boolean = true,
+  showProviders: Boolean = true,
   configuredPatientName: String = "",
   allowFdaLookup: Boolean = false,
   onDismiss: () -> Unit,
@@ -306,7 +306,7 @@ fun MedicationEditorScreen(
     mutableStateOf(initialMedication?.maxDailyAmount?.let { formatNum(it) }.orEmpty())
   }
 
-  // Indication & Prescriber
+  // Indication & Provider
   var selectedConditionId by rememberSaveable { mutableStateOf(initialMedication?.indicationConditionId) }
   var indicationText by rememberSaveable { mutableStateOf(initialMedication?.indicationText.orEmpty()) }
   var selectedPrescriberId by rememberSaveable { mutableStateOf(initialMedication?.prescriberId) }
@@ -415,7 +415,7 @@ fun MedicationEditorScreen(
     // Auto-link prescriber if name matches an existing prescriber in snapshot
     parsedLabel.prescriberName?.let { scannedDoc ->
       val docTokens = scannedDoc.lowercase().split(" ", ",").filter { it.length >= 3 }
-      val matchedPrescriber = prescribers.firstOrNull { p ->
+      val matchedPrescriber = providers.firstOrNull { p ->
         val pLower = p.name.lowercase()
         docTokens.isNotEmpty() && docTokens.all { t -> pLower.contains(t) }
       }
@@ -1151,13 +1151,13 @@ fun MedicationEditorScreen(
             )
           }
 
-          // 5. Collapsible Optional Rx & Drug Details Section (NDC-11, Manufacturer, Prescriber, Notes)
+          // 5. Collapsible Optional Rx & Drug Details Section (NDC-11, Manufacturer, Provider, Notes)
           val optionalSummary = listOfNotNull(
             ndc11.takeIf { it.isNotBlank() }?.let { "NDC $it" },
             manufacturer.takeIf { it.isNotBlank() },
-            prescribers.find { it.id == selectedPrescriberId }?.name?.takeIf { showPrescribers },
+            providers.find { it.id == selectedPrescriberId }?.name?.takeIf { showProviders },
           ).joinToString(" • ").ifEmpty {
-            if (showPrescribers) "NDC-11, manufacturer, prescriber, prescribed date & notes"
+            if (showProviders) "NDC-11, manufacturer, prescriber, prescribed date & notes"
             else "NDC-11, manufacturer, prescribed date & notes"
           }
 
@@ -1205,12 +1205,12 @@ fun MedicationEditorScreen(
               modifier = Modifier.fillMaxWidth(),
             )
 
-            if (showPrescribers) {
-              val selectedDoc = prescribers.find { it.id == selectedPrescriberId }
+            if (showProviders) {
+              val selectedDoc = providers.find { it.id == selectedPrescriberId }
               DropdownSelectorField(
                 label = "Prescriber",
                 selectedText = selectedDoc?.let { if (it.isPcp) "${it.name} (PCP)" else it.name } ?: "None selected",
-                options = listOf<Prescriber?>(null) + prescribers,
+                options = listOf<Provider?>(null) + providers,
                 optionLabel = { doc ->
                   doc?.let { if (it.isPcp) "${it.name} (PCP)" else it.name } ?: "None selected"
                 },

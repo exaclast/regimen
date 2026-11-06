@@ -6,7 +6,7 @@ import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
-import com.exaclast.regimen.model.Prescriber
+import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
@@ -42,7 +42,7 @@ data class ScheduledDoseItem(
   val lastSiteUsed: String?,
   val pacing: PacingEvaluation,
   val indicationCondition: Condition?,
-  val prescriber: Prescriber?,
+  val prescriber: Provider?,
 ) {
   val isCompleted: Boolean
     get() = existingLog?.status == DoseStatus.TAKEN || existingLog?.status == DoseStatus.SKIPPED
@@ -332,13 +332,13 @@ object DoseEngine {
     buckets: List<TimeOfDayBucket>,
     logs: List<DoseLog>,
     conditions: List<Condition>,
-    prescribers: List<Prescriber>,
+    providers: List<Provider>,
     nowMillis: Long = System.currentTimeMillis(),
   ): DailyDoseBoard {
     val targetDate = runCatching { LocalDate.parse(dateIso) }.getOrDefault(LocalDate.now())
     val activeMedMap = medications.filter { it.deletedAtEpochMillis == null }.associateBy { it.id }
     val conditionMap = conditions.filter { it.deletedAtEpochMillis == null }.associateBy { it.id }
-    val prescriberMap = prescribers.filter { it.deletedAtEpochMillis == null }.associateBy { it.id }
+    val prescriberMap = providers.filter { it.deletedAtEpochMillis == null }.associateBy { it.id }
     val sortedBuckets = buckets.chronological()
 
     val activeSchedules = schedules.filter {

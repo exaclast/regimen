@@ -6,14 +6,19 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -22,6 +27,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -36,6 +43,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -46,15 +54,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.data.RegimenSnapshot
+import com.exaclast.regimen.domain.ConditionTimeline
+import com.exaclast.regimen.model.Condition
 import com.exaclast.regimen.model.Medication
-import com.exaclast.regimen.model.Prescriber
+import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.ui.components.AppSnackbarHost
 import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.DatePickerField
@@ -67,30 +79,33 @@ import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.ui.components.SwitchRow
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.groupListItemColors
+import java.time.LocalDate
 
 @Composable
-fun PrescriberListScreen(
+fun ProviderListScreen(
   snapshot: RegimenSnapshot,
-  onOpenPrescriber: (String) -> Unit,
-  onAddPrescriber: () -> Unit,
+  onOpenProvider: (String) -> Unit,
+  onAddProvider: () -> Unit,
 ) {
   val listState = rememberLazyListState()
   val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
-  val prescribers = snapshot.prescribers
+  val today = LocalDate.now()
+  val (past, providers) = snapshot.providers.partition { ConditionTimeline.isPast(it, today) }
+  var showPast by rememberSaveable { mutableStateOf(false) }
   Scaffold(
-    topBar = { TopAppBar(title = { Text("Prescribers") }) },
+    topBar = { TopAppBar(title = { Text("Providers") }) },
     floatingActionButton = {
       ExtendedFloatingActionButton(
-        onClick = onAddPrescriber,
+        onClick = onAddProvider,
         expanded = fabExpanded,
         icon = { Icon(Icons.Default.Add, contentDescription = null) },
-        text = { Text("Add prescriber") },
+        text = { Text("Add provider") },
       )
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
-    if (prescribers.isEmpty()) {
-      EmptyListMessage("No prescribers yet.", Modifier.padding(padding))
+    if (snapshot.providers.isEmpty()) {
+      EmptyListMessage("No providers yet.", Modifier.padding(padding))
       return@Scaffold
     }
     LazyColumn(
@@ -101,29 +116,54 @@ fun PrescriberListScreen(
       contentPadding = ListContentPadding,
       verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-      itemsIndexed(prescribers, key = { _, p -> p.id }) { index, doc ->
-        val medCount = snapshot.medications.count { it.prescriberId == doc.id }
-        GroupItem(index = index, count = prescribers.size, onClick = { onOpenPrescriber(doc.id) }) {
-          ListItem(
-            supportingContent = {
-              Text(
-                listOfNotNull(
-                  doc.specialty?.takeIf { it.isNotBlank() },
-                  doc.practice?.takeIf { it.isNotBlank() },
-                  medicationCount(medCount),
-                ).joinToString(" · "),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-              )
-            },
-            trailingContent = if (doc.isPcp) ({ Tag("PCP") }) else null,
-            colors = groupListItemColors(),
-          ) { Text(doc.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+      itemsIndexed(providers, key = { _, p -> p.id }) { index, doc ->
+        GroupItem(index = index, count = providers.size, onClick = { onOpenProvider(doc.id) }) {
+          ProviderListItem(doc, snapshot, past = false)
+        }
+      }
+      if (past.isNotEmpty()) {
+        item(key = "past-header") {
+          SectionHeader(
+            title = "Past providers (${past.size})",
+            action = { TextButton(onClick = { showPast = !showPast }) { Text(if (showPast) "Hide" else "Show") } },
+          )
+        }
+        if (showPast) {
+          itemsIndexed(past, key = { _, p -> p.id }) { index, doc ->
+            GroupItem(index = index, count = past.size, onClick = { onOpenProvider(doc.id) }) {
+              ProviderListItem(doc, snapshot, past = true)
+            }
+          }
         }
       }
     }
   }
 }
+
+@Composable
+private fun ProviderListItem(doc: Provider, snapshot: RegimenSnapshot, past: Boolean) {
+  val medCount = snapshot.medications.count { it.prescriberId == doc.id }
+  val conditionCount = snapshot.conditions.count { doc.id in it.providerIds }
+  ListItem(
+    supportingContent = {
+      Text(
+        listOfNotNull(
+          doc.specialty?.takeIf { it.isNotBlank() },
+          doc.practice?.takeIf { it.isNotBlank() },
+          if (past) UiFormat.dateIso(doc.careEndDateIso)?.let { "Care ended $it" } else null,
+          medicationCount(medCount).takeIf { medCount > 0 },
+          conditionCount(conditionCount).takeIf { conditionCount > 0 && snapshot.tracksConditions },
+        ).joinToString(" · "),
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+      )
+    },
+    trailingContent = if (doc.isPcp && !past) ({ Tag("PCP") }) else null,
+    colors = groupListItemColors(),
+  ) { Text(doc.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+}
+
+internal fun conditionCount(n: Int): String = if (n == 1) "1 condition" else "$n conditions"
 
 internal fun medicationCount(n: Int): String = if (n == 1) "1 medication" else "$n medications"
 
@@ -139,21 +179,27 @@ internal fun Tag(text: String) {
 }
 
 @Composable
-fun PrescriberDetailScreen(
-  prescriberId: String,
+fun ProviderDetailScreen(
+  providerId: String,
   snapshot: RegimenSnapshot,
   onBack: () -> Unit,
   onEdit: () -> Unit,
   onDelete: () -> Unit,
   onOpenMedication: (String) -> Unit,
+  onOpenCondition: (String) -> Unit,
+  onSetConditions: (Set<String>) -> Unit,
 ) {
-  val prescriber = snapshot.prescribers.find { it.id == prescriberId }
-  if (prescriber == null) {
-    LaunchedEffect(prescriberId) { onBack() }
+  val provider = snapshot.providers.find { it.id == providerId }
+  if (provider == null) {
+    LaunchedEffect(providerId) { onBack() }
     return
   }
   val context = LocalContext.current
-  val linkedMeds = snapshot.medications.filter { it.prescriberId == prescriber.id }
+  val linkedMeds = snapshot.medications.filter { it.prescriberId == provider.id }
+  val linkedConditions = snapshot.conditions
+    .filter { provider.id in it.providerIds }
+    .sortedWith(compareBy<Condition> { snapshot.isArchived(it) }.thenBy { it.name.lowercase() })
+  var editConditions by remember { mutableStateOf(false) }
   var menuOpen by remember { mutableStateOf(false) }
   var confirmDelete by remember { mutableStateOf(false) }
   val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -162,13 +208,13 @@ fun PrescriberDetailScreen(
     modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
     topBar = {
       MediumFlexibleTopAppBar(
-        title = { Text(prescriber.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        title = { Text(provider.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         subtitle = {
           Text(
             listOfNotNull(
-              if (prescriber.isPcp) "Primary care" else null,
-              prescriber.specialty?.takeIf { it.isNotBlank() },
-            ).joinToString(" · ").ifEmpty { "Prescriber" },
+              if (provider.isPcp) "Primary care" else null,
+              provider.specialty?.takeIf { it.isNotBlank() },
+            ).joinToString(" · ").ifEmpty { "Provider" },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
@@ -177,11 +223,11 @@ fun PrescriberDetailScreen(
           IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
         },
         actions = {
-          IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit prescriber") }
+          IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit provider") }
           OverflowDeleteMenu(
             expanded = menuOpen,
             onExpandedChange = { menuOpen = it },
-            label = "Delete prescriber",
+            label = "Delete provider",
             onDelete = { confirmDelete = true },
           )
         },
@@ -198,10 +244,10 @@ fun PrescriberDetailScreen(
     ) {
       item(key = "contact") {
         SectionHeader("Contact")
-        val phone = prescriber.phone?.takeIf { it.isNotBlank() }
-        val email = prescriber.email?.takeIf { it.isNotBlank() }
+        val phone = provider.phone?.takeIf { it.isNotBlank() }
+        val email = provider.email?.takeIf { it.isNotBlank() }
         val rows = buildList<Triple<String, String, (() -> Unit)?>> {
-          prescriber.practice?.takeIf { it.isNotBlank() }?.let { add(Triple("Practice", it, null)) }
+          provider.practice?.takeIf { it.isNotBlank() }?.let { add(Triple("Practice", it, null)) }
           phone?.let {
             add(Triple("Phone", it) { context.startActivityOrIgnore(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$it"))) })
           }
@@ -234,29 +280,65 @@ fun PrescriberDetailScreen(
       item(key = "care") {
         SectionHeader("Care")
         val rows = listOfNotNull(
-          "Started" to (UiFormat.dateIso(prescriber.careStartDateIso) ?: "Not set"),
-          "Ended" to (UiFormat.dateIso(prescriber.careEndDateIso) ?: "Ongoing"),
-          prescriber.notes?.takeIf { it.isNotBlank() }?.let { "Notes" to it },
+          "Started" to (UiFormat.dateIso(provider.careStartDateIso) ?: "Not set"),
+          "Ended" to (UiFormat.dateIso(provider.careEndDateIso) ?: "Ongoing"),
+          provider.notes?.takeIf { it.isNotBlank() }?.let { "Notes" to it },
         )
         GroupedColumn {
           rows.forEachIndexed { i, (label, value) -> GroupItem(index = i, count = rows.size) { InfoRow(label, value) } }
         }
       }
 
+      if (snapshot.tracksConditions) {
+        item(key = "conditions") {
+          SectionHeader(
+            title = "Conditions they manage",
+            action = if (snapshot.conditions.isNotEmpty()) {
+              { TextButton(onClick = { editConditions = true }) { Text("Edit") } }
+            } else null,
+          )
+          GroupedColumn {
+            if (linkedConditions.isEmpty()) {
+              GroupItem(0, 1) { ListItem(colors = groupListItemColors()) { Text("No conditions linked") } }
+            }
+            linkedConditions.forEachIndexed { i, condition ->
+              GroupItem(index = i, count = linkedConditions.size, onClick = { onOpenCondition(condition.id) }) {
+                ListItem(
+                  supportingContent = { Text(conditionSummary(condition, snapshot, snapshot.isArchived(condition))) },
+                  colors = groupListItemColors(),
+                ) { Text(condition.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+              }
+            }
+          }
+        }
+      }
+
       item(key = "meds") {
-        SectionHeader("Medications")
+        SectionHeader("Medications they prescribed")
         LinkedMedicationGroup(linkedMeds, emptyText = "No medications linked", onOpenMedication = onOpenMedication)
       }
     }
   }
 
+  if (editConditions) {
+    ProviderConditionsDialog(
+      snapshot = snapshot,
+      initialSelection = linkedConditions.mapTo(HashSet()) { it.id },
+      onConfirm = {
+        editConditions = false
+        onSetConditions(it)
+      },
+      onDismiss = { editConditions = false },
+    )
+  }
+
   if (confirmDelete) {
     ConfirmDialog(
-      title = "Delete ${prescriber.name}?",
+      title = "Delete ${provider.name}?",
       text = if (linkedMeds.isEmpty()) {
-        "This removes the prescriber."
+        "This removes the provider."
       } else {
-        "This removes the prescriber and unlinks ${medicationCount(linkedMeds.size)}."
+        "This removes the provider and unlinks ${medicationCount(linkedMeds.size)}."
       },
       confirmLabel = "Delete",
       destructive = true,
@@ -267,6 +349,53 @@ fun PrescriberDetailScreen(
       onDismiss = { confirmDelete = false },
     )
   }
+}
+
+/** Pick the conditions a provider manages: current ones first, then past ones. */
+@Composable
+private fun ProviderConditionsDialog(
+  snapshot: RegimenSnapshot,
+  initialSelection: Set<String>,
+  onConfirm: (Set<String>) -> Unit,
+  onDismiss: () -> Unit,
+) {
+  var selection by remember { mutableStateOf(initialSelection) }
+  val options = snapshot.conditions
+    .sortedWith(compareBy<Condition> { snapshot.isArchived(it) }.thenBy { it.name.lowercase() })
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Conditions they manage") },
+    text = {
+      Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+        options.forEach { condition ->
+          val checked = condition.id in selection
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+              .fillMaxWidth()
+              .toggleable(
+                value = checked,
+                role = Role.Checkbox,
+                onValueChange = { selection = if (it) selection + condition.id else selection - condition.id },
+              )
+              .padding(vertical = 4.dp),
+          ) {
+            Checkbox(checked = checked, onCheckedChange = null)
+            Column(modifier = Modifier.padding(start = 12.dp)) {
+              Text(condition.name, style = MaterialTheme.typography.bodyLarge)
+              Text(
+                conditionSummary(condition, snapshot, snapshot.isArchived(condition)),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+          }
+        }
+      }
+    },
+    confirmButton = { TextButton(onClick = { onConfirm(selection) }) { Text("Save") } },
+    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+  )
 }
 
 @Composable
@@ -320,29 +449,29 @@ internal fun android.content.Context.startActivityOrIgnore(intent: Intent) {
 }
 
 @Composable
-fun PrescriberEditorScreen(
-  initialPrescriber: Prescriber?,
+fun ProviderEditorScreen(
+  initialProvider: Provider?,
   onClose: () -> Unit,
-  onSave: (Prescriber) -> Unit,
+  onSave: (Provider) -> Unit,
 ) {
-  var name by rememberSaveable { mutableStateOf(initialPrescriber?.name.orEmpty()) }
-  var specialty by rememberSaveable { mutableStateOf(initialPrescriber?.specialty.orEmpty()) }
-  var practice by rememberSaveable { mutableStateOf(initialPrescriber?.practice.orEmpty()) }
-  var phone by rememberSaveable { mutableStateOf(initialPrescriber?.phone.orEmpty()) }
-  var email by rememberSaveable { mutableStateOf(initialPrescriber?.email.orEmpty()) }
-  var isPcp by rememberSaveable { mutableStateOf(initialPrescriber?.isPcp ?: false) }
-  var startDate by rememberSaveable { mutableStateOf(initialPrescriber?.careStartDateIso.orEmpty()) }
-  var endDate by rememberSaveable { mutableStateOf(initialPrescriber?.careEndDateIso.orEmpty()) }
-  var notes by rememberSaveable { mutableStateOf(initialPrescriber?.notes.orEmpty()) }
+  var name by rememberSaveable { mutableStateOf(initialProvider?.name.orEmpty()) }
+  var specialty by rememberSaveable { mutableStateOf(initialProvider?.specialty.orEmpty()) }
+  var practice by rememberSaveable { mutableStateOf(initialProvider?.practice.orEmpty()) }
+  var phone by rememberSaveable { mutableStateOf(initialProvider?.phone.orEmpty()) }
+  var email by rememberSaveable { mutableStateOf(initialProvider?.email.orEmpty()) }
+  var isPcp by rememberSaveable { mutableStateOf(initialProvider?.isPcp ?: false) }
+  var startDate by rememberSaveable { mutableStateOf(initialProvider?.careStartDateIso.orEmpty()) }
+  var endDate by rememberSaveable { mutableStateOf(initialProvider?.careEndDateIso.orEmpty()) }
+  var notes by rememberSaveable { mutableStateOf(initialProvider?.notes.orEmpty()) }
 
   EditorScaffold(
-    title = if (initialPrescriber == null) "Add prescriber" else "Edit prescriber",
+    title = if (initialProvider == null) "Add provider" else "Edit provider",
     onClose = onClose,
     saveEnabled = name.isNotBlank(),
     onSave = {
       onSave(
-        Prescriber(
-          id = initialPrescriber?.id ?: java.util.UUID.randomUUID().toString(),
+        Provider(
+          id = initialProvider?.id ?: java.util.UUID.randomUUID().toString(),
           name = name.trim(),
           specialty = specialty.trim().takeIf { it.isNotBlank() },
           practice = practice.trim().takeIf { it.isNotBlank() },
@@ -352,7 +481,7 @@ fun PrescriberEditorScreen(
           careStartDateIso = startDate.takeIf { it.isNotBlank() },
           careEndDateIso = endDate.takeIf { it.isNotBlank() },
           notes = notes.trim().takeIf { it.isNotBlank() },
-          createdAtEpochMillis = initialPrescriber?.createdAtEpochMillis ?: System.currentTimeMillis(),
+          createdAtEpochMillis = initialProvider?.createdAtEpochMillis ?: System.currentTimeMillis(),
         )
       )
     },

@@ -958,7 +958,7 @@ private fun EmptyDayCard(
   if (confirmDemo && onLoadDemoData != null) {
     ConfirmDialog(
       title = "Load demo data?",
-      text = "This populates sample medications, conditions, prescribers, and schedules.",
+      text = "This populates sample medications, conditions, providers, and schedules.",
       confirmLabel = "Load demo data",
       onConfirm = {
         confirmDemo = false
