@@ -54,7 +54,7 @@ enum class DoseUnit(val symbol: String, val displayName: String) {
   MG("mg", "Milligrams (mg)"),
   MCG("mcg", "Micrograms (mcg)"),
   ML("mL", "Milliliters (mL)"),
-  UNITS("units", "Syringe Units (U-100)"),
+  UNITS("units", "Units (syringe or pen)"),
   IU("IU", "International Units (IU)"),
   TABLET("tab", "Tablet(s)"),
   CAPSULE("cap", "Capsule(s)"),
@@ -150,10 +150,17 @@ data class Medication(
   val secondaryName: String?
     get() = formulaName.takeIf { !brandName.isNullOrBlank() }
 
+  /**
+   * Volume to draw up for a dose, or null when it doesn't apply. Prefilled devices are dialed or
+   * fixed, not drawn up, and "units" only convert to mL on a U-100 syringe: a U-200 pen's 20 units
+   * is 0.1 mL, not 0.2.
+   */
+  fun doseVolumeMl(amount: Double, unit: DoseUnit): Double? =
+    if (form.isPrefilledInjector) null else injectableDetails?.calculateVolumeMl(amount, unit)
+
   fun formattedDefaultDose(): String {
     val base = "${formatNum(defaultDoseAmount)} ${defaultDoseUnit.symbol}"
-    val inj = injectableDetails ?: return base
-    val volMl = inj.calculateVolumeMl(defaultDoseAmount, defaultDoseUnit)
+    val volMl = doseVolumeMl(defaultDoseAmount, defaultDoseUnit)
     return if (volMl != null && defaultDoseUnit != DoseUnit.ML) {
       val units = (volMl * 100.0)
       "$base (${formatNum(volMl)} mL / ${formatNum(units)} U)"
@@ -431,6 +438,10 @@ data class MedicationSchedule(
     }
     return true
   }
+
+  /** Needs a window to produce doses but none of its windows exist (e.g. after a restore). */
+  fun hasNoValidWindow(buckets: List<TimeOfDayBucket>): Boolean =
+    frequencyType != ScheduleFrequencyType.AS_NEEDED && bucketIds.none { id -> buckets.any { it.id == id } }
 
   /** The schedule's end date has passed: it no longer produces doses. */
   fun hasEndedBefore(date: LocalDate): Boolean {

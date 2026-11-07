@@ -8,7 +8,9 @@ import com.exaclast.regimen.data.BackupManager
 import com.exaclast.regimen.data.RegimenRepository
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.DailyDoseBoard
+import com.exaclast.regimen.domain.BucketDoseGroup
 import com.exaclast.regimen.domain.DoseEngine
+import com.exaclast.regimen.domain.DoseTimeline
 import com.exaclast.regimen.domain.ScheduledDoseItem
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.Condition
@@ -50,6 +52,13 @@ data class RegimenUiState(
   val dailyBoard: DailyDoseBoard,
   /** Pending scheduled doses for *today*, regardless of which date is being viewed. */
   val todayPendingCount: Int,
+  val todayBoard: DailyDoseBoard,
+  /** Last night's overnight windows that are still open, shown on Today. */
+  val carriedOver: List<BucketDoseGroup>,
+  val yesterdayIso: String,
+  val yesterdayMissedCount: Int,
+  /** Medications whose schedule can't produce doses because its windows no longer exist. */
+  val medicationsWithoutWindow: List<Medication>,
 ) {
   val isToday: Boolean
     get() = selectedDateIso == todayIso
@@ -133,13 +142,24 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     val dateIso = override ?: todayIso
     val board = boardFor(snapshot, dateIso, now)
     val todayBoard = if (dateIso == todayIso) board else boardFor(snapshot, todayIso, now)
+    val today = LocalDate.parse(todayIso)
+    val yesterdayIso = today.minusDays(1).toString()
+    val yesterdayBoard = if (dateIso == yesterdayIso) board else boardFor(snapshot, yesterdayIso, now)
+    val carriedOver = DoseTimeline.stillOpenFromYesterday(yesterdayBoard, now)
     return RegimenUiState(
       selectedDateIso = dateIso,
       todayIso = todayIso,
       nowMillis = now,
       snapshot = snapshot,
       dailyBoard = board,
-      todayPendingCount = todayBoard.bucketGroups.sumOf { it.pendingCount },
+      todayPendingCount = (carriedOver + todayBoard.bucketGroups).sumOf { it.pendingCount },
+      todayBoard = todayBoard,
+      carriedOver = carriedOver,
+      yesterdayIso = yesterdayIso,
+      yesterdayMissedCount = DoseTimeline.missedCount(yesterdayBoard, now),
+      medicationsWithoutWindow = DoseEngine.medicationsWithoutWindow(
+        snapshot.medications, snapshot.schedules, snapshot.buckets, today,
+      ),
     )
   }
 
@@ -314,7 +334,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
 
   fun saveBucket(bucket: TimeOfDayBucket) = repository.saveBucket(bucket)
 
-  fun deleteBucket(bucketId: String) = repository.deleteBucket(bucketId)
+  fun deleteBucket(bucketId: String, moveToBucketId: String?) = repository.deleteBucket(bucketId, moveToBucketId)
 
   fun resetBucketsToDefault() = repository.resetBucketsToDefault()
 

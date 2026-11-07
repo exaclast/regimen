@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -45,6 +46,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -68,6 +70,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -77,13 +80,17 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.exaclast.regimen.data.DrugBarcodeScanner
+import com.exaclast.regimen.domain.WindowDeletion
 import com.exaclast.regimen.model.AppSettings
+import com.exaclast.regimen.model.Medication
+import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.ThemeMode
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.notifications.DoseNotificationManager
 import com.exaclast.regimen.notifications.DoseNotificationStage
 import com.exaclast.regimen.sync.BackupFiles
+import com.exaclast.regimen.ui.ScheduleText
 import com.exaclast.regimen.ui.components.AppSnackbarHost
 import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.EditorScaffold
@@ -673,11 +680,15 @@ private val WINDOW_NAME_PRESETS = listOf(
 fun DoseWindowEditorScreen(
   initialBucket: TimeOfDayBucket?,
   canDelete: Boolean,
+  allWindows: List<TimeOfDayBucket>,
+  schedules: List<MedicationSchedule>,
+  medications: List<Medication>,
   globalNotificationsEnabled: Boolean,
   globalAlarmsEnabled: Boolean,
   onClose: () -> Unit,
   onSave: (TimeOfDayBucket) -> Unit,
-  onDelete: () -> Unit,
+  /** Receives the window the deleted window's doses move to (null when none are scheduled in it). */
+  onDelete: (String?) -> Unit,
 ) {
   var name by rememberSaveable { mutableStateOf(initialBucket?.name.orEmpty()) }
   var startHour by rememberSaveable { mutableIntStateOf(initialBucket?.hour ?: 8) }
@@ -790,18 +801,96 @@ fun DoseWindowEditorScreen(
   }
 
   if (confirmDelete && initialBucket != null) {
-    ConfirmDialog(
-      title = "Delete ${initialBucket.name}?",
-      text = "Medications scheduled in this window move to another window, and its reminders are cancelled.",
-      confirmLabel = "Delete",
-      destructive = true,
-      onConfirm = {
+    DeleteWindowDialog(
+      window = initialBucket,
+      allWindows = allWindows,
+      schedules = schedules,
+      medications = medications,
+      onConfirm = { moveToId ->
         confirmDelete = false
-        onDelete()
+        onDelete(moveToId)
       },
       onDismiss = { confirmDelete = false },
     )
   }
+}
+
+/** Deleting a window changes when medications are taken, so the user picks where the doses go. */
+@Composable
+private fun DeleteWindowDialog(
+  window: TimeOfDayBucket,
+  allWindows: List<TimeOfDayBucket>,
+  schedules: List<MedicationSchedule>,
+  medications: List<Medication>,
+  onConfirm: (String?) -> Unit,
+  onDismiss: () -> Unit,
+) {
+  val others = allWindows.filter { it.id != window.id }.chronological()
+  val affected = WindowDeletion.affectedSchedules(window.id, schedules)
+  if (affected.isEmpty() || others.isEmpty()) {
+    ConfirmDialog(
+      title = "Delete ${window.name}?",
+      text = "No medications are scheduled in this window.",
+      confirmLabel = "Delete",
+      destructive = true,
+      onConfirm = { onConfirm(null) },
+      onDismiss = onDismiss,
+    )
+    return
+  }
+
+  var targetId by rememberSaveable { mutableStateOf((WindowDeletion.nearestWindow(window, others) ?: others.first()).id) }
+  val changes = WindowDeletion.plan(window.id, targetId, affected, emptyList(), 0L).scheduleChanges
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Delete ${window.name}?") },
+    text = {
+      Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        Text("Choose where the doses in this window move:")
+        others.forEach { other ->
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+              .fillMaxWidth()
+              .selectable(selected = other.id == targetId, role = Role.RadioButton, onClick = { targetId = other.id })
+              .padding(vertical = 4.dp),
+          ) {
+            RadioButton(selected = other.id == targetId, onClick = null)
+            Spacer(Modifier.width(12.dp))
+            Text("${other.name} · ${other.formattedTime()}", style = MaterialTheme.typography.bodyLarge)
+          }
+        }
+        Text("What changes:", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+        changes.forEach { change ->
+          val name = medications.find { it.id == change.before.medicationId }?.primaryName ?: "Medication"
+          val before = ScheduleText.windows(change.before, allWindows)
+          val after = ScheduleText.windows(change.after, allWindows)
+          Text("$name: $before → $after", style = MaterialTheme.typography.bodyMedium)
+          if (change.losesDose) {
+            Text(
+              "One fewer dose each day, because it's already scheduled in that window.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.error,
+            )
+          }
+        }
+      }
+    },
+    confirmButton = {
+      Button(
+        onClick = { onConfirm(targetId) },
+        colors = ButtonDefaults.buttonColors(
+          containerColor = MaterialTheme.colorScheme.error,
+          contentColor = MaterialTheme.colorScheme.onError,
+        ),
+      ) { Text("Delete and move") }
+    },
+    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+  )
 }
 
 @Composable

@@ -11,10 +11,13 @@ import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.model.formatNum
+import com.exaclast.regimen.notifications.DoseAlarmTiming
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import java.util.Locale
 
 data class PacingEvaluation(
   val canTakeNow: Boolean,
@@ -29,7 +32,39 @@ data class PacingEvaluation(
   /** When the minimum interval elapses (epoch millis), if it hasn't yet. */
   val nextAllowedAtMillis: Long? = null,
   val maxDailyDoses: Double? = null,
-)
+) {
+  /** One line saying why a dose can't be taken yet, or null when it can. */
+  fun warningText(
+    nowMillis: Long = System.currentTimeMillis(),
+    zoneId: ZoneId = ZoneId.systemDefault(),
+  ): String? {
+    if (isDailyLimitReached) {
+      val limit = maxDailyDoses?.let { formatNum(it) } ?: return "Daily amount limit reached"
+      return "Daily limit reached ($dosesTakenToday of $limit)"
+    }
+    val whenAllowed = nextAllowedText(nowMillis, zoneId) ?: return null
+    val sameDay = whenAllowed.first().isDigit()
+    return if (sameDay) "Next dose allowed at $whenAllowed" else "Next dose allowed $whenAllowed"
+  }
+
+  /**
+   * When the next dose is allowed: "18:18" today, "tomorrow at 18:18", or "Nov 9 at 18:18". A time
+   * alone would read as today, and a long minimum interval often runs into the next day.
+   */
+  fun nextAllowedText(
+    nowMillis: Long = System.currentTimeMillis(),
+    zoneId: ZoneId = ZoneId.systemDefault(),
+  ): String? {
+    val next = Instant.ofEpochMilli(nextAllowedAtMillis ?: return null).atZone(zoneId)
+    val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
+    val time = TimeOfDayBucket.formatClockTime(next.hour, next.minute)
+    return when (next.toLocalDate()) {
+      today -> time
+      today.plusDays(1) -> "tomorrow at $time"
+      else -> "${next.format(DateTimeFormatter.ofPattern("MMM d", Locale.getDefault()))} at $time"
+    }
+  }
+}
 
 data class ScheduledDoseItem(
   val key: String,
@@ -61,7 +96,7 @@ data class ScheduledDoseItem(
     val unit = schedule.doseUnit.symbol
     val inj = medication.injectableDetails
     if (inj != null) {
-      val volMl = inj.calculateVolumeMl(schedule.doseAmount, schedule.doseUnit)
+      val volMl = medication.doseVolumeMl(schedule.doseAmount, schedule.doseUnit)
       val volStr = if (volMl != null && schedule.doseUnit != DoseUnit.ML) {
         " (${formatNum(volMl)} mL)"
       } else {
@@ -163,6 +198,8 @@ object DoseEngine {
     allLogs: List<DoseLog>,
     nowMillis: Long = System.currentTimeMillis(),
     todayIso: String = LocalDate.now().toString(),
+    buckets: List<TimeOfDayBucket> = emptyList(),
+    zoneId: ZoneId = ZoneId.systemDefault(),
   ): PacingEvaluation {
     val activeTakenLogs = allLogs.filter {
       it.medicationId == medication.id &&
@@ -171,9 +208,10 @@ object DoseEngine {
     }
 
     val lastTaken = activeTakenLogs.maxByOrNull { it.actionTimestampMillis }
-    val todayLogs = activeTakenLogs.filter { it.scheduledDateIso == todayIso }
+    val todayLogs = activeTakenLogs.filter { limitDayOf(it, buckets, zoneId) == todayIso }
     val dosesTakenToday = todayLogs.size
-    val amountTakenToday = todayLogs.sumOf { it.amountTaken }
+    // The limit is in the medication's default unit; other units can't be added to it.
+    val amountTakenToday = todayLogs.filter { it.amountUnit == medication.defaultDoseUnit }.sumOf { it.amountTaken }
 
     var remainingWaitMinutes = 0L
     val minInterval = medication.minIntervalMinutes
@@ -236,6 +274,34 @@ object DoseEngine {
       },
       maxDailyDoses = maxDoses?.takeIf { it > 0 },
     )
+  }
+
+  /**
+   * The day a taken dose counts toward for daily limits: the day it was actually taken, so
+   * yesterday's missed dose taken this morning counts today. Two exceptions keep a dose on its
+   * scheduled day: one taken during its own overnight window (1 AM in a 10 PM–2 AM window), and an
+   * unscheduled dose logged onto a past date, where the user chose the day.
+   */
+  internal fun limitDayOf(log: DoseLog, buckets: List<TimeOfDayBucket>, zoneId: ZoneId): String {
+    val takenOn = Instant.ofEpochMilli(log.actionTimestampMillis).atZone(zoneId).toLocalDate().toString()
+    if (takenOn == log.scheduledDateIso || log.scheduleId == null) return log.scheduledDateIso
+    val overnight = buckets.find { it.id == log.bucketId }?.takeIf { it.crossesMidnight } ?: return takenOn
+    val start = DoseAlarmTiming.windowStartMillis(overnight, log.scheduledDateIso, zoneId) ?: return takenOn
+    val end = DoseAlarmTiming.windowEndMillis(overnight, log.scheduledDateIso, zoneId) ?: return takenOn
+    return if (log.actionTimestampMillis in start..end) log.scheduledDateIso else takenOn
+  }
+
+  /** Medications with a current schedule that can't produce doses, because its windows are gone. */
+  fun medicationsWithoutWindow(
+    medications: List<Medication>,
+    schedules: List<MedicationSchedule>,
+    buckets: List<TimeOfDayBucket>,
+    today: LocalDate,
+  ): List<Medication> {
+    val ids = schedules
+      .filter { it.deletedAtEpochMillis == null && it.enabled && !it.hasEndedBefore(today) && it.hasNoValidWindow(buckets) }
+      .mapTo(HashSet()) { it.medicationId }
+    return medications.filter { it.deletedAtEpochMillis == null && it.id in ids }
   }
 
   /**
@@ -375,7 +441,7 @@ object DoseEngine {
 
         val suggestedSite = existingLog?.siteUsed ?: computeNextSite(med, logs)
         val lastSite = getLastSiteUsed(med.id, logs)
-        val pacing = evaluatePacing(med, logs, nowMillis, dateIso)
+        val pacing = evaluatePacing(med, logs, nowMillis, dateIso, buckets)
 
         ScheduledDoseItem(
           key = "${schedule.id}_${bucket.id}_$dateIso",
@@ -413,7 +479,7 @@ object DoseEngine {
           medication = med,
           schedule = prnSchedule,
           suggestedSite = computeNextSite(med, logs),
-          pacing = evaluatePacing(med, logs, nowMillis, dateIso),
+          pacing = evaluatePacing(med, logs, nowMillis, dateIso, buckets),
           indicationCondition = med.indicationConditionId?.let { conditionMap[it] },
         )
       }

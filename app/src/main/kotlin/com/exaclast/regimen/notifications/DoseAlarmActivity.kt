@@ -66,6 +66,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.exaclast.regimen.MainActivity
 import com.exaclast.regimen.data.RegimenRepository
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.ScheduledDoseItem
@@ -125,6 +126,7 @@ class DoseAlarmActivity : ComponentActivity() {
             logAll(items, DoseStatus.SKIPPED)
             finish()
           },
+          onOpenApp = ::openApp,
           onNothingPending = ::silence,
           onDismiss = {
             silence()
@@ -179,6 +181,26 @@ class DoseAlarmActivity : ComponentActivity() {
     }
   }
 
+  /** Doses over a pacing limit are logged from the app, which explains the limit first. */
+  private fun openApp() {
+    silence()
+    fun launch() {
+      startActivity(Intent(this, MainActivity::class.java))
+      finish()
+    }
+    val keyguard = getSystemService(KeyguardManager::class.java)
+    if (keyguard?.isKeyguardLocked == true) {
+      keyguard.requestDismissKeyguard(
+        this,
+        object : KeyguardManager.KeyguardDismissCallback() {
+          override fun onDismissSucceeded() = launch()
+        },
+      )
+    } else {
+      launch()
+    }
+  }
+
   private fun silence() {
     ringTimeoutHandler.removeCallbacks(stopRinging)
     AlarmRingtonePlayer.stop()
@@ -218,6 +240,7 @@ fun DoseAlarmScreen(
   onTake: (List<ScheduledDoseItem>) -> Unit,
   onSnooze: (List<ScheduledDoseItem>, Int) -> Unit,
   onSkip: (List<ScheduledDoseItem>) -> Unit,
+  onOpenApp: () -> Unit,
   onNothingPending: () -> Unit,
   onDismiss: () -> Unit,
 ) {
@@ -395,7 +418,14 @@ fun DoseAlarmScreen(
 
         // Action Buttons
         val count = activeItems.size
-        val takeLabel = if (count == 1) "Take Dose" else "Take All ($count)"
+        // Doses over a pacing limit are left out of Take; each card says why.
+        val readyItems = activeItems.filter { it.pacing.canTakeNow }
+        val takeLabel = when {
+          readyItems.isEmpty() -> "Open App"
+          readyItems.size < count -> "Take ${readyItems.size} Ready"
+          count == 1 -> "Take Dose"
+          else -> "Take All ($count)"
+        }
         val snoozeLabel = "Snooze ${snapshot.settings.snoozeMinutes}m"
         val skipLabel = if (count == 1) "Skip Dose" else "Skip All"
 
@@ -404,7 +434,7 @@ fun DoseAlarmScreen(
           verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
           Button(
-            onClick = { onTake(activeItems) },
+            onClick = { if (readyItems.isEmpty()) onOpenApp() else onTake(readyItems) },
             modifier = Modifier
               .fillMaxWidth()
               .height(56.dp),
@@ -496,6 +526,15 @@ private fun AlarmItemCard(item: ScheduledDoseItem) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
 
+      item.pacing.warningText()?.let { warning ->
+        Spacer(Modifier.height(6.dp))
+        Text(
+          text = warning,
+          style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+          color = MaterialTheme.colorScheme.error,
+        )
+      }
+
       if (!item.suggestedSite.isNullOrBlank()) {
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -516,7 +555,7 @@ private fun AlarmItemCard(item: ScheduledDoseItem) {
       }
 
       med.injectableDetails?.let { inj ->
-        val draw = inj.formattedDrawNeedle()?.let { "Draw: $it" }
+        val draw = inj.formattedDrawNeedle()?.takeUnless { med.form.isPrefilledInjector }?.let { "Draw: $it" }
         val inject = inj.formattedInjectNeedle()?.let { "Inject: $it" }
         val needles = listOfNotNull(draw, inject).joinToString(" • ")
         if (needles.isNotEmpty()) {

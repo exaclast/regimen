@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -61,9 +62,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -120,6 +123,7 @@ fun TodayScreen(
   onOpenMedication: (String) -> Unit,
   onOpenWindow: (String) -> Unit,
   onAddMedication: () -> Unit,
+  onReviewYesterday: () -> Unit,
   onLoadDemoData: (() -> Unit)? = null,
   onRestoreBackup: ((Uri) -> Unit)? = null,
 ) {
@@ -128,6 +132,24 @@ fun TodayScreen(
   val now = uiState.nowMillis
   val selectedDate = runCatching { LocalDate.parse(uiState.selectedDateIso) }.getOrDefault(LocalDate.now())
   val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
+  // A list keeps its place by item key, so a notice or card added above the current position would
+  // stay out of sight. Go to the top when they change, but not when returning from another screen.
+  val listState = rememberLazyListState()
+  val topOfList = listOf(
+    uiState.selectedDateIso,
+    uiState.carriedOver.map { it.bucket.id },
+    uiState.yesterdayMissedCount > 0,
+    uiState.medicationsWithoutWindow.isNotEmpty(),
+    settings.notificationsEnabled,
+  ).toString()
+  var scrolledForTop by rememberSaveable { mutableStateOf(topOfList) }
+  LaunchedEffect(topOfList) {
+    if (topOfList != scrolledForTop) {
+      scrolledForTop = topOfList
+      listState.scrollToItem(0)
+    }
+  }
 
   // Take flow: pacing gate → optional confirmation / site choice → log.
   var pacingPrompt by remember { mutableStateOf<TakeRequest?>(null) }
@@ -146,6 +168,7 @@ fun TodayScreen(
     val med = request.medication
     val needsSite = med.siteRotationEnabled && med.rotationSites.size > 1
     when {
+      request is TakeRequest.Scheduled && request.chooseSite -> sitePrompt = request
       request is TakeRequest.Prn && needsSite -> sitePrompt = request
       request is TakeRequest.Scheduled && settings.confirmBeforeTake && !alreadyConfirmed ->
         if (needsSite) sitePrompt = request else confirmPrompt = request
@@ -163,6 +186,34 @@ fun TodayScreen(
     else -> "${board.totalTakenCount} of ${board.totalScheduledCount} taken"
   }
   val subtitle = if (uiState.isToday) "${UiFormat.date(selectedDate)} · $progress" else progress
+
+  @Composable
+  fun DoseWindow(group: BucketDoseGroup, dateIso: String, occurrenceLabel: String? = null) {
+    WindowSection(
+      group = group,
+      phase = DoseTimeline.windowPhase(group, dateIso, now),
+      isFutureDate = uiState.isFuture,
+      nowMillis = now,
+      settings = settings,
+      occurrenceLabel = occurrenceLabel,
+      onTake = { requestTake(TakeRequest.Scheduled(it)) },
+      // Recording a missed dose that was really taken in its window: no "too soon" pacing
+      // gate (that compares against now), but the site / confirmation prompts still apply.
+      onTakenOnTime = { item ->
+        val windowEnd = DoseAlarmTiming.windowEndMillis(item.bucket, item.dateIso)
+        afterPacing(TakeRequest.Scheduled(item, takenAtMillis = windowEnd), alreadyConfirmed = false)
+      },
+      onSnooze = onSnooze,
+      onSkip = onSkip,
+      onClearLog = onClearLog,
+      onChangeSite = { requestTake(TakeRequest.Scheduled(it, chooseSite = true)) },
+      onTakeAll = { pending ->
+        if (pending.any { !it.pacing.canTakeNow }) takeAllPrompt = pending else onTakeAll(pending)
+      },
+      onOpenMedication = onOpenMedication,
+      onOpenWindow = { onOpenWindow(group.bucket.id) },
+    )
+  }
 
   Scaffold(
     modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -198,6 +249,7 @@ fun TodayScreen(
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
     LazyColumn(
+      state = listState,
       modifier = Modifier
         .fillMaxSize()
         .padding(padding),
@@ -214,7 +266,41 @@ fun TodayScreen(
         }
       }
 
-      if (board.bucketGroups.isEmpty() && board.prnItems.isEmpty()) {
+      uiState.medicationsWithoutWindow.firstOrNull()?.let { first ->
+        item(key = "no-window") {
+          val count = uiState.medicationsWithoutWindow.size
+          NoticeCard(
+            icon = Icons.Default.Warning,
+            text = if (count == 1) {
+              "${first.primaryName} has no dose window, so it won't appear here or remind you."
+            } else {
+              "$count medications have no dose window, so they won't appear here or remind you."
+            },
+            actionLabel = "Fix",
+            onAction = { onOpenMedication(first.id) },
+          )
+        }
+      }
+
+      if (uiState.isToday && uiState.yesterdayMissedCount > 0) {
+        item(key = "yesterday-missed") {
+          val count = uiState.yesterdayMissedCount
+          NoticeCard(
+            icon = Icons.Default.Warning,
+            text = if (count == 1) "1 dose from yesterday wasn't logged." else "$count doses from yesterday weren't logged.",
+            actionLabel = "Review",
+            onAction = onReviewYesterday,
+          )
+        }
+      }
+
+      if (uiState.isToday) {
+        items(uiState.carriedOver, key = { "carried-${it.bucket.id}" }) { group ->
+          DoseWindow(group, uiState.yesterdayIso, occurrenceLabel = "From last night")
+        }
+      }
+
+      if (board.bucketGroups.isEmpty() && board.prnItems.isEmpty() && (!uiState.isToday || uiState.carriedOver.isEmpty())) {
         item(key = "empty") {
           EmptyDayCard(
             hasAnyMedications = uiState.snapshot.medications.isNotEmpty(),
@@ -226,30 +312,7 @@ fun TodayScreen(
       }
 
       items(board.bucketGroups, key = { "window-${it.bucket.id}" }) { group ->
-        val phase = DoseTimeline.windowPhase(group, uiState.selectedDateIso, now)
-        WindowSection(
-          group = group,
-          phase = phase,
-          isFutureDate = uiState.isFuture,
-          nowMillis = now,
-          settings = settings,
-          onTake = { requestTake(TakeRequest.Scheduled(it)) },
-          // Recording a missed dose that was really taken in its window: no "too soon" pacing
-          // gate (that compares against now), but the site / confirmation prompts still apply.
-          onTakenOnTime = { item ->
-            val windowEnd = DoseAlarmTiming.windowEndMillis(item.bucket, item.dateIso)
-            afterPacing(TakeRequest.Scheduled(item, takenAtMillis = windowEnd), alreadyConfirmed = false)
-          },
-          onSnooze = onSnooze,
-          onSkip = onSkip,
-          onClearLog = onClearLog,
-          onChangeSite = { sitePrompt = TakeRequest.Scheduled(it) },
-          onTakeAll = { pending ->
-            if (pending.any { !it.pacing.canTakeNow }) takeAllPrompt = pending else onTakeAll(pending)
-          },
-          onOpenMedication = onOpenMedication,
-          onOpenWindow = { onOpenWindow(group.bucket.id) },
-        )
+        DoseWindow(group, uiState.selectedDateIso)
       }
 
       if (board.prnItems.isNotEmpty()) {
@@ -350,8 +413,12 @@ private sealed interface TakeRequest {
   val pacing: PacingEvaluation
   val suggestedSite: String?
 
-  /** [takenAtMillis] back-dates the log (null = now). */
-  data class Scheduled(val item: ScheduledDoseItem, val takenAtMillis: Long? = null) : TakeRequest {
+  /** [takenAtMillis] back-dates the log (null = now). [chooseSite] asks for the site before logging. */
+  data class Scheduled(
+    val item: ScheduledDoseItem,
+    val takenAtMillis: Long? = null,
+    val chooseSite: Boolean = false,
+  ) : TakeRequest {
     override val medication get() = item.medication
     override val pacing get() = item.pacing
     override val suggestedSite get() = item.suggestedSite
@@ -366,7 +433,7 @@ private sealed interface TakeRequest {
 
 private fun pacingExplanation(pacing: PacingEvaluation, medication: Medication): String {
   val parts = mutableListOf<String>()
-  pacing.nextAllowedAtMillis?.let { parts.add("The next dose isn't due until ${UiFormat.time(it)}.") }
+  pacing.nextAllowedText()?.let { parts.add("The next dose isn't due until $it.") }
   if (pacing.isDailyLimitReached) {
     val limit = pacing.maxDailyDoses?.let { formatNum(it) }
     parts.add(
@@ -381,16 +448,6 @@ private fun pacingExplanation(pacing: PacingEvaluation, medication: Medication):
   return parts.joinToString(" ")
 }
 
-/** One line describing why a dose can't be taken yet, or null when it can. */
-private fun pacingWarning(pacing: PacingEvaluation): String? = when {
-  pacing.isDailyLimitReached -> {
-    val limit = pacing.maxDailyDoses?.let { formatNum(it) }
-    if (limit != null) "Daily limit reached (${pacing.dosesTakenToday} of $limit)" else "Daily amount limit reached"
-  }
-  pacing.nextAllowedAtMillis != null -> "Next dose allowed at ${UiFormat.time(pacing.nextAllowedAtMillis)}"
-  else -> null
-}
-
 @Composable
 private fun WindowSection(
   group: BucketDoseGroup,
@@ -398,6 +455,7 @@ private fun WindowSection(
   isFutureDate: Boolean,
   nowMillis: Long,
   settings: AppSettings,
+  occurrenceLabel: String? = null,
   onTake: (ScheduledDoseItem) -> Unit,
   onTakenOnTime: (ScheduledDoseItem) -> Unit,
   onSnooze: (ScheduledDoseItem) -> Unit,
@@ -448,7 +506,7 @@ private fun WindowSection(
             PhaseLabel(phase = phase, isFutureDate = isFutureDate)
           }
           Text(
-            text = windowTimeLabel(bucket),
+            text = listOfNotNull(occurrenceLabel, windowTimeLabel(bucket)).joinToString(" · "),
             style = MaterialTheme.typography.bodyMedium,
             color = onContainer.copy(alpha = 0.8f),
           )
@@ -576,7 +634,7 @@ private fun DoseCard(
   val med = item.medication
   val missed = DoseTimeline.isMissed(item, nowMillis)
   val snoozedUntil = DoseTimeline.activeSnoozeUntil(item, nowMillis)
-  val warning = if (!item.isCompleted) pacingWarning(item.pacing) else null
+  val warning = if (!item.isCompleted) item.pacing.warningText() else null
   val canAct = !item.isCompleted && !isFutureDate
   val canSnooze = canAct && !missed && phase == WindowPhase.NOW
   val rotation = med.siteRotationEnabled && med.rotationSites.isNotEmpty()
@@ -803,7 +861,7 @@ private fun PrnCard(
   onOpenMedication: () -> Unit,
 ) {
   val med = item.medication
-  val warning = pacingWarning(item.pacing)
+  val warning = item.pacing.warningText()
   val dayWord = if (isToday) "today" else "that day"
   val dailyNote = item.pacing.maxDailyDoses?.let { "${item.pacing.dosesTakenToday} of ${formatNum(it)} $dayWord" }
   val logLabel = "Log ${formatNum(item.doseAmount)} ${item.doseUnit.symbol}"
@@ -881,7 +939,12 @@ private fun DayLogList(
 }
 
 @Composable
-private fun NoticeCard(text: String, actionLabel: String, onAction: () -> Unit) {
+private fun NoticeCard(
+  text: String,
+  actionLabel: String,
+  onAction: () -> Unit,
+  icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.NotificationsOff,
+) {
   Surface(
     color = MaterialTheme.colorScheme.tertiaryContainer,
     contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -892,7 +955,7 @@ private fun NoticeCard(text: String, actionLabel: String, onAction: () -> Unit) 
       modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
       verticalAlignment = Alignment.CenterVertically,
     ) {
-      Icon(Icons.Default.NotificationsOff, contentDescription = null)
+      Icon(icon, contentDescription = null)
       Spacer(Modifier.width(12.dp))
       Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
       TextButton(onClick = onAction) { Text(actionLabel) }

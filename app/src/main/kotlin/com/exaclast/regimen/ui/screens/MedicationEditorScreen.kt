@@ -1794,6 +1794,14 @@ fun ScheduleEditorScreen(
       )
     }
 
+    if (medication.maxDailyAmount != null && doseUnit != medication.defaultDoseUnit) {
+      Text(
+        "The daily amount limit is in ${medication.defaultDoseUnit.symbol}, so doses in ${doseUnit.symbol} won't count toward it.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.error,
+      )
+    }
+
     if (usesInterval) {
       ValidatedNumberField(
         check = intervalCheck,

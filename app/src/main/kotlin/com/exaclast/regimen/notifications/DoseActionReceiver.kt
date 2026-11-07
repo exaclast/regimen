@@ -136,7 +136,9 @@ class DoseActionReceiver : BroadcastReceiver() {
   /**
    * Take / Snooze / Skip tapped on a window notification: applies to exactly the doses it listed
    * (doses that became due later aren't silently included). Each dose's current log is updated,
-   * so a dose acted on in-app meanwhile never ends up with two logs.
+   * so a dose acted on in-app meanwhile never ends up with two logs. Doses already completed are
+   * left alone, and Take re-checks pacing because the notification may have been posted before
+   * another dose was logged.
    */
   private fun handleDoseAction(
     context: Context,
@@ -151,7 +153,10 @@ class DoseActionReceiver : BroadcastReceiver() {
     val itemKeys = intent.getStringArrayExtra(EXTRA_ITEM_KEYS)?.toList()
       ?: legacyItemKey(intent, bucketId, dateIso)?.let(::listOf)
       ?: return
-    val items = DoseNotificationManager.itemsFor(s, bucketId, dateIso).filter { it.key in itemKeys }
+    val listed = DoseNotificationManager.itemsFor(s, bucketId, dateIso)
+      .filter { it.key in itemKeys && !it.isCompleted }
+    val blocked = if (action == ACTION_TAKE) listed.filter { !it.pacing.canTakeNow } else emptyList()
+    val items = listed - blocked.toSet()
 
     val snoozeMins = s.settings.snoozeMinutes
     val snoozeUntil = System.currentTimeMillis() + snoozeMins * 60_000L
@@ -184,7 +189,14 @@ class DoseActionReceiver : BroadcastReceiver() {
       DoseStatus.SNOOZED -> "Snoozed for $snoozeMins minutes"
       DoseStatus.SKIPPED -> "Marked $noun skipped"
     }
-    if (logged.isNotEmpty() && !quiet) Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    val blockedNote = blocked.takeIf { it.isNotEmpty() }?.let { doses ->
+      val names = doses.joinToString { it.medication.primaryName }
+      "Not logged: $names is over its pacing limit. Open Regimen to log it anyway."
+    }
+    val text = listOfNotNull(message.takeIf { logged.isNotEmpty() }, blockedNote).joinToString(" ")
+    if (text.isNotEmpty() && !quiet) Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+    // Nothing was logged for these, so update the notification to show the limit.
+    if (blocked.isNotEmpty()) DoseNotificationManager.refresh(context, repo.snapshot.value)
 
     // Per-dose notifications posted by older app versions.
     itemKeys.forEach { DoseNotificationManager.cancelNotificationForItem(context, it) }

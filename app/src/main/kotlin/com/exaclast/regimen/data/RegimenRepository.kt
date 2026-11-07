@@ -3,6 +3,7 @@ package com.exaclast.regimen.data
 import android.content.Context
 import com.exaclast.regimen.domain.ConditionTimeline
 import com.exaclast.regimen.domain.DoseEngine
+import com.exaclast.regimen.domain.WindowDeletion
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.Condition
 import com.exaclast.regimen.model.ConditionKind
@@ -232,16 +233,25 @@ class RegimenRepository private constructor(context: Context) {
     reloadSnapshot()
   }
 
-  fun deleteBucket(bucketId: String) {
-    db.deleteBucket(bucketId)
+  /** Deletes a window, moving its doses to [moveToBucketId] (or the nearest window if none is given). */
+  fun deleteBucket(bucketId: String, moveToBucketId: String? = null) {
+    val buckets = db.getAllBuckets()
+    val window = buckets.find { it.id == bucketId } ?: return
+    val targetId = moveToBucketId ?: WindowDeletion.nearestWindow(window, buckets - window)?.id
+    val plan = targetId?.let {
+      WindowDeletion.plan(bucketId, it, db.getAllSchedules(), db.getAllDoseLogs(), System.currentTimeMillis())
+    }
+    db.inTransaction {
+      plan?.scheduleChanges?.forEach { db.upsertSchedule(it.after) }
+      plan?.movedLogs?.forEach { db.upsertDoseLog(it) }
+      db.deleteBucket(bucketId)
+    }
     DoseNotificationManager.cancelBucketAlarms(appContext, bucketId)
-    val now = System.currentTimeMillis()
-    // For any schedules that had this bucket, remove the bucketId or reassign to remaining bucket
-    val remainingBuckets = _snapshot.value.buckets.filter { it.id != bucketId }
-    val fallbackBucketId = remainingBuckets.firstOrNull()?.id ?: TimeOfDayBucket.BUCKET_MORNING
-    _snapshot.value.schedules.filter { it.bucketIds.contains(bucketId) }.forEach { sched ->
-      val updatedBucketIds = sched.bucketIds.filter { it != bucketId }.ifEmpty { listOf(fallbackBucketId) }
-      db.upsertSchedule(sched.copy(bucketIds = updatedBucketIds, updatedAtEpochMillis = now))
+    // A moved snooze has a new alarm identity: the refresh arms it, so drop the old one here.
+    plan?.movedLogs?.filter { it.status == DoseStatus.SNOOZED }?.forEach { moved ->
+      itemKeyFor(moved.copy(bucketId = bucketId))?.let { key ->
+        DoseNotificationManager.cancelSnoozeAlarm(appContext, key, bucketId)
+      }
     }
     reloadSnapshot()
   }
@@ -543,7 +553,7 @@ class RegimenRepository private constructor(context: Context) {
       siteRotationEnabled = false,
       minIntervalMinutes = 360, // 6 hours minimum between doses
       maxDailyDoses = 6.0,
-      maxDailyAmount = 3000.0,
+      maxDailyAmount = 6.0, // tablets: the limit is in the medication's default unit
       indicationConditionId = condHeadache.id,
       indicationText = "Tension headache or fever as needed",
       prescriberId = pcp.id,

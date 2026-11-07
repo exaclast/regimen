@@ -51,6 +51,33 @@ object DoseTimeline {
     return nowMillis >= end
   }
 
+  /**
+   * Overnight windows from [yesterday]'s board still open now, with doses left to take. After
+   * midnight these belong on Today: the dose due now is yesterday's, not tonight's.
+   */
+  fun stillOpenFromYesterday(
+    yesterday: DailyDoseBoard,
+    nowMillis: Long,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+  ): List<BucketDoseGroup> = yesterday.bucketGroups.filter { group ->
+    group.pendingCount > 0 &&
+      group.bucket.crossesMidnight &&
+      DoseAlarmTiming.isWithinWindow(group.bucket, yesterday.dateIso, nowMillis, zoneId)
+  }
+
+  /** Doses on [board] whose window ended without being logged. */
+  fun missedCount(board: DailyDoseBoard, nowMillis: Long, zoneId: ZoneId = ZoneId.systemDefault()): Int =
+    board.bucketGroups.sumOf { group -> group.items.count { isMissed(it, nowMillis, zoneId) } }
+
+  /** The dose a medication is most likely being logged for: the earliest one not yet done today. */
+  fun nextDoseFor(
+    medicationId: String,
+    carriedOver: List<BucketDoseGroup>,
+    today: DailyDoseBoard,
+  ): ScheduledDoseItem? = (carriedOver + today.bucketGroups)
+    .flatMap { it.items }
+    .firstOrNull { it.medication.id == medicationId && !it.isCompleted }
+
   /** Snooze deadline if the item is currently snoozed into the future. */
   fun activeSnoozeUntil(item: ScheduledDoseItem, nowMillis: Long): Long? {
     val log = item.existingLog ?: return null

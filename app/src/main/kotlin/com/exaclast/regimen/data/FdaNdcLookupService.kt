@@ -58,6 +58,8 @@ data class CrossReferencedFdaCandidate(
   val matchedSignals: List<String>,
   val missingOrDifferentSignals: List<String>,
   val matchesName: Boolean,
+  /** The name's words are the same, not just close: look-alike drugs differ by a letter or two. */
+  val exactNameMatch: Boolean,
   val matchesStrength: Boolean,
   val matchesForm: Boolean,
   val matchesManufacturer: Boolean,
@@ -404,19 +406,12 @@ object FdaNdcLookupService {
   suspend fun searchAndCrossReference(
     criteria: DrugCrossReferenceCriteria,
   ): CrossReferenceOutcome = withContext(Dispatchers.IO) {
-    val hasOtherNameSignal = !criteria.formulaName.isNullOrBlank() || !criteria.brandName.isNullOrBlank()
-
     // Priority 1: Check explicit NDC first if available
     if (!criteria.ndc.isNullOrBlank()) {
       val ndcResult = lookupByNdc(criteria.ndc).getOrNull()
       if (ndcResult != null) {
         val scored = scoreCandidateAgainstCriteria(ndcResult, criteria)
-        // A misread NDC digit commonly lands on a sibling strength of the same product, so a scanned
-        // strength that disagrees with the NDC record makes the NDC inconclusive.
-        val strengthConflict = !criteria.strength.isNullOrBlank() && !scored.matchesStrength
-        // Conclusive if no conflicting name was scanned (or the scanned name also matches this NDC)
-        // and the scanned strength (if any) agrees.
-        if ((!hasOtherNameSignal || scored.matchesName) && !strengthConflict) {
+        if (ndcMatchIsConclusive(scored, criteria)) {
           val withNdcSignal = scored.copy(
             score = scored.score + 100,
             matchedSignals = listOf("NDC (${ndcResult.ndc11})") + scored.matchedSignals,
@@ -496,6 +491,19 @@ object FdaNdcLookupService {
     return@withContext evaluateDisambiguation(scoredCandidates, criteria)
   }
 
+  /**
+   * An NDC record settles the lookup only if the name and strength also entered agree with it. A
+   * misread NDC digit commonly lands on a sibling strength of the same product, or another drug.
+   */
+  internal fun ndcMatchIsConclusive(
+    scored: CrossReferencedFdaCandidate,
+    criteria: DrugCrossReferenceCriteria,
+  ): Boolean {
+    val nameEntered = !criteria.formulaName.isNullOrBlank() || !criteria.brandName.isNullOrBlank()
+    val strengthConflict = !criteria.strength.isNullOrBlank() && !scored.matchesStrength
+    return (!nameEntered || scored.exactNameMatch) && !strengthConflict
+  }
+
   internal fun scoreAndFilterCandidates(
     rawResults: List<FdaDrugLookupResult>,
     criteria: DrugCrossReferenceCriteria,
@@ -510,6 +518,8 @@ object FdaNdcLookupService {
         !hasStrengthCriterion || candidate.matchesStrength
       }
       .sortedByDescending { it.score }
+      // An exact name rules out look-alikes (prednisone vs. prednisolone).
+      .let { matches -> if (matches.any { it.exactNameMatch }) matches.filter { it.exactNameMatch } else matches }
 
     // Deduplicate identical (formulaName, brandName, strength, form, manufacturer) combinations
     return scored.distinctBy {
@@ -550,6 +560,13 @@ object FdaNdcLookupService {
     // 2. If OpenFDA has multiple strengths, the user/label provided the strength AND it matched!
     if (effectivePool.size == 1 && (hasStrength || distinctStrengths.size == 1)) {
       val single = effectivePool.first()
+      // A close name may be a different drug, so it's never filled in without asking.
+      if (!single.exactNameMatch) {
+        return CrossReferenceOutcome.NeedsUserSelection(
+          reason = "This is the closest FDA record, but its name differs from what you entered. Check it's the same medication:",
+          candidates = effectivePool,
+        )
+      }
       // If manufacturer was NOT provided and there were other manufacturers in `candidates`, do not guess the manufacturer!
       if (!hasMfg && candidates.size > 1) {
         return CrossReferenceOutcome.NeedsUserSelection(
@@ -590,12 +607,14 @@ object FdaNdcLookupService {
     val cBrand = candidate.brandName?.lowercase().orEmpty()
 
     var matchesName = false
+    var exactNameMatch = false
     if (qFormula.isNotEmpty()) {
       val qTokens = extractAlphaTokens(qFormula)
       val cTokens = extractAlphaTokens(cFormula) + extractAlphaTokens(cBrand)
       if (qTokens.isNotEmpty() && qTokens.all { qt -> cTokens.any { ct -> tokensMatchFuzzy(qt, ct) } }) {
         matchesName = true
-        val exactMatch = qTokens.all { qt -> cTokens.any { ct -> ct.contains(qt) || qt.contains(ct) } }
+        val exactMatch = qTokens.all { qt -> qt in cTokens }
+        exactNameMatch = exactMatch
         score += if (exactMatch) 40 else 34
         matched.add(
           if (exactMatch) {
@@ -616,11 +635,16 @@ object FdaNdcLookupService {
         qBrandTokens.all { qt -> cBrandTokens.any { ct -> tokensMatchFuzzy(qt, ct) } }
       if (exactBrand || fuzzyBrand) {
         matchesName = true
+        if (qBrandTokens.isNotEmpty() && qBrandTokens.all { qt -> qt in cBrandTokens }) exactNameMatch = true
         score += if (exactBrand) 35 else 30
         matched.add("Brand (${candidate.brandName ?: candidate.formulaName})")
       } else {
         missingOrDiff.add("Brand differs (${candidate.brandName ?: "Generic"})")
       }
+    }
+
+    if (matchesName && !exactNameMatch) {
+      missingOrDiff.add("Name differs from what you entered (${candidate.formulaName})")
     }
 
     // 2. Strength cross-reference
@@ -678,6 +702,7 @@ object FdaNdcLookupService {
       matchedSignals = matched,
       missingOrDifferentSignals = missingOrDiff,
       matchesName = matchesName,
+      exactNameMatch = exactNameMatch,
       matchesStrength = matchesStrength,
       matchesForm = matchesForm,
       matchesManufacturer = matchesMfg,

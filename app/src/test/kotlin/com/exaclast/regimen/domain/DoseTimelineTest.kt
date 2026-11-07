@@ -104,6 +104,77 @@ class DoseTimelineTest {
     assertNull(later.nextAllowedAtMillis)
   }
 
+  private fun board(vararg groups: BucketDoseGroup) = DailyDoseBoard(
+    dateIso = date,
+    bucketGroups = groups.toList(),
+    prnItems = emptyList(),
+    totalScheduledCount = 0,
+    totalTakenCount = 0,
+    totalSkippedCount = 0,
+  )
+
+  private val openOvernight = BucketDoseGroup(overnight, listOf(item(overnight)))
+
+  @Test
+  fun overnightDoseIsCarriedOntoTodayWhileItsWindowIsOpen() {
+    val yesterday = board(openOvernight, BucketDoseGroup(morning, listOf(item(morning))))
+    assertEquals(listOf(openOvernight), DoseTimeline.stillOpenFromYesterday(yesterday, at(4, 1), zone))
+  }
+
+  @Test
+  fun overnightDoseIsNotCarriedOnceItsWindowCloses() {
+    assertTrue(DoseTimeline.stillOpenFromYesterday(board(openOvernight), at(4, 2), zone).isEmpty())
+  }
+
+  @Test
+  fun completedOvernightDoseIsNotCarried() {
+    val done = BucketDoseGroup(overnight, listOf(item(overnight, log(DoseStatus.TAKEN))))
+    assertTrue(DoseTimeline.stillOpenFromYesterday(board(done), at(4, 1), zone).isEmpty())
+  }
+
+  @Test
+  fun missedCountLeavesOutOpenWindowsAndCompletedDoses() {
+    val yesterday = board(
+      openOvernight,
+      BucketDoseGroup(morning, listOf(item(morning), item(morning, log(DoseStatus.TAKEN)))),
+    )
+    assertEquals(1, DoseTimeline.missedCount(yesterday, at(4, 1), zone))
+    assertEquals(2, DoseTimeline.missedCount(yesterday, at(4, 3), zone))
+  }
+
+  @Test
+  fun nextDosePrefersLastNightsOpenDoseThenTheEarliestToday() {
+    val today = board(
+      BucketDoseGroup(morning, listOf(item(morning, log(DoseStatus.TAKEN)))),
+      BucketDoseGroup(overnight.copy(id = "later"), listOf(item(overnight.copy(id = "later")))),
+    )
+    assertEquals("o", DoseTimeline.nextDoseFor(med.id, listOf(openOvernight), today)?.bucket?.id)
+    assertEquals("later", DoseTimeline.nextDoseFor(med.id, emptyList(), today)?.bucket?.id)
+    assertNull(DoseTimeline.nextDoseFor("other", listOf(openOvernight), today))
+  }
+
+  @Test
+  fun pacingWarningExplainsTheLimit() {
+    val base = PacingEvaluation(canTakeNow = false, isIntervalWarning = false, isDailyLimitReached = true, statusSummary = "")
+    val now = at(3, 9)
+    assertEquals("Daily amount limit reached", base.warningText(now, zone))
+    assertEquals("Daily limit reached (2 of 2)", base.copy(dosesTakenToday = 2, maxDailyDoses = 2.0).warningText(now, zone))
+    val waiting = base.copy(isDailyLimitReached = false, isIntervalWarning = true, nextAllowedAtMillis = at(3, 12))
+    assertEquals("Next dose allowed at 12:00 PM", waiting.warningText(now, zone))
+    assertNull(base.copy(canTakeNow = true, isDailyLimitReached = false).warningText(now, zone))
+  }
+
+  @Test
+  fun pacingWarningSaysWhichDayTheNextDoseIsAllowed() {
+    val waiting = PacingEvaluation(canTakeNow = false, isIntervalWarning = true, isDailyLimitReached = false, statusSummary = "")
+    val now = at(3, 22)
+    val tomorrow = waiting.copy(nextAllowedAtMillis = at(4, 18))
+    assertEquals("tomorrow at 6:00 PM", tomorrow.nextAllowedText(now, zone))
+    assertEquals("Next dose allowed tomorrow at 6:00 PM", tomorrow.warningText(now, zone))
+    val later = waiting.copy(nextAllowedAtMillis = at(9, 18))
+    assertEquals("Next dose allowed Nov 9 at 6:00 PM", later.warningText(now, zone))
+  }
+
   @Test
   fun clockFormatHonors24HourPreference() {
     assertEquals("9:05 PM", TimeOfDayBucket.formatClockTime(21, 5, use24Hour = false))

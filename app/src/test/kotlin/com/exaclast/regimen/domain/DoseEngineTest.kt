@@ -11,6 +11,8 @@ import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.TimeOfDayBucket
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -135,6 +137,112 @@ class DoseEngineTest {
     assertTrue(eval2.isDailyLimitReached)
     assertFalse(eval2.canTakeNow)
     assertEquals(2, eval2.dosesTakenToday)
+  }
+
+  private fun takenLog(
+    scheduledDateIso: String,
+    takenAt: LocalDateTime,
+    scheduleId: String? = "sched",
+    bucketId: String? = null,
+    amount: Double = 1.0,
+    unit: DoseUnit = DoseUnit.TABLET,
+  ) = DoseLog(
+    medicationId = "med",
+    scheduleId = scheduleId,
+    bucketId = bucketId,
+    scheduledDateIso = scheduledDateIso,
+    actionTimestampMillis = takenAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+    status = DoseStatus.TAKEN,
+    amountTaken = amount,
+    amountUnit = unit,
+  )
+
+  private fun limitedMed(maxDoses: Double? = null, maxAmount: Double? = null, unit: DoseUnit = DoseUnit.TABLET) = Medication(
+    id = "med",
+    formulaName = "Limited",
+    strength = "5 mg",
+    defaultDoseUnit = unit,
+    maxDailyDoses = maxDoses,
+    maxDailyAmount = maxAmount,
+  )
+
+  private val noon: Long = LocalDateTime.of(2026, 11, 3, 12, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+  @Test
+  fun dailyLimit_lateDoseCountsOnTheDayItWasTaken() {
+    val lateDose = takenLog("2026-11-02", LocalDateTime.of(2026, 11, 3, 8, 0))
+    val today = DoseEngine.evaluatePacing(limitedMed(maxDoses = 1.0), listOf(lateDose), noon, "2026-11-03")
+    assertEquals(1, today.dosesTakenToday)
+    assertTrue(today.isDailyLimitReached)
+    val dayItWasScheduled = DoseEngine.evaluatePacing(limitedMed(maxDoses = 1.0), listOf(lateDose), noon, "2026-11-02")
+    assertEquals(0, dayItWasScheduled.dosesTakenToday)
+  }
+
+  @Test
+  fun dailyLimit_backfilledAsNeededDoseCountsOnTheDayChosen() {
+    val backfilled = takenLog("2026-11-02", LocalDateTime.of(2026, 11, 3, 8, 0), scheduleId = null)
+    val today = DoseEngine.evaluatePacing(limitedMed(maxDoses = 1.0), listOf(backfilled), noon, "2026-11-03")
+    assertEquals(0, today.dosesTakenToday)
+  }
+
+  @Test
+  fun dailyAmountLimit_onlyTotalsItsOwnUnit() {
+    val logs = listOf(
+      takenLog("2026-11-03", LocalDateTime.of(2026, 11, 3, 8, 0), amount = 500.0, unit = DoseUnit.MG),
+      takenLog("2026-11-03", LocalDateTime.of(2026, 11, 3, 9, 0), amount = 1.0, unit = DoseUnit.TABLET),
+    )
+    val pacing = DoseEngine.evaluatePacing(limitedMed(maxAmount = 3000.0, unit = DoseUnit.MG), logs, noon, "2026-11-03")
+    assertEquals(500.0, pacing.amountTakenToday, 0.001)
+  }
+
+  @Test
+  fun dailyLimit_doseTakenDuringItsOvernightWindowStaysOnItsScheduledDay() {
+    val overnight = TimeOfDayBucket(id = "late", name = "Late", hour = 22, endHour = 2)
+    val inWindow = takenLog("2026-11-02", LocalDateTime.of(2026, 11, 3, 1, 0), bucketId = "late")
+    val afterWindow = takenLog("2026-11-02", LocalDateTime.of(2026, 11, 3, 8, 0), bucketId = "late")
+    fun dosesOn(day: String, log: DoseLog) =
+      DoseEngine.evaluatePacing(limitedMed(maxDoses = 1.0), listOf(log), noon, day, listOf(overnight)).dosesTakenToday
+    assertEquals(0, dosesOn("2026-11-03", inWindow))
+    assertEquals(1, dosesOn("2026-11-02", inWindow))
+    assertEquals(1, dosesOn("2026-11-03", afterWindow))
+  }
+
+  @Test
+  fun medicationsWithoutWindow_findsSchedulesWhoseWindowsAreGone() {
+    val window = TimeOfDayBucket(id = "m", name = "Morning", hour = 7)
+    val today = LocalDate.parse("2026-11-03")
+    fun med(id: String) = Medication(id = id, formulaName = id, strength = "1 mg")
+    val meds = listOf(med("orphaned"), med("fine"), med("prn"), med("ended"), med("removed"))
+    val schedules = listOf(
+      MedicationSchedule(medicationId = "orphaned", bucketIds = listOf("gone")),
+      MedicationSchedule(medicationId = "fine", bucketIds = listOf("m", "gone")),
+      MedicationSchedule(medicationId = "prn", frequencyType = ScheduleFrequencyType.AS_NEEDED, bucketIds = emptyList()),
+      MedicationSchedule(medicationId = "ended", bucketIds = listOf("gone"), endDateIso = "2026-11-02"),
+      MedicationSchedule(medicationId = "removed", bucketIds = listOf("gone"), deletedAtEpochMillis = 1),
+    )
+    assertEquals(
+      listOf("orphaned"),
+      DoseEngine.medicationsWithoutWindow(meds, schedules, listOf(window), today).map { it.id },
+    )
+  }
+
+  private fun injectable(form: MedicationForm) = Medication(
+    formulaName = "Insulin",
+    strength = "200 units/mL",
+    form = form,
+    defaultDoseAmount = 20.0,
+    defaultDoseUnit = DoseUnit.UNITS,
+    injectableDetails = InjectableDetails(route = InjectionRoute.SC),
+  )
+
+  @Test
+  fun prefilledInjector_showsNoCalculatedVolume() {
+    assertEquals("20 units", injectable(MedicationForm.INJECTABLE_PEN).formattedDefaultDose())
+  }
+
+  @Test
+  fun vial_stillShowsSyringeVolume() {
+    assertEquals("20 units (0.2 mL / 20 U)", injectable(MedicationForm.INJECTABLE_VIAL).formattedDefaultDose())
   }
 
   @Test

@@ -66,6 +66,9 @@ object DoseNotificationManager {
   /** Notification extra: the item keys a window notification lists (and its actions act on). */
   private const val EXTRA_NOTIFICATION_ITEM_KEYS = "regimen.item_keys"
 
+  /** Notification extra: the listed doses that Take applies to (the rest are over a pacing limit). */
+  private const val EXTRA_NOTIFICATION_READY_KEYS = "regimen.ready_keys"
+
   private const val SLOT_START = 1
   private const val SLOT_END = 2
   private const val SLOT_NUDGE = 3
@@ -341,7 +344,9 @@ object DoseNotificationManager {
       val keys = actionable.map { it.key }
       if (existing != null) {
         val shownKeys = existing.notification.extras.getStringArray(EXTRA_NOTIFICATION_ITEM_KEYS)?.toList()
-        if (shownKeys != keys) {
+        val shownReady = existing.notification.extras.getStringArray(EXTRA_NOTIFICATION_READY_KEYS)?.toList()
+        val ready = actionable.filter { it.pacing.canTakeNow }.map { it.key }
+        if (shownKeys != keys || shownReady != ready) {
           val stage = if (existing.notification.channelId == CHANNEL_WINDOW_ALARM) {
             DoseNotificationStage.WINDOW_END_ALARM
           } else {
@@ -429,8 +434,10 @@ object DoseNotificationManager {
    * - WINDOW_END_ALARM: "… overdue". With [alert] it rings insistently and carries a full-screen
    *   intent to the alarm screen.
    *
-   * Actions apply to exactly the listed doses. Swiping the notification away snoozes them for the
-   * snooze length; left alone, repeat reminders re-alert. With [alert] false the post is silent.
+   * Actions apply to exactly the listed doses. A dose over its pacing limit says so and Take leaves
+   * it out; logging it anyway happens in the app, which explains the limit first. Swiping the
+   * notification away snoozes them for the snooze length; left alone, repeat reminders re-alert.
+   * With [alert] false the post is silent.
    */
   fun postWindowNotification(
     context: Context,
@@ -460,13 +467,9 @@ object DoseNotificationManager {
     val title = if (isAlarm) "$baseTitle overdue" else baseTitle
     val countText = if (single) "1 dose due" else "${items.size} doses due"
 
-    val lines = items.map { item ->
-      val med = item.medication
-      val name = listOf(med.displayTitle, med.strength).filter { it.isNotBlank() }.joinToString(" ")
-      val site = item.suggestedSite?.takeIf { med.siteRotationEnabled && it.isNotBlank() }?.let { " · $it" } ?: ""
-      "$name — ${item.formattedDoseInstruction()}$site"
-    }
-    val collapsedText = if (single) lines.first() else items.joinToString(", ") { it.medication.displayTitle }
+    val lines = windowBodyLines(items)
+    // A single limited dose leads with the limit: it's why there's no Take button.
+    val collapsedText = if (single) lines.last() else items.joinToString(", ") { it.medication.primaryName }
 
     val contentPendingIntent = if (isAlarm) {
       alarmScreenPendingIntent(context, bucket.id, dateIso, notificationId, ring = false)
@@ -481,8 +484,9 @@ object DoseNotificationManager {
     }
 
     val keys = items.map { it.key }.toTypedArray()
-    fun action(action: String, offset: Int) =
-      buildActionPendingIntent(context, action, bucket.id, dateIso, keys, notificationId, offset)
+    val readyKeys = items.filter { it.pacing.canTakeNow }.map { it.key }.toTypedArray()
+    fun action(action: String, offset: Int, actionKeys: Array<String> = keys) =
+      buildActionPendingIntent(context, action, bucket.id, dateIso, actionKeys, notificationId, offset)
 
     // Stable timestamp (window start/end) so silent re-posts don't reshuffle the shade.
     val whenMillis = if (isAlarm) {
@@ -526,14 +530,29 @@ object DoseNotificationManager {
       .setOngoing(true)
       .setAutoCancel(false)
       .setSilent(!alert)
-      .addExtras(Bundle().apply { putStringArray(EXTRA_NOTIFICATION_ITEM_KEYS, keys) })
-      .addAction(
-        android.R.drawable.checkbox_on_background,
-        if (single) "Take" else "Take all",
-        action(DoseActionReceiver.ACTION_TAKE, 1),
+      .addExtras(
+        Bundle().apply {
+          putStringArray(EXTRA_NOTIFICATION_ITEM_KEYS, keys)
+          putStringArray(EXTRA_NOTIFICATION_READY_KEYS, readyKeys)
+        },
       )
       // No Snooze button: swiping the notification away is the "not now" (see setDeleteIntent).
       .setDeleteIntent(action(DoseActionReceiver.ACTION_DISMISSED, 4))
+    if (readyKeys.isNotEmpty()) {
+      val takeLabel = when {
+        readyKeys.size < keys.size -> "Take ${readyKeys.size} ready"
+        single -> "Take"
+        else -> "Take all"
+      }
+      builder.addAction(
+        android.R.drawable.checkbox_on_background,
+        takeLabel,
+        action(DoseActionReceiver.ACTION_TAKE, 1, readyKeys),
+      )
+    }
+    if (readyKeys.size < keys.size) {
+      builder.addAction(android.R.drawable.ic_menu_view, "Open", contentPendingIntent)
+    }
     // Skipping several doses from the shade (no undo there) is too easy to do by accident.
     if (single) {
       builder.addAction(
@@ -558,6 +577,20 @@ object DoseNotificationManager {
       NotificationManagerCompat.from(context).notify(tag, notificationId, notification)
       true
     }.getOrDefault(false)
+  }
+
+  /**
+   * A window notification's body. Each row is one line that gets cut off when it's long, so the dose
+   * comes before the strength, and a pacing limit gets its own row.
+   */
+  internal fun windowBodyLines(items: List<ScheduledDoseItem>): List<String> = items.flatMap { item ->
+    val med = item.medication
+    val details = listOfNotNull(
+      item.suggestedSite?.takeIf { med.siteRotationEnabled && it.isNotBlank() },
+      med.strength.takeIf { it.isNotBlank() },
+    )
+    val dose = (listOf(item.formattedDoseInstruction()) + details).joinToString(" · ")
+    listOfNotNull("${med.primaryName} — $dose", item.pacing.warningText()?.let { "${med.primaryName}: $it" })
   }
 
   /**

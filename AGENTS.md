@@ -66,7 +66,9 @@ This repository is **Regimen**, an Android medication and dose-tracking app buil
 - **Dose Windows (Buckets)**:
   - Windows can be added, deleted, and edited. They are **always ordered by start time** (`chronological()`); manual reordering was removed and `sortOrder` is legacy.
   - "Restore default windows" keeps any custom window a schedule still uses, so no medication loses its doses.
-  - Windows can cross midnight (`crossesMidnight = true`). Receivers and alarm scheduling must account for overnight dates when querying scheduled items.
+  - Windows can cross midnight (`crossesMidnight = true`). Receivers and alarm scheduling must account for overnight dates when querying scheduled items. After midnight, Today shows a still-open occurrence from yesterday as "From last night" (`DoseTimeline.stillOpenFromYesterday`).
+  - Deleting a window goes through `WindowDeletion`: the user picks where its doses move, and logs move with them so a taken dose isn't due again. A move can drop a dose only if the target is already on the schedule, and the dialog says so.
+  - A schedule whose windows no longer exist (`hasNoValidWindow`) produces no doses, so Today and the medication page flag it.
 - **Schedules**:
   - Optional inclusive `startDateIso` / `endDateIso` (null end = ongoing), plus `startBucketId` / `endBucketId` for partial first/last days (e.g. a course started with the evening dose). Not applied to `SPECIFIC_DATES` / `AS_NEEDED`.
   - Outside the range a schedule produces no doses, but a dose that was actually logged always stays visible.
@@ -74,6 +76,7 @@ This repository is **Regimen**, an Android medication and dose-tracking app buil
   - `DoseNotificationManager.refresh(context, snapshot)` is the single entry point after any data, settings, clock, or permission change. It re-arms alarms (including running snoozes, which reboots clear) and reconciles the shade, and it is silent. Only receivers alert, once per event. Don't add separate schedule/sync calls. Creating `RegimenRepository` doesn't refresh: a receiver must refresh first with the window it's about to alert for, or the alert would be pre-empted by a silent post.
   - Per window, at most three alarm slots: START (next opening with doses due, looking ahead past empty days), END (only while the current window is open with unlogged doses), and NUDGE (repeat reminders on a fixed grid from window start). Snoozes get a per-dose alarm. Alarms carry the dose's date; never infer it from the clock.
   - **One notification per window occurrence**, tagged `window:<bucketId>:<dateIso>`: title "Morning dose" / "Morning medications", body lists drugs and doses, actions Take / Skip (single) or Take all (several), applying to exactly the listed doses. Discreet mode hides the body on the lock screen via a public version.
+  - Pacing applies everywhere a dose can be logged. A notification or the alarm screen shows the limit (`PacingEvaluation.warningText`), and Take leaves out doses over it; logging one anyway happens in the app, which explains the limit first.
   - Swiping a reminder away = snooze (delete intent). Repeat reminders re-alert ones not acted on. There is no Snooze button on notifications (it exists on the alarm screen and in-app).
   - Receivers never call `startActivity`. The end-of-window alarm screen opens via the notification's full-screen intent (`DoseAlarmActivity.ACTION_RING` rings; `ACTION_SHOW` from a tap is silent).
 - **Backup & Sync** (`sync/`, `data/BackupManager.kt`, `data/BackupKeyStore.kt`):
@@ -82,6 +85,11 @@ This repository is **Regimen**, an Android medication and dose-tracking app buil
   - `BundleMerger` is a three-way merge against the last agreed copy. Changed on one side → that change. Changed on both → the primary device keeps its own; other devices defer to the remote copy; with no primary, newer wins. Two logs for the same scheduled dose keep one and tombstone the other, ranked by status first (taken, skipped, snoozed); a snooze never overwrites a completed dose. File imports merge with no base and newer wins.
   - Any device can log; `PrimaryClaim` (highest epoch wins) only decides conflicts.
   - `BundleCrypto`: AES-256-GCM with a random data key wrapped by a PBKDF2 passphrase key in every file's header; the recovery code is the data key plus a checksum. The device caches the data key wrapped by an Android Keystore key. `regimen_device` and `regimen_backup_keys` prefs are excluded from Android Auto Backup.
+- **Pacing & Doses**:
+  - Daily limits count a dose on the calendar day it was taken (`DoseEngine.limitDayOf`), not its scheduled day and not a rolling 24 hours. Exceptions: taken during its own overnight window, or an unscheduled dose logged onto a past date, both stay on their scheduled day. Amount limits only total doses in the medication's default unit.
+  - Logging from a medication's page completes the next dose due (`DoseTimeline.nextDoseFor`); an unscheduled dose is the separate "Log an extra dose".
+  - Show volumes through `Medication.doseVolumeMl`: prefilled devices have none, and "units" only convert to mL on a U-100 syringe.
+  - FDA autofill never applies a name that isn't an exact match without asking (`exactNameMatch`): look-alike drugs can differ by a letter or two.
 - **Providers & Conditions**:
   - "Provider" everywhere (model, tab, screens). A medication's provider is still labelled **Prescriber** (`Medication.prescriberId`), which is the role.
   - Providers and conditions are many-to-many, stored on the condition (`Condition.providerIds`) and editable from either side.

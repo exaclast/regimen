@@ -56,12 +56,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.DoseEngine
+import com.exaclast.regimen.domain.ScheduledDoseItem
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.model.formatNum
+import com.exaclast.regimen.notifications.DoseAlarmTiming
 import com.exaclast.regimen.ui.ScheduleText
 import com.exaclast.regimen.ui.components.AppSnackbarHost
 import com.exaclast.regimen.ui.components.ConfirmDialog
@@ -80,6 +82,9 @@ fun MedicationDetailScreen(
   nowMillis: Long,
   todayIso: String,
   promptForSchedule: Boolean,
+  /** The scheduled dose "Log dose" should complete, if one is still to do today. */
+  dueDose: ScheduledDoseItem?,
+  onTakeDose: (ScheduledDoseItem, String?) -> Unit,
   onBack: () -> Unit,
   onEdit: () -> Unit,
   onDelete: () -> Unit,
@@ -104,7 +109,7 @@ fun MedicationDetailScreen(
     .take(10)
   val nextSite = DoseEngine.computeNextSite(medication, snapshot.doseLogs)
   val lastSite = DoseEngine.getLastSiteUsed(medication.id, snapshot.doseLogs)
-  val pacing = DoseEngine.evaluatePacing(medication, snapshot.doseLogs, nowMillis, todayIso)
+  val pacing = DoseEngine.evaluatePacing(medication, snapshot.doseLogs, nowMillis, todayIso, snapshot.buckets)
 
   var menuOpen by remember { mutableStateOf(false) }
   var confirmDelete by remember { mutableStateOf(false) }
@@ -114,7 +119,22 @@ fun MedicationDetailScreen(
   val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
   val multiSite = medication.siteRotationEnabled && medication.rotationSites.size > 1
 
-  fun log(site: String?) = onLogDose(medication, site)
+  // An extra dose is logged on its own; otherwise logging completes the dose that's due.
+  var loggingExtra by remember { mutableStateOf(false) }
+  val warning = pacing.warningText()
+
+  fun log(site: String?) {
+    if (dueDose != null && !loggingExtra) onTakeDose(dueDose, site) else onLogDose(medication, site)
+  }
+
+  fun proceedWithoutPacingCheck() {
+    if (multiSite) choosingSite = true else log(nextSite)
+  }
+
+  fun startLogging(extra: Boolean) {
+    loggingExtra = extra
+    if (warning != null) pacingPrompt = true else proceedWithoutPacingCheck()
+  }
 
   Scaffold(
     modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -165,13 +185,6 @@ fun MedicationDetailScreen(
             )
             Text("Default dose: ${medication.formattedDefaultDose()}", style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(4.dp))
-            val warning = when {
-              pacing.isDailyLimitReached -> pacing.maxDailyDoses?.let {
-                "Daily limit reached (${pacing.dosesTakenToday} of ${formatNum(it)})"
-              } ?: "Daily amount limit reached"
-              pacing.nextAllowedAtMillis != null -> "Next dose allowed at ${UiFormat.time(pacing.nextAllowedAtMillis)}"
-              else -> null
-            }
             HeroStatus(
               icon = if (warning != null) Icons.Default.Warning else Icons.Default.Check,
               text = warning ?: listOfNotNull(
@@ -183,18 +196,26 @@ fun MedicationDetailScreen(
               HeroStatus(icon = Icons.Default.Autorenew, text = "Next site: $nextSite")
             }
             Spacer(Modifier.height(8.dp))
+            val logLabel = when {
+              dueDose == null -> "Log dose"
+              (DoseAlarmTiming.windowStartMillis(dueDose.bucket, dueDose.dateIso) ?: 0L) > nowMillis ->
+                "Log ${dueDose.bucket.name} dose early"
+              else -> "Log ${dueDose.bucket.name} dose"
+            }
             if (warning != null) {
-              OutlinedButton(onClick = { pacingPrompt = true }, modifier = Modifier.fillMaxWidth()) {
-                Text("Log dose anyway…")
+              OutlinedButton(onClick = { startLogging(extra = false) }, modifier = Modifier.fillMaxWidth()) {
+                Text("$logLabel anyway…")
               }
             } else {
-              Button(
-                onClick = { if (multiSite) choosingSite = true else log(nextSite) },
-                modifier = Modifier.fillMaxWidth(),
-              ) {
+              Button(onClick = { startLogging(extra = false) }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Log dose")
+                Text(logLabel)
+              }
+            }
+            if (dueDose != null) {
+              TextButton(onClick = { startLogging(extra = true) }, modifier = Modifier.fillMaxWidth()) {
+                Text("Log an extra dose")
               }
             }
           }
@@ -368,7 +389,7 @@ fun MedicationDetailScreen(
       text = {
         Text(
           listOfNotNull(
-            pacing.nextAllowedAtMillis?.let { "The next dose isn't due until ${UiFormat.time(it)}." },
+            pacing.nextAllowedText()?.let { "The next dose isn't due until $it." },
             if (pacing.isDailyLimitReached) "You've reached today's limit." else null,
             "These limits come from this medication's settings.",
           ).joinToString(" ")
@@ -377,7 +398,7 @@ fun MedicationDetailScreen(
       confirmButton = {
         Button(onClick = {
           pacingPrompt = false
-          if (multiSite) choosingSite = true else log(nextSite)
+          proceedWithoutPacingCheck()
         }) { Text("Log anyway") }
       },
       dismissButton = { TextButton(onClick = { pacingPrompt = false }) { Text("Cancel") } },
@@ -477,6 +498,7 @@ private fun ScheduleRow(
       }
     }
     if (!schedule.enabled) add("Paused")
+    if (schedule.hasNoValidWindow(snapshot.buckets)) add("No dose window: no doses or reminders until you pick one")
   }.joinToString(" · ")
   ListItem(
     supportingContent = if (detail.isNotEmpty()) ({ Text(detail) }) else null,

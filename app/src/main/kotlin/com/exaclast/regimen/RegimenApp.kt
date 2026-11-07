@@ -27,6 +27,7 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
 import com.exaclast.regimen.domain.ConditionTimeline
 import com.exaclast.regimen.domain.DoseEngine
+import com.exaclast.regimen.domain.DoseTimeline
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.ThemeMode
 import com.exaclast.regimen.notifications.DoseNotificationStage
@@ -160,6 +161,7 @@ fun RegimenApp(
                 onOpenMedication = { navigator.navigate(Route.MedicationDetail(it)) },
                 onOpenWindow = { navigator.navigate(Route.DoseWindowEditor(it)) },
                 onAddMedication = { navigator.navigate(Route.MedicationEditor()) },
+                onReviewYesterday = { viewModel.selectDate(uiState.yesterdayIso) },
                 onLoadDemoData = viewModel::resetToSampleData,
                 onRestoreBackup = { uri ->
                   viewModel.openBackup(uri)
@@ -183,6 +185,8 @@ fun RegimenApp(
                 nowMillis = uiState.nowMillis,
                 todayIso = uiState.todayIso,
                 promptForSchedule = key.promptForSchedule,
+                dueDose = DoseTimeline.nextDoseFor(key.id, uiState.carriedOver, uiState.todayBoard),
+                onTakeDose = { item, site -> viewModel.takeScheduledDose(item, site) },
                 onBack = navigator::back,
                 onEdit = { navigator.navigate(Route.MedicationEditor(key.id)) },
                 onDelete = {
@@ -422,6 +426,9 @@ fun RegimenApp(
               DoseWindowEditorScreen(
                 initialBucket = existing,
                 canDelete = snapshot.buckets.size > 1,
+                allWindows = snapshot.buckets,
+                schedules = snapshot.schedules,
+                medications = snapshot.medications,
                 globalNotificationsEnabled = settings.notificationsEnabled,
                 globalAlarmsEnabled = settings.alarmsEnabled,
                 onClose = navigator::back,
@@ -429,8 +436,8 @@ fun RegimenApp(
                   viewModel.saveBucket(it)
                   navigator.back()
                 },
-                onDelete = {
-                  existing?.let { viewModel.deleteBucket(it.id) }
+                onDelete = { moveToId ->
+                  existing?.let { viewModel.deleteBucket(it.id, moveToId) }
                   navigator.back()
                 },
               )

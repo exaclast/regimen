@@ -288,6 +288,64 @@ class FdaNdcLookupServiceTest {
     )
   }
 
+  private fun fdaResult(name: String, mfg: String = "Acme", strength: String = "5 mg") = FdaDrugLookupResult(
+    ndc11 = "00000-0000-01",
+    formulaName = name,
+    brandName = null,
+    manufacturer = mfg,
+    strength = strength,
+    form = MedicationForm.TABLET,
+    defaultDoseUnit = DoseUnit.TABLET,
+  )
+
+  private fun criteria(name: String) = DrugCrossReferenceCriteria(
+    formulaName = name,
+    strength = "5 mg",
+    form = MedicationForm.TABLET,
+    manufacturer = "Acme",
+  )
+
+  private fun outcomeFor(name: String, pool: List<FdaDrugLookupResult>): CrossReferenceOutcome =
+    FdaNdcLookupService.evaluateDisambiguation(
+      FdaNdcLookupService.scoreAndFilterCandidates(pool, criteria(name)),
+      criteria(name),
+    )
+
+  @Test
+  fun lookAlikeDrugIsNeverAppliedAutomatically() {
+    assertTrue(outcomeFor("Prednisone", listOf(fdaResult("Prednisolone"))) is CrossReferenceOutcome.NeedsUserSelection)
+  }
+
+  @Test
+  fun nameContainedInAnotherDrugIsNeverAppliedAutomatically() {
+    assertTrue(outcomeFor("Escitalopram", listOf(fdaResult("Citalopram"))) is CrossReferenceOutcome.NeedsUserSelection)
+    assertTrue(outcomeFor("Citalopram", listOf(fdaResult("Escitalopram"))) is CrossReferenceOutcome.NeedsUserSelection)
+  }
+
+  @Test
+  fun exactNameRemovesLookAlikesFromTheChoices() {
+    val outcome = outcomeFor("Prednisone", listOf(fdaResult("Prednisolone"), fdaResult("Prednisone")))
+    assertTrue(outcome is CrossReferenceOutcome.UnambiguousMatch)
+    assertEquals("Prednisone", (outcome as CrossReferenceOutcome.UnambiguousMatch).candidate.result.formulaName)
+  }
+
+  @Test
+  fun lookAlikeChoiceSaysTheNameDiffers() {
+    val outcome = outcomeFor("Prednisone", listOf(fdaResult("Prednisolone"))) as CrossReferenceOutcome.NeedsUserSelection
+    assertTrue(outcome.candidates.single().missingOrDifferentSignals.any { it.contains("Name differs") })
+  }
+
+  @Test
+  fun ndcRecordForALookAlikeDrugIsNotConclusive() {
+    val record = fdaResult("Prednisolone")
+    fun conclusive(c: DrugCrossReferenceCriteria) =
+      FdaNdcLookupService.ndcMatchIsConclusive(FdaNdcLookupService.scoreCandidateAgainstCriteria(record, c), c)
+    assertEquals(false, conclusive(criteria("Prednisone")))
+    assertEquals(true, conclusive(criteria("Prednisolone")))
+    assertEquals(true, conclusive(DrugCrossReferenceCriteria(ndc = "00000-0000-01")))
+    assertEquals(false, conclusive(criteria("Prednisolone").copy(strength = "10 mg")))
+  }
+
   /** A product with several package sizes; the FDA lists the -14 bottle first. */
   private val multiPackageResponse = """
     {
