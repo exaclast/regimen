@@ -1,16 +1,34 @@
 name: Android CI & Signed Release
 
+# Changes that can't affect the build or tests don't need a CI run.
+# (Path filters are not applied to tag pushes, so releases always build.)
 on:
   push:
     branches:
       - main
       - master
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".gitignore"
+      - ".gitattributes"
+      - ".editorconfig"
+      - ".claude/**"
     tags:
       - "v*.*.*"
   pull_request:
     branches:
       - main
       - master
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".gitignore"
+      - ".gitattributes"
+      - ".editorconfig"
+      - ".claude/**"
   workflow_dispatch:
     inputs:
       version_name:

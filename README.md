@@ -1,61 +1,63 @@
 # Regimen (`com.exaclast.regimen`)
 
-**Regimen** is a low-friction, adaptive native Android medication and dose-tracking application built with Jetpack Compose and Material 3 Adaptive layouts. It is designed from the ground up for ADHD-friendly adherence, complex injectable/topical protocols with automated anatomical site rotation, and seamless support across phones, foldables, tablets, and x86/ARM desktop environments (Chromebooks / Android Desktop).
+[![Android CI](https://github.com/exaclast/regimen/actions/workflows/android-release.yml/badge.svg?branch=main)](https://github.com/exaclast/regimen/actions/workflows/android-release.yml)
+[![Latest stable release](https://img.shields.io/github/v/release/exaclast/regimen?label=stable)](https://github.com/exaclast/regimen/releases/latest)
+[![Latest pre-release](https://img.shields.io/github/v/release/exaclast/regimen?include_prereleases&label=pre-release)](https://github.com/exaclast/regimen/releases)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+![Min SDK 35](https://img.shields.io/badge/minSdk-35-green)
+![Kotlin](https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF)
+
+**Regimen** is a low-friction native Android medication and dose-tracking app built with Kotlin, Jetpack Compose and Material 3 Expressive. It is designed for ADHD-friendly adherence and for complex injectable/topical protocols with automated anatomical site rotation. It adapts to phones, foldables, tablets and desktop windows (Chromebooks / Android Desktop).
 
 ---
 
 ## Key Features
 
-### 1. Comprehensive Medication Tracking
-- **Core Details**: Formula/generic name, strength, dosage form (`Tablet`, `Capsule`, `Injectable (Vial)`, `Injectable (Pen)`, `Topical`, `Oral Liquid`, `Inhaler`, `Drops`, `Other`), and default dose amount/unit.
-- **Injectable & Vial Support**:
+### 1. Medication Tracking
+- **Core details**: formula/generic name, brand, strength, dosage form (`Tablet`, `Capsule`, `Injectable (Vial)`, `Injectable (Pen)`, `Topical`, `Oral Liquid`, `Inhaler`, `Drops`, `Other`), and default dose amount/unit.
+- **Injectable & vial support**:
   - Administration route (`IM`, `SC`, `ID`, `IV`).
-  - Vial concentration (`mg/mL`) and vial volume (`mL`).
-  - Automatic draw volume (`mL`) and `U-100` insulin syringe unit calculation from `mg` or `mcg` doses.
-  - Separate draw needle and injection needle specifications (`Gauge × Length`) plus syringe size/description.
-- **On-Device Gemini Nano (AICore) Label Scanner & Multi-Signal OpenFDA Cross-Reference**:
-  - **On-Device Gemini Nano Label Extraction**: Uses the ML Kit GenAI Prompt API (`com.google.mlkit:genai-prompt` backed by Android AICore) to analyze medication bottle/vial photos (`ImagePart`) or pasted text (`TextPart`) directly on-device and return a structured JSON payload (`ndc`, `formulaName`, `brandName`, `strength`, `form`, `defaultDoseAmount`, `manufacturer`, `prescriberName`, `lotNumber`, `expirationDateIso`, `instructions`, and `isCompound`)—with zero brittle regex or brand lists. Automatically disables the camera scan buttons on devices/emulators without AICore while keeping manual FDA lookup available everywhere.
-  - **NDC-11 First-Priority & Multi-Signal Cross-Reference**: If an `NDC-11` (or 10-digit NDC) is extracted from the label or entered in the **Optional Rx & Drug Details** section, it takes first priority as a direct match in the [OpenFDA Drug NDC API](https://open.fda.gov/apis/drug/ndc/). If no NDC is present or if it is inconclusive, Regimen cross-references all available signals (`formulaName`, `brandName`, `strength`, `form`, and `manufacturer`) without making blind assumptions—presenting a disambiguation dialog whenever multiple strengths, forms, or manufacturers match.
-- **Medication-Level Safety & Pacing Guardrails**:
-  - Minimum interval between doses (`minIntervalMinutes`).
-  - Maximum daily dose count (`maxDailyDoses`) and maximum daily cumulative amount (`maxDailyAmount`).
-  - Real-time pacing warnings on the **Today** board across both scheduled and PRN doses.
+  - Vial concentration (`mg/mL`) and volume (`mL`), with automatic draw volume. `U-100` syringe units are shown only on a U-100 syringe; prefilled devices show no volume.
+  - Separate draw and injection needle specs (`Gauge × Length`) plus syringe size.
+- **On-device label scanner (Gemini Nano / AICore)**: the ML Kit GenAI Prompt API reads bottle/vial photos or pasted text on-device and returns structured fields (NDC, names, strength, form, manufacturer, lot, expiry, instructions). Decoy schema fields and token sanitization keep patient, pharmacy and prescriber names from being read as drug names. Scan buttons are disabled on devices without AICore; manual lookup works everywhere.
+- **OpenFDA cross-reference**: an NDC takes first priority in the [OpenFDA NDC API](https://open.fda.gov/apis/drug/ndc/). Otherwise name, strength, form and manufacturer are combined. A name that is not an exact match is never applied without asking, and ambiguous matches open a disambiguation dialog.
+- **Pacing guardrails**: minimum interval between doses, maximum daily dose count, and maximum daily amount (totaled in the default unit). Daily limits count a dose on the calendar day it was taken, with overnight-window exceptions. Warnings appear on Today, in notifications and on the alarm screen. Logging a dose over its limit happens in the app, which explains the limit first.
 
-### 2. Automated Anatomical Site Rotation
-- Configurable per-medication ordered site rotation lists for injectables and topicals, with 1-tap clinical presets (e.g., *Ventrogluteal L/R*, *Deltoid L/R*, *Vastus Lateralis L/R*, *6-Site IM Rotation*, *Abdomen Quadrants*, *Topical Arms/Shoulders*).
-- **Actual-Site Continuation**: Next suggested site automatically advances from the **actual site used** in the most recent `TAKEN` dose log—so overriding a site on a given week cleanly shifts subsequent weeks without double-injecting the same side.
+### 2. Anatomical Site Rotation
+- Per-medication ordered site lists for injectables and topicals, with presets (e.g. *Ventrogluteal L/R*, *Deltoid L/R*, *Vastus Lateralis L/R*, *6-Site IM Rotation*, *Abdomen Quadrants*).
+- **Actual-site continuation**: the next suggested site advances from the site actually used in the most recent taken dose, so an override shifts later doses cleanly.
 
-### 3. Low-Friction Dose Windows & Escalating Alarms
-- **Time-of-Day Windows**: Instead of brittle single-minute reminders, doses are grouped into customizable **Dose Windows** (e.g., *Morning `7:00 AM – 10:00 AM`*, *Afternoon `12:00 PM – 3:00 PM`*, *Evening `5:00 PM – 8:00 PM`*, *Bedtime `9:00 PM – 11:30 PM`*).
-- **Two-Stage Doze-Piercing Notification & Exact Alarm Engine**:
-  1. **Window Start (Persistent Notification)**: Uses exact Doze-piercing wakeup (`setAlarmClock` / `setExactAndAllowWhileIdle`) to pin an ongoing notification on the exact start minute of a window with 1-tap **Take (`<Suggested Site>`)**, **Snooze 30m**, and **Skip** actions (and immediately syncs if a window is already open).
-  2. **Window End (Insistent Alarm)**: If no action (`TAKEN` or `SKIPPED`) is logged by the end of the window, triggers a high-priority insistent alarm (`Notification.FLAG_INSISTENT` + `USAGE_ALARM`).
-- **Flexible Schedules**:
-  - Every Day (`DAILY`)
-  - Every *N* Days Fixed Cycle (`EVERY_N_DAYS`)
-  - Specific Days of Week (`DAYS_OF_WEEK`)
-  - Every *N* Days Relative to Last Taken Dose (`RELATIVE_TO_LAST_DOSE`) — prevents schedule drift when a weekly/biweekly dose is taken a day late
-  - As Needed / PRN (`AS_NEEDED`)
-- **Batch Actions**: 1-tap **"Take All"** per time-of-day window on the Today screen.
+### 3. Schedules & Dose Windows
+- **Dose windows**: doses are grouped into customizable time-of-day windows (Morning, Afternoon, Evening, Bedtime by default). Windows can be added, edited and deleted, are always ordered by start time, and can cross midnight. After midnight, Today shows a still-open dose from yesterday as "From last night".
+- **Deleting a window** lets you choose where its doses move; logs move with them so a taken dose isn't due again. "Restore default windows" keeps any custom window a schedule still uses.
+- **Schedule types**: every day, every *N* days, specific days of the week, specific dates, every *N* days relative to the last dose (no drift when a dose is taken late), and as needed (PRN).
+- **Course dates**: optional inclusive start and end dates, with a start/end window for partial first and last days. A dose that was actually logged always stays visible.
+- **Logging**: 1-tap Take/Skip, **Take all** per window, and a separate "Log an extra dose" for unscheduled doses. Reversible actions show a Snackbar with **Undo** rather than a confirmation.
 
-### 4. Prescribers & Conditions
-- **Prescribers**: Track doctor name, specialty, practice/clinic, phone, email, Primary Care (`PCP`) status, start/end of care dates, and view all linked medications.
-- **Conditions (Indications)**: Track diagnoses, clinical status (`Active`, `Managed / Stable`, `In Remission`, `Resolved`), diagnosis date, notes, and link conditions directly as medication indications.
+### 4. Notifications & Alarms
+- **One notification per window occurrence** ("Morning dose" / "Morning medications") listing the drugs and doses, with Take / Skip (single) or Take all (several).
+- **Alarm engine**: exact, Doze-piercing alarms for window start, repeat nudges on a fixed grid, and end of window (only while unlogged doses remain). All of it is re-armed after any data, settings, clock or permission change, including after reboot.
+- **Snooze**: swiping a reminder away snoozes it; the alarm screen and the app also offer Snooze, and each snoozed dose gets its own alarm.
+- **End-of-window alarm screen** opens via a full-screen intent and rings; opening it from a tap is silent.
+- **Discreet mode** hides medication names on the lock screen.
+- **Master switches** to pause all reminders or silence only the ringing alarm.
 
-### 5. Global Settings, Privacy & Adaptive Multi-Form-Factor UI
-- **Global Notification & Alarm Controls**:
-  - Master switch to pause/resume all dose window notifications and alarms globally.
-  - Separate master switch to silence end-of-window ringing alarms while keeping persistent window-start notifications active.
-  - **Discreet Notifications**: Optional lock-screen & notification shade privacy mode (`VISIBILITY_PRIVATE`) that hides medication names and anatomical injection sites.
-  - Configurable default snooze duration (`15m`, `30m`, `45m`, `60m`) and optional confirmation prompt before 1-tap dose logging.
-  - **First-Launch Permissions & AI Setup Checklist**: Guides users through granting `POST_NOTIFICATIONS`, `SCHEDULE_EXACT_ALARM` (*Alarms & reminders*), `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (*Unrestricted Battery*), and monitoring on-device **Gemini Nano (AICore)** status on first launch (or when permissions change in future updates). If a user skips or declines any optional permission, the decision is persisted in settings so they are never nagged again on subsequent launches (and remains accessible anytime from **Settings**).
-- **Appearance & Theme Controls**:
-  - Instant switching between `System Default`, `Light`, and `Dark` themes plus **Material You Dynamic Color** support.
-- **Adaptive Navigation & List-Detail Panes**:
-  - Automatically switches between a 4-tab bottom navigation bar (compact phones) and navigation rail + two-pane list/detail layouts (unfolded foldables, tablets, and desktop windows) using `NavigationSuiteScaffold` and `ListDetailPaneScaffold`.
-- **100% Architecture-Neutral Local Storage**:
-  - Built on Android's native `SQLiteOpenHelper` + `kotlinx-serialization-json` with zero native `.so` binary dependencies—ensuring out-of-the-box compatibility across `arm64-v8a`, `x86_64` Chromebooks/desktops, and 16 KB page size devices.
-  - Full JSON backup export/restore (including settings) and 1-tap sample data cleanup via Settings.
+### 5. Providers & Conditions (optional)
+- **Providers**: name, specialty, practice, phone, email, primary-care status, care dates, and linked medications. A medication's provider is labelled *Prescriber*.
+- **Conditions**: `ACUTE` (Active/Resolved) or `CHRONIC`, with dates and notes, linked to medications as indications. Providers and conditions are many-to-many and editable from either side. Past conditions are archived, and "Had this again" starts a new episode of a past acute condition.
+- Both are optional: turn off either in Settings to hide its tab and fields. Hiding never deletes data.
+
+### 6. Encrypted Backup & Sync Groundwork
+- One format for backups and sync: a versioned JSON bundle, including deletion tombstones.
+- **Encryption**: AES-256-GCM with a random data key wrapped by a PBKDF2 passphrase key. A recovery code (the data key plus a checksum) can be shown, and the data key is cached on the device under an Android Keystore key.
+- **Merge-aware restore**: `BundleMerger` does a three-way merge against the last agreed copy. Replace restores this device's own settings too. Reminder, alarm, theme and FDA-consent settings stay per device.
+- Each device has an identity, and a "primary" claim decides conflicts when both sides changed.
+
+### 7. Settings, Privacy & Adaptive UI
+- **First-launch checklist** for notifications, exact alarms, unrestricted battery and Gemini Nano status. Declined options aren't nagged again and stay available in Settings.
+- **Appearance**: System / Light / Dark, plus Material You dynamic color.
+- **Adaptive navigation**: `NavigationSuiteScaffold` switches between a bottom bar and a navigation rail. Editors and settings are full-screen pages that hide the bar, with predictive back.
+- **Local storage**: native `SQLiteOpenHelper` plus `kotlinx-serialization-json`, with no native `.so` dependencies. This works on `arm64-v8a`, `x86_64` and 16 KB page-size devices.
 
 ---
 
@@ -63,31 +65,24 @@
 
 ```text
 app/src/main/kotlin/com/exaclast/regimen/
-├── MainActivity.kt                  # Entry point & edge-to-edge host
-├── RegimenApp.kt                    # Adaptive NavigationSuiteScaffold & live theme host
-├── data/
-│   ├── DrugBarcodeScanner.kt        # On-device Gemini Nano (ML Kit GenAI Prompt / AICore) label analyzer
-│   ├── DrugLabelParser.kt           # Structured JSON prompt & kotlinx.serialization schema for Gemini Nano
-│   ├── FdaNdcLookupService.kt       # OpenFDA NDC-11 lookup & multi-signal cross-reference engine
-│   ├── RegimenDatabase.kt           # SQLite storage engine
-│   └── RegimenRepository.kt         # Reactive StateFlow repository, settings store & demo seeding
-├── domain/
-│   └── DoseEngine.kt                # Schedule evaluation, site rotation, and pacing engine
-├── model/
-│   └── Models.kt                    # Serializable domain entities, AppSettings & backup bundle
-├── notifications/
-│   ├── DoseActionReceiver.kt        # BroadcastReceiver for 1-tap Take/Snooze/Skip & exact alarm chaining
-│   └── DoseNotificationManager.kt   # Doze-piercing persistent window notifications & insistent alarms
+├── MainActivity.kt, RegimenApp.kt       # Entry point, adaptive scaffold, Navigation 3 host, theme
+├── data/                                # SQLite storage, repository, backup + key store,
+│                                        #   Gemini Nano label scanner/parser, OpenFDA lookup
+├── domain/                              # DoseEngine (schedules, pacing, site rotation), DoseTimeline,
+│                                        #   WindowDeletion, ConditionTimeline
+├── model/Models.kt                      # Serializable entities, AppSettings, backup bundle
+├── notifications/                       # DoseNotificationManager, action receiver, alarm screen/ringtone
+├── sync/                                # BundleCrypto, BundleMerger, BackupFiles, DeviceIdentity
 └── ui/
-    ├── RegimenViewModel.kt          # UI state holder & user actions
-    ├── screens/
-    │   ├── TodayScreen.kt           # Daily dose board, PRN drawer, and dose confirmation dialog
-    │   ├── MedicationsScreen.kt     # Adaptive medication list/detail, streamlined editor, schedule dialogs
-    │   ├── PrescribersScreen.kt     # Prescriber directory & editor
-    │   ├── ConditionsScreen.kt      # Condition/indication tracker & editor
-    │   └── SettingsDialog.kt        # Global notifications/alarms, appearance, dose windows, backup & reset
-    └── theme/                       # Material 3 color scheme & typography
+    ├── RegimenViewModel.kt              # uiState: StateFlow + user actions
+    ├── navigation/Routes.kt             # Serializable Routes + Navigator
+    ├── components/                      # Shared lists, switches, pickers, UiFormat
+    ├── screens/                         # Today, Medications (list/detail/editor), Providers,
+    │                                    #   Conditions, Settings, Backup screens
+    └── theme/                           # Material 3 Expressive theme
 ```
+
+Unit tests live in `app/src/test/kotlin/` and cover the dose engine and timeline, window deletion, notifications text and timing, the bundle merger and crypto, label parsing and the FDA lookup.
 
 ---
 
@@ -95,11 +90,12 @@ app/src/main/kotlin/com/exaclast/regimen/
 
 ### Prerequisites
 - **JDK 17+**
-- **Android SDK Platform 36** (`compileSdk = 36`, `minSdk = 26`)
+- **Android SDK Platform 37** (`compileSdk = 37`, `targetSdk = 37`, `minSdk = 35`)
+- AGP 9.1+ (Material 3 `1.5.0-beta02` requires it)
 
 ### Commands
 ```zsh
-# Run unit tests (DoseEngine & OpenFDA NDC-11 parser tests)
+# Run unit tests
 ./gradlew testDebugUnitTest
 
 # Build debug APK
@@ -107,6 +103,10 @@ app/src/main/kotlin/com/exaclast/regimen/
 
 # Build release APK & AAB
 ./gradlew assembleRelease bundleRelease
+
+# Install and launch
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n com.exaclast.regimen/.MainActivity
 ```
 
 ---
@@ -114,8 +114,9 @@ app/src/main/kotlin/com/exaclast/regimen/
 ## CI/CD & Automated Signing (GitHub Actions)
 
 The repository includes [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml):
-- **Push / PR to `main`**: Runs unit tests and uploads `regimen-debug-apk` as a workflow artifact.
-- **Tag Push (`v*.*.*`) or Manual Workflow Dispatch**: Runs unit tests, signs the release APK and AAB, uploads release artifacts, and publishes a GitHub Release.
+- **Push / PR to `main`**: runs unit tests and uploads `regimen-debug-apk` as a workflow artifact.
+- **Tag push (`v*.*.*`) or manual dispatch**: runs unit tests, builds the signed release APK and AAB, uploads them as workflow artifacts, and (for tags) publishes a GitHub Release.
+- **Pre-releases**: a tag containing a hyphen (e.g. `v0.4.0-alpha1`) is published as a pre-release; a plain tag (e.g. `v1.0.0`) is a stable release.
 
 ### Signing Setup
 1. Generate a PKCS#12 keystore:
@@ -136,3 +137,8 @@ The repository includes [`.github/workflows/android-release.yml`](.github/workfl
    git tag v1.0.0 && git push origin v1.0.0
    ```
 
+---
+
+## License
+
+Released under the [GNU GPL v3](LICENSE).
