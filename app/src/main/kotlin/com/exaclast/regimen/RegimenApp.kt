@@ -25,7 +25,7 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.ui.NavDisplay
-import com.exaclast.regimen.domain.ConditionTimeline
+import com.exaclast.regimen.domain.IndicationTimeline
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.DoseTimeline
 import com.exaclast.regimen.model.AppSettings
@@ -40,9 +40,9 @@ import com.exaclast.regimen.ui.navigation.TopLevel
 import com.exaclast.regimen.ui.navigation.isFullScreenTask
 import com.exaclast.regimen.ui.screens.BackupEncryptionScreen
 import com.exaclast.regimen.ui.screens.BackupRestoreScreen
-import com.exaclast.regimen.ui.screens.ConditionDetailScreen
-import com.exaclast.regimen.ui.screens.ConditionEditorScreen
-import com.exaclast.regimen.ui.screens.ConditionListScreen
+import com.exaclast.regimen.ui.screens.IndicationDetailScreen
+import com.exaclast.regimen.ui.screens.IndicationEditorScreen
+import com.exaclast.regimen.ui.screens.IndicationListScreen
 import com.exaclast.regimen.ui.screens.DiagnosticsTarget
 import com.exaclast.regimen.ui.screens.DoseWindowEditorScreen
 import com.exaclast.regimen.ui.screens.MedicationDetailScreen
@@ -95,7 +95,7 @@ fun RegimenApp(
   val visibleTabs = TopLevel.entries.filter { tab ->
     when (tab) {
       TopLevel.PROVIDERS -> snapshot.tracksProviders
-      TopLevel.CONDITIONS -> snapshot.tracksConditions
+      TopLevel.INDICATIONS -> snapshot.tracksIndications
       else -> true
     }
   }
@@ -198,7 +198,7 @@ fun RegimenApp(
                 onDeleteSchedule = viewModel::deleteSchedule,
                 onLogDose = { med, site -> viewModel.logPrnOrCustomDose(med, siteUsed = site) },
                 onOpenProvider = { navigator.navigate(Route.ProviderDetail(it)) },
-                onOpenCondition = { navigator.navigate(Route.ConditionDetail(it)) },
+                onOpenIndication = { navigator.navigate(Route.IndicationDetail(it)) },
               )
             }
 
@@ -207,17 +207,17 @@ fun RegimenApp(
               if (key.id != null && existing == null) {
                 LaunchedEffect(key) { navigator.back() }
               } else {
-                // Past conditions and providers are only offered if this medication already uses them.
+                // Past indications and providers are only offered if this medication already uses them.
                 val today = java.time.LocalDate.now()
                 MedicationEditorScreen(
                   initialMedication = existing,
-                  conditions = snapshot.conditions.filter {
-                    !snapshot.isArchived(it, today) || it.id == existing?.indicationConditionId
+                  indications = snapshot.indications.filter {
+                    !snapshot.isArchived(it, today) || it.id in existing?.indicationIds.orEmpty()
                   },
                   providers = snapshot.providers.filter {
-                    !ConditionTimeline.isPast(it, today) || it.id == existing?.prescriberId
+                    !IndicationTimeline.isPast(it, today) || it.id == existing?.prescriberId
                   },
-                  showConditions = snapshot.tracksConditions,
+                  showIndications = snapshot.tracksIndications,
                   showProviders = snapshot.tracksProviders,
                   configuredPatientName = settings.patientName,
                   allowFdaLookup = settings.allowFdaLookup,
@@ -272,8 +272,8 @@ fun RegimenApp(
                   navigator.back()
                 },
                 onOpenMedication = { navigator.navigate(Route.MedicationDetail(it)) },
-                onOpenCondition = { navigator.navigate(Route.ConditionDetail(it)) },
-                onSetConditions = { ids -> viewModel.setProviderConditions(key.id, ids) },
+                onOpenIndication = { navigator.navigate(Route.IndicationDetail(it)) },
+                onSetIndications = { ids -> viewModel.setProviderIndications(key.id, ids) },
               )
             }
 
@@ -289,45 +289,47 @@ fun RegimenApp(
               )
             }
 
-            entry<Route.Conditions> {
-              ConditionListScreen(
+            entry<Route.Indications> {
+              IndicationListScreen(
                 snapshot = snapshot,
-                onOpenCondition = { navigator.navigate(Route.ConditionDetail(it)) },
-                onAddCondition = { navigator.navigate(Route.ConditionEditor()) },
+                onOpenIndication = { navigator.navigate(Route.IndicationDetail(it)) },
+                onAddIndication = { navigator.navigate(Route.IndicationEditor()) },
               )
             }
 
-            entry<Route.ConditionDetail> { key ->
-              ConditionDetailScreen(
-                conditionId = key.id,
+            entry<Route.IndicationDetail> { key ->
+              IndicationDetailScreen(
+                indicationId = key.id,
                 snapshot = snapshot,
                 onBack = navigator::back,
-                onEdit = { navigator.navigate(Route.ConditionEditor(key.id)) },
+                onEdit = { navigator.navigate(Route.IndicationEditor(key.id)) },
                 onDelete = {
-                  viewModel.deleteCondition(key.id)
+                  viewModel.deleteIndication(key.id)
                   navigator.back()
                 },
                 onOpenMedication = { navigator.navigate(Route.MedicationDetail(it)) },
                 onOpenProvider = { navigator.navigate(Route.ProviderDetail(it)) },
-                onHadAgain = { navigator.navigate(Route.ConditionEditor(copyFromId = key.id)) },
+                onSetMedications = { ids -> viewModel.setIndicationMedications(key.id, ids) },
+                onSetProviders = { ids -> viewModel.setIndicationProviders(key.id, ids) },
+                onHadAgain = { navigator.navigate(Route.IndicationEditor(copyFromId = key.id)) },
               )
             }
 
-            entry<Route.ConditionEditor> { key ->
-              val existing = key.id?.let { id -> snapshot.conditions.find { it.id == id } }
+            entry<Route.IndicationEditor> { key ->
+              val existing = key.id?.let { id -> snapshot.indications.find { it.id == id } }
               val template = remember(key.copyFromId) {
                 key.copyFromId
-                  ?.let { id -> snapshot.conditions.find { it.id == id } }
-                  ?.let { ConditionTimeline.recurrence(it, java.time.LocalDate.now()) }
+                  ?.let { id -> snapshot.indications.find { it.id == id } }
+                  ?.let { IndicationTimeline.recurrence(it, java.time.LocalDate.now()) }
               }
-              ConditionEditorScreen(
-                initialCondition = existing,
+              IndicationEditorScreen(
+                initialIndication = existing,
                 template = template,
                 snapshot = snapshot,
                 onClose = navigator::back,
                 onSave = { saved ->
-                  viewModel.saveCondition(saved)
-                  if (existing == null) navigator.replace(Route.ConditionDetail(saved.id)) else navigator.back()
+                  viewModel.saveIndication(saved)
+                  if (existing == null) navigator.replace(Route.IndicationDetail(saved.id)) else navigator.back()
                 },
               )
             }
@@ -341,14 +343,14 @@ fun RegimenApp(
                   schedules = snapshot.schedules,
                   buckets = snapshot.buckets,
                   logs = snapshot.doseLogs,
-                  conditions = snapshot.conditions,
+                  indications = snapshot.indications,
                   providers = snapshot.providers,
                 ).bucketGroups.flatMap { it.items }.let { items -> items.firstOrNull { !it.isCompleted } ?: items.firstOrNull() }
               }
               SettingsScreen(
                 settings = settings,
                 tracksProviders = snapshot.tracksProviders,
-                tracksConditions = snapshot.tracksConditions,
+                tracksIndications = snapshot.tracksIndications,
                 buckets = snapshot.buckets,
                 diagnosticsTarget = testItem?.let {
                   DiagnosticsTarget("${it.medication.primaryName} (${it.bucket.name})")
@@ -451,7 +453,7 @@ fun RegimenApp(
         StartupPermissionsDialog(
           settings = settings,
           tracksProviders = snapshot.tracksProviders,
-          tracksConditions = snapshot.tracksConditions,
+          tracksIndications = snapshot.tracksIndications,
           onSaveSettings = viewModel::saveSettings,
           // The dialog saves its own "seen" flag together with the name typed into it; saving
           // here too (from an older settings copy) would overwrite that name.

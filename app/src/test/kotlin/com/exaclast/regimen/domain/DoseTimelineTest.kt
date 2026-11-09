@@ -36,7 +36,7 @@ class DoseTimelineTest {
     suggestedSite = null,
     lastSiteUsed = null,
     pacing = PacingEvaluation(canTakeNow = true, isIntervalWarning = false, isDailyLimitReached = false, statusSummary = "Ready"),
-    indicationCondition = null,
+    indications = emptyList(),
     prescriber = null,
   )
 

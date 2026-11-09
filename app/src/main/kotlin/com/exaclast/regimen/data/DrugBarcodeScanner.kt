@@ -2,16 +2,14 @@ package com.exaclast.regimen.data
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.ImageDecoder
 import android.net.Uri
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
+import com.google.mlkit.genai.common.GenAiException
 import com.google.mlkit.genai.prompt.Generation
 import com.google.mlkit.genai.prompt.GenerativeModel
-import com.google.mlkit.genai.prompt.ImagePart
 import com.google.mlkit.genai.prompt.TextPart
 import com.google.mlkit.genai.prompt.generateContentRequest
 import java.io.File
@@ -20,6 +18,29 @@ import kotlinx.coroutines.withContext
 
 object DrugBarcodeScanner {
 
+  /** One place to choose the model. Stage/preference variants were tried and made no difference to refusals. */
+  private fun newClient(): GenerativeModel = Generation.getClient()
+
+  /**
+   * [GenAiException.errorCode] AICore returns when its safety policy declines the request ("Request
+   * doesn't pass certain policy check"). What trips it is not understood: it has refused labels for
+   * unrelated drugs (e.g. doxycycline, Descovy) and accepted others.
+   */
+  private const val ERROR_CODE_POLICY_BLOCKED = 4
+
+  const val POLICY_BLOCKED_MESSAGE =
+    "The on-device AI declined to read this label. This sometimes happens even with a clear photo; " +
+      "you can try again with a different photo, or enter the details manually."
+
+  private fun Throwable.toUserFacing(): Throwable =
+    if (this is GenAiException && errorCode == ERROR_CODE_POLICY_BLOCKED) {
+      IllegalStateException(POLICY_BLOCKED_MESSAGE, this)
+    } else {
+      this
+    }
+
+  private fun <T> Result<T>.withUserFacingErrors(): Result<T> = recoverCatching { throw it.toUserFacing() }
+
   /**
    * Returns true if the current device supports on-device Gemini Nano via Android AICore
    * ([FeatureStatus.AVAILABLE], [FeatureStatus.DOWNLOADABLE], or [FeatureStatus.DOWNLOADING]).
@@ -27,7 +48,7 @@ object DrugBarcodeScanner {
    */
   suspend fun isGeminiNanoAvailable(): Boolean = withContext(Dispatchers.IO) {
     runCatching {
-      val model = Generation.getClient()
+      val model = newClient()
       try {
         val status = model.checkStatus()
         status == FeatureStatus.AVAILABLE ||
@@ -44,7 +65,7 @@ object DrugBarcodeScanner {
    */
   suspend fun checkNanoStatus(): Int = withContext(Dispatchers.IO) {
     runCatching {
-      val model = Generation.getClient()
+      val model = newClient()
       try {
         model.checkStatus()
       } finally {
@@ -60,7 +81,7 @@ object DrugBarcodeScanner {
     onProgress: (String) -> Unit = {},
   ): Result<Unit> = withContext(Dispatchers.IO) {
     runCatching {
-      val model = Generation.getClient()
+      val model = newClient()
       try {
         val status = model.checkStatus()
         if (status == FeatureStatus.AVAILABLE) return@runCatching
@@ -127,38 +148,45 @@ object DrugBarcodeScanner {
   }
 
   /**
-   * Analyzes a captured or selected photo of a medication label using on-device Gemini Nano (AICore)
-   * with a multimodal [ImagePart] + structured JSON prompt.
+   * Max characters of recognized text sent to the model. The Prompt API takes about 4000 tokens in
+   * total and the extraction prompt itself uses several hundred.
    */
-  suspend fun analyzeLabelFromImageUri(
+  private const val MAX_LABEL_TEXT_CHARS = 6000
+
+  /**
+   * Reads one or more photos of the same label with on-device text recognition, then has Gemini Nano
+   * structure the text. Sending text instead of the image is deliberate: AICore's safety check
+   * refuses many label photos outright but accepts the same label as text. Several photos let the
+   * user turn a small bottle whose label wraps around it.
+   */
+  suspend fun analyzeLabelFromPhotos(
     context: Context,
-    imageUri: Uri,
+    imageUris: List<Uri>,
     userConfiguredPatientName: String? = null,
     onStatusUpdate: (String) -> Unit = {},
   ): Result<ParsedMedicationLabel> = withContext(Dispatchers.IO) {
     runCatching {
-      val bitmap = loadScaledBitmap(context, imageUri, maxDimension = 1280)
-      val model = Generation.getClient()
-      try {
-        ensureModelReady(model, onStatusUpdate)
-        onStatusUpdate("Analyzing label with on-device Gemini Nano...")
-        val request = generateContentRequest(
-          ImagePart(bitmap),
-          TextPart(DrugLabelParser.buildLabelExtractionPrompt(knownPatientName = userConfiguredPatientName)),
-        ) {
-          temperature = 0.1f
-          maxOutputTokens = 650
-        }
-        val response = model.generateContent(request)
-        val outputText = response.candidates.firstOrNull()?.text
-          ?: throw IllegalStateException("Gemini Nano returned an empty response.")
-        DrugLabelParser.parseGeminiJsonResponse(
-          rawOutput = outputText,
-          userConfiguredPatientName = userConfiguredPatientName,
+      onStatusUpdate(if (imageUris.size == 1) "Reading label text..." else "Reading label text from ${imageUris.size} photos...")
+      val texts = LabelTextRecognizer.recognize(context, imageUris).map { it.trim() }.filter { it.isNotEmpty() }
+      if (texts.isEmpty()) {
+        throw IllegalStateException(
+          "Couldn't read any text from the photo. Try better light, and hold the label flat and closer."
         )
-      } finally {
-        model.close()
       }
+      val combined = if (texts.size == 1) {
+        texts.single()
+      } else {
+        "(Text read from ${texts.size} photos of the same container, turned between shots. Lines may " +
+          "repeat, be out of order or be misread near the edges. A word can be cut off at the edge of " +
+          "one photo and continue in another, for example \"AMOXI\" in one and \"XICILLIN\" in the " +
+          "next: when the end of one fragment overlaps the start of another, join them into the full word.)\n\n" +
+          texts.joinToString("\n\n")
+      }
+      analyzeLabelFromText(
+        rawLabelText = combined.take(MAX_LABEL_TEXT_CHARS),
+        userConfiguredPatientName = userConfiguredPatientName,
+        onStatusUpdate = onStatusUpdate,
+      ).getOrThrow()
     }
   }
 
@@ -171,7 +199,7 @@ object DrugBarcodeScanner {
     onStatusUpdate: (String) -> Unit = {},
   ): Result<ParsedMedicationLabel> = withContext(Dispatchers.IO) {
     runCatching {
-      val model = Generation.getClient()
+      val model = newClient()
       try {
         ensureModelReady(model, onStatusUpdate)
         onStatusUpdate("Analyzing label text with on-device Gemini Nano...")
@@ -196,7 +224,7 @@ object DrugBarcodeScanner {
       } finally {
         model.close()
       }
-    }
+    }.withUserFacingErrors()
   }
 
   private suspend fun ensureModelReady(
@@ -224,27 +252,6 @@ object DrugBarcodeScanner {
       }
       else -> {
         throw IllegalStateException("On-device Gemini Nano (AICore) is not available on this device.")
-      }
-    }
-  }
-
-  private fun loadScaledBitmap(
-    context: Context,
-    imageUri: Uri,
-    maxDimension: Int,
-  ): Bitmap {
-    val source = ImageDecoder.createSource(context.contentResolver, imageUri)
-    return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-      decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-      val w = info.size.width
-      val h = info.size.height
-      val longest = maxOf(w, h)
-      if (longest > maxDimension) {
-        val scale = maxDimension.toFloat() / longest.toFloat()
-        decoder.setTargetSize(
-          (w * scale).toInt().coerceAtLeast(1),
-          (h * scale).toInt().coerceAtLeast(1),
-        )
       }
     }
   }

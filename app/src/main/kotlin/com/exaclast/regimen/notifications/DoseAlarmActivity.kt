@@ -254,7 +254,7 @@ fun DoseAlarmScreen(
       schedules = snapshot.schedules,
       buckets = snapshot.buckets,
       logs = snapshot.doseLogs,
-      conditions = snapshot.conditions,
+      indications = snapshot.indications,
       providers = snapshot.providers,
     )
   }

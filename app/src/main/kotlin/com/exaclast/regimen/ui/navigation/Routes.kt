@@ -19,7 +19,7 @@ sealed interface Route : NavKey {
 
   @Serializable data object Providers : Route
 
-  @Serializable data object Conditions : Route
+  @Serializable data object Indications : Route
 
   @Serializable data class MedicationDetail(val id: String, val promptForSchedule: Boolean = false) : Route
 
@@ -31,10 +31,10 @@ sealed interface Route : NavKey {
 
   @Serializable data class ProviderEditor(val id: String? = null) : Route
 
-  @Serializable data class ConditionDetail(val id: String) : Route
+  @Serializable data class IndicationDetail(val id: String) : Route
 
-  /** [copyFromId]: start a new episode pre-filled from that (past, acute) condition. */
-  @Serializable data class ConditionEditor(val id: String? = null, val copyFromId: String? = null) : Route
+  /** [copyFromId]: start a new episode pre-filled from that past indication. */
+  @Serializable data class IndicationEditor(val id: String? = null, val copyFromId: String? = null) : Route
 
   @Serializable data object Settings : Route
 
@@ -52,7 +52,7 @@ enum class TopLevel(val route: Route, val label: String, val icon: ImageVector) 
   TODAY(Route.Today, "Today", Icons.Default.CheckCircle),
   MEDICATIONS(Route.Medications, "Medications", Icons.Default.Medication),
   PROVIDERS(Route.Providers, "Providers", Icons.Default.Badge),
-  CONDITIONS(Route.Conditions, "Conditions", Icons.Default.Favorite),
+  INDICATIONS(Route.Indications, "Indications", Icons.Default.Favorite),
 }
 
 /** Full-screen task destinations hide the navigation bar. */
@@ -60,7 +60,7 @@ val Route.isFullScreenTask: Boolean
   get() = this is Route.MedicationEditor ||
     this is Route.ScheduleEditor ||
     this is Route.ProviderEditor ||
-    this is Route.ConditionEditor ||
+    this is Route.IndicationEditor ||
     this is Route.Settings ||
     this is Route.DoseWindowEditor ||
     this is Route.BackupEncryption ||

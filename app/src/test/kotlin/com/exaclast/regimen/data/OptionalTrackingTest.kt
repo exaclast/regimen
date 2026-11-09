@@ -1,7 +1,7 @@
 package com.exaclast.regimen.data
 
 import com.exaclast.regimen.model.AppSettings
-import com.exaclast.regimen.model.Condition
+import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.Provider
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -10,19 +10,19 @@ import org.junit.Test
 class OptionalTrackingTest {
 
   private val doc = Provider(id = "p1", name = "Dr. Rostova")
-  private val condition = Condition(id = "c1", name = "Hypertension")
+  private val indication = Indication(id = "c1", name = "Hypertension")
 
   @Test
   fun unset_followsWhetherRecordsExist() {
     // New install: nothing entered, so both are hidden.
     val fresh = RegimenSnapshot()
     assertFalse(fresh.tracksProviders)
-    assertFalse(fresh.tracksConditions)
+    assertFalse(fresh.tracksIndications)
 
     // Existing user with records keeps seeing them after updating.
-    val existing = RegimenSnapshot(providers = listOf(doc), conditions = listOf(condition))
+    val existing = RegimenSnapshot(providers = listOf(doc), indications = listOf(indication))
     assertTrue(existing.tracksProviders)
-    assertTrue(existing.tracksConditions)
+    assertTrue(existing.tracksIndications)
 
     // Deleted (tombstoned) records don't count.
     val onlyDeleted = RegimenSnapshot(providers = listOf(doc.copy(deletedAtEpochMillis = 1L)))
@@ -32,15 +32,15 @@ class OptionalTrackingTest {
   @Test
   fun explicitChoice_winsOverData() {
     val hiddenDespiteData = RegimenSnapshot(
-      settings = AppSettings(trackProviders = false, trackConditions = false),
+      settings = AppSettings(trackProviders = false, trackIndications = false),
       providers = listOf(doc),
-      conditions = listOf(condition),
+      indications = listOf(indication),
     )
     assertFalse(hiddenDespiteData.tracksProviders)
-    assertFalse(hiddenDespiteData.tracksConditions)
+    assertFalse(hiddenDespiteData.tracksIndications)
 
-    val shownWithoutData = RegimenSnapshot(settings = AppSettings(trackProviders = true, trackConditions = true))
+    val shownWithoutData = RegimenSnapshot(settings = AppSettings(trackProviders = true, trackIndications = true))
     assertTrue(shownWithoutData.tracksProviders)
-    assertTrue(shownWithoutData.tracksConditions)
+    assertTrue(shownWithoutData.tracksIndications)
   }
 }

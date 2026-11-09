@@ -145,4 +145,5 @@ dependencies {
 
   // On-device Gemini Nano / AICore Label Scanner (ML Kit GenAI Prompt API)
   implementation(libs.mlkit.genai.prompt)
+  implementation(libs.mlkit.text.recognition)
 }

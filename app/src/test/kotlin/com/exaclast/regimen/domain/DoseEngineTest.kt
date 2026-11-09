@@ -382,7 +382,7 @@ class DoseEngineTest {
       schedules = listOf(sched),
       buckets = buckets,
       logs = logs,
-      conditions = emptyList(),
+      indications = emptyList(),
       providers = emptyList(),
     ).bucketGroups.filter { it.items.isNotEmpty() }.map { it.bucket.id }
 

@@ -1,13 +1,13 @@
 package com.exaclast.regimen.data
 
 import android.content.Context
-import com.exaclast.regimen.domain.ConditionTimeline
+import com.exaclast.regimen.domain.IndicationTimeline
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.WindowDeletion
 import com.exaclast.regimen.model.AppSettings
-import com.exaclast.regimen.model.Condition
-import com.exaclast.regimen.model.ConditionKind
-import com.exaclast.regimen.model.ConditionStatus
+import com.exaclast.regimen.model.Indication
+import com.exaclast.regimen.model.IndicationKind
+import com.exaclast.regimen.model.IndicationStatus
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
@@ -33,26 +33,26 @@ data class RegimenSnapshot(
   val settings: AppSettings = AppSettings(),
   val medications: List<Medication> = emptyList(),
   val providers: List<Provider> = emptyList(),
-  val conditions: List<Condition> = emptyList(),
+  val indications: List<Indication> = emptyList(),
   val buckets: List<TimeOfDayBucket> = TimeOfDayBucket.defaultBuckets(),
   val schedules: List<MedicationSchedule> = emptyList(),
   val doseLogs: List<DoseLog> = emptyList(),
 ) {
   /**
-   * Providers and conditions are optional. Until the user chooses, they're shown only when
+   * Providers and indications are optional. Until the user chooses, they're shown only when
    * records exist: new installs start minimal, and nobody loses sight of data they entered.
    */
   val tracksProviders: Boolean
     get() = settings.trackProviders ?: providers.any { it.deletedAtEpochMillis == null }
 
-  val tracksConditions: Boolean
-    get() = settings.trackConditions ?: conditions.any { it.deletedAtEpochMillis == null }
+  val tracksIndications: Boolean
+    get() = settings.trackIndications ?: indications.any { it.deletedAtEpochMillis == null }
 
-  fun isArchived(condition: Condition, today: LocalDate = LocalDate.now()): Boolean =
-    ConditionTimeline.isArchived(condition, today, medications, schedules)
+  fun isArchived(indication: Indication, today: LocalDate = LocalDate.now()): Boolean =
+    IndicationTimeline.isArchived(indication, today, medications, schedules)
 
-  fun conditionEnd(condition: Condition): ConditionTimeline.End? =
-    ConditionTimeline.end(condition, medications, schedules)
+  fun indicationEnd(indication: Indication): IndicationTimeline.End? =
+    IndicationTimeline.end(indication, medications, schedules)
 }
 
 /**
@@ -114,7 +114,7 @@ class RegimenRepository private constructor(context: Context) {
     settings = loadSettings(),
     medications = db.getAllMedications(),
     providers = db.getAllProviders(),
-    conditions = db.getAllConditions(),
+    indications = db.getAllIndications(),
     buckets = db.getAllBuckets().ifEmpty { TimeOfDayBucket.defaultBuckets() },
     schedules = db.getAllSchedules(),
     doseLogs = db.getAllDoseLogs(),
@@ -181,49 +181,73 @@ class RegimenRepository private constructor(context: Context) {
     val now = System.currentTimeMillis()
     val provider = _snapshot.value.providers.find { it.id == providerId } ?: return
     db.upsertProvider(provider.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now))
-    // Unlink medications it prescribed and conditions it was managing.
+    // Unlink medications it prescribed and indications it was managing.
     _snapshot.value.medications.filter { it.prescriberId == providerId }.forEach { med ->
       db.upsertMedication(med.copy(prescriberId = null, updatedAtEpochMillis = now))
     }
-    _snapshot.value.conditions.filter { providerId in it.providerIds }.forEach { condition ->
-      db.upsertCondition(condition.copy(providerIds = condition.providerIds - providerId, updatedAtEpochMillis = now))
+    _snapshot.value.indications.filter { providerId in it.providerIds }.forEach { indication ->
+      db.upsertIndication(indication.copy(providerIds = indication.providerIds - providerId, updatedAtEpochMillis = now))
     }
     reloadSnapshot()
   }
 
-  /** Sets which conditions [providerId] helps manage (edited from the provider's page). */
-  fun setProviderConditions(providerId: String, conditionIds: Set<String>) {
+  /** Sets which indications [providerId] helps manage (edited from the provider's page). */
+  fun setProviderIndications(providerId: String, indicationIds: Set<String>) {
     val now = System.currentTimeMillis()
-    _snapshot.value.conditions.forEach { condition ->
-      val linked = providerId in condition.providerIds
-      val shouldLink = condition.id in conditionIds
+    _snapshot.value.indications.forEach { indication ->
+      val linked = providerId in indication.providerIds
+      val shouldLink = indication.id in indicationIds
       if (linked != shouldLink) {
-        val ids = if (shouldLink) condition.providerIds + providerId else condition.providerIds - providerId
-        db.upsertCondition(condition.copy(providerIds = ids, updatedAtEpochMillis = now))
+        val ids = if (shouldLink) indication.providerIds + providerId else indication.providerIds - providerId
+        db.upsertIndication(indication.copy(providerIds = ids, updatedAtEpochMillis = now))
       }
     }
     reloadSnapshot()
   }
 
-  fun saveCondition(condition: Condition) {
+  fun saveIndication(indication: Indication) {
     val now = System.currentTimeMillis()
-    // Resolving without an end date ends it today, so it files under past conditions with a date.
-    val ended = if (condition.status == ConditionStatus.RESOLVED && condition.endDateIso.isNullOrBlank()) {
-      condition.copy(endDateIso = LocalDate.now().toString())
+    // Resolving without an end date ends it today, so it files under past indications with a date.
+    val ended = if (indication.status == IndicationStatus.RESOLVED && indication.endDateIso.isNullOrBlank()) {
+      indication.copy(endDateIso = LocalDate.now().toString())
     } else {
-      condition
+      indication
     }
-    db.upsertCondition(ended.copy(updatedAtEpochMillis = now))
+    db.upsertIndication(ended.copy(updatedAtEpochMillis = now))
     reloadSnapshot()
   }
 
-  fun deleteCondition(conditionId: String) {
+  fun deleteIndication(indicationId: String) {
     val now = System.currentTimeMillis()
-    val condition = _snapshot.value.conditions.find { it.id == conditionId } ?: return
-    db.upsertCondition(condition.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now))
-    // Unlink any medications pointing to this condition
-    _snapshot.value.medications.filter { it.indicationConditionId == conditionId }.forEach { med ->
-      db.upsertMedication(med.copy(indicationConditionId = null, updatedAtEpochMillis = now))
+    val indication = _snapshot.value.indications.find { it.id == indicationId } ?: return
+    db.upsertIndication(indication.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now))
+    // Unlink any medications pointing to this indication
+    _snapshot.value.medications.filter { indicationId in it.indicationIds }.forEach { med ->
+      db.upsertMedication(med.copy(indicationIds = med.indicationIds - indicationId, updatedAtEpochMillis = now))
+    }
+    reloadSnapshot()
+  }
+
+  /** Sets which providers help manage [indicationId] (edited from the indication's page). */
+  fun setIndicationProviders(indicationId: String, providerIds: Set<String>) {
+    val indication = _snapshot.value.indications.find { it.id == indicationId } ?: return
+    if (indication.providerIds.toSet() == providerIds) return
+    db.upsertIndication(
+      indication.copy(providerIds = providerIds.sorted(), updatedAtEpochMillis = System.currentTimeMillis())
+    )
+    reloadSnapshot()
+  }
+
+  /** Sets which medications treat [indicationId] (edited from the indication's page). */
+  fun setIndicationMedications(indicationId: String, medicationIds: Set<String>) {
+    val now = System.currentTimeMillis()
+    _snapshot.value.medications.forEach { med ->
+      val linked = indicationId in med.indicationIds
+      val shouldLink = med.id in medicationIds
+      if (linked != shouldLink) {
+        val ids = if (shouldLink) med.indicationIds + indicationId else med.indicationIds - indicationId
+        db.upsertMedication(med.copy(indicationIds = ids, updatedAtEpochMillis = now))
+      }
     }
     reloadSnapshot()
   }
@@ -376,7 +400,7 @@ class RegimenRepository private constructor(context: Context) {
       devices = listOf(deviceIdentity.asSyncDevice()),
       medications = db.getAllMedications(includeDeleted = true),
       providers = db.getAllProviders(includeDeleted = true),
-      conditions = db.getAllConditions(includeDeleted = true),
+      indications = db.getAllIndications(includeDeleted = true),
       buckets = db.getAllBuckets().ifEmpty { TimeOfDayBucket.defaultBuckets() },
       schedules = db.getAllSchedules(includeDeleted = true),
       doseLogs = db.getAllDoseLogs(includeDeleted = true),
@@ -417,7 +441,7 @@ class RegimenRepository private constructor(context: Context) {
       }
       buckets.forEach { db.upsertBucket(it) }
       bundle.providers.forEach { db.upsertProvider(it) }
-      bundle.conditions.forEach { db.upsertCondition(it) }
+      bundle.indications.forEach { db.upsertIndication(it) }
       bundle.medications.forEach { db.upsertMedication(it) }
       bundle.schedules.forEach { db.upsertSchedule(it) }
       bundle.doseLogs.forEach { db.upsertDoseLog(it) }
@@ -472,49 +496,49 @@ class RegimenRepository private constructor(context: Context) {
     db.upsertProvider(pcp)
     db.upsertProvider(endocrinologist)
 
-    // 2. Sample Conditions
-    val condDiabetes = Condition(
+    // 2. Sample Indications
+    val condDiabetes = Indication(
       id = "cond_diabetes",
       name = "Type 2 Diabetes Mellitus",
       details = "Glycemic control, fasting blood glucose monitoring, and basal insulin regimen.",
-      kind = ConditionKind.CHRONIC,
-      status = ConditionStatus.MANAGED,
+      kind = IndicationKind.CHRONIC,
+      status = IndicationStatus.MANAGED,
       diagnosedDateIso = today.minusMonths(6).toString(),
       providerIds = listOf("provider_endo_1", "provider_pcp_1"),
     )
-    val condSinusitis = Condition(
+    val condSinusitis = Indication(
       id = "cond_sinusitis",
       name = "Acute Bacterial Sinusitis",
       details = "10-day oral antibiotic course for acute bacterial sinus infection.",
-      kind = ConditionKind.ACUTE,
-      status = ConditionStatus.ACTIVE,
+      kind = IndicationKind.ACUTE,
+      status = IndicationStatus.ACTIVE,
       diagnosedDateIso = today.minusDays(2).toString(),
       providerIds = listOf("provider_pcp_1"),
     )
-    // A past episode, to show archived conditions.
-    val condStrep = Condition(
+    // A past episode, to show archived indications.
+    val condStrep = Indication(
       id = "cond_strep_past",
       name = "Strep Throat",
       details = "Treated with a 10-day amoxicillin course.",
-      kind = ConditionKind.ACUTE,
-      status = ConditionStatus.RESOLVED,
+      kind = IndicationKind.ACUTE,
+      status = IndicationStatus.RESOLVED,
       diagnosedDateIso = today.minusMonths(5).toString(),
       endDateIso = today.minusMonths(5).plusDays(10).toString(),
       providerIds = listOf("provider_pcp_1"),
     )
-    val condHeadache = Condition(
+    val condHeadache = Indication(
       id = "cond_headache",
       name = "Tension Headache",
       details = "Occasional episodic tension headaches and mild musculoskeletal pain.",
-      kind = ConditionKind.CHRONIC,
-      status = ConditionStatus.MANAGED,
+      kind = IndicationKind.CHRONIC,
+      status = IndicationStatus.MANAGED,
       diagnosedDateIso = today.minusYears(1).toString(),
       providerIds = listOf("provider_pcp_1"),
     )
-    db.upsertCondition(condDiabetes)
-    db.upsertCondition(condSinusitis)
-    db.upsertCondition(condHeadache)
-    db.upsertCondition(condStrep)
+    db.upsertIndication(condDiabetes)
+    db.upsertIndication(condSinusitis)
+    db.upsertIndication(condHeadache)
+    db.upsertIndication(condStrep)
 
     // 3. Sample Medications
     // 3a. Generic Amox-Clav (Oral tablet antibiotic, twice daily)
@@ -532,7 +556,7 @@ class RegimenRepository private constructor(context: Context) {
       minIntervalMinutes = 10 * 60, // 10 hours between twice-daily doses
       maxDailyDoses = 2.0,
       maxDailyAmount = 2.0,
-      indicationConditionId = condSinusitis.id,
+      indicationIds = listOf(condSinusitis.id),
       indicationText = "Acute bacterial sinusitis — finish entire 10-day course",
       prescriberId = pcp.id,
       prescribedDateIso = today.minusDays(2).toString(),
@@ -554,7 +578,7 @@ class RegimenRepository private constructor(context: Context) {
       minIntervalMinutes = 360, // 6 hours minimum between doses
       maxDailyDoses = 6.0,
       maxDailyAmount = 6.0, // tablets: the limit is in the medication's default unit
-      indicationConditionId = condHeadache.id,
+      indicationIds = listOf(condHeadache.id),
       indicationText = "Tension headache or fever as needed",
       prescriberId = pcp.id,
       prescribedDateIso = today.minusMonths(2).toString(),
@@ -588,7 +612,7 @@ class RegimenRepository private constructor(context: Context) {
       minIntervalMinutes = 20 * 60, // 20 hours minimum between daily basal doses
       maxDailyDoses = 1.0,
       maxDailyAmount = 20.0,
-      indicationConditionId = condDiabetes.id,
+      indicationIds = listOf(condDiabetes.id),
       indicationText = "Type 2 diabetes basal glycemic control at bedtime",
       prescriberId = endocrinologist.id,
       prescribedDateIso = today.minusMonths(6).toString(),

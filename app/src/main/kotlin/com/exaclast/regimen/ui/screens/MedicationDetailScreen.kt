@@ -93,7 +93,7 @@ fun MedicationDetailScreen(
   onDeleteSchedule: (MedicationSchedule) -> Unit,
   onLogDose: (Medication, String?) -> Unit,
   onOpenProvider: (String) -> Unit,
-  onOpenCondition: (String) -> Unit,
+  onOpenIndication: (String) -> Unit,
 ) {
   val medication = snapshot.medications.find { it.id == medicationId }
   if (medication == null) {
@@ -101,7 +101,7 @@ fun MedicationDetailScreen(
     LaunchedEffect(medicationId) { onBack() }
     return
   }
-  val condition = snapshot.conditions.find { it.id == medication.indicationConditionId }
+  val indications = snapshot.indications.filter { it.id in medication.indicationIds }
   val prescriber = snapshot.providers.find { it.id == medication.prescriberId }
   val schedules = snapshot.schedules.filter { it.medicationId == medication.id && it.deletedAtEpochMillis == null }
   val logs = snapshot.doseLogs
@@ -315,8 +315,12 @@ fun MedicationDetailScreen(
       item(key = "details") {
         SectionHeader("Details")
         val rows = buildList<Triple<String, String, (() -> Unit)?>> {
-          if (snapshot.tracksConditions) {
-            add(Triple("Condition", condition?.name ?: "Not linked", condition?.let { c -> { onOpenCondition(c.id) } }))
+          if (snapshot.tracksIndications) {
+            if (indications.isEmpty()) {
+              add(Triple("Indication", "Not linked", null))
+            } else {
+              indications.forEach { c -> add(Triple("Indication", c.name) { onOpenIndication(c.id) }) }
+            }
           }
           if (medication.indicationText.isNotBlank()) add(Triple("Indication notes", medication.indicationText, null))
           if (snapshot.tracksProviders) {

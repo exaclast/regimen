@@ -101,7 +101,7 @@ object BackupFiles {
         diff("Dose history", current.doseLogs, imported.doseLogs, { it.id }, { it.deletedAtEpochMillis == null }),
         diff("Dose windows", current.buckets, imported.buckets, { it.id }, { true }),
         diff("Providers", current.providers, imported.providers, { it.id }, { it.deletedAtEpochMillis == null }),
-        diff("Conditions", current.conditions, imported.conditions, { it.id }, { it.deletedAtEpochMillis == null }),
+        diff("Indications", current.indications, imported.indications, { it.id }, { it.deletedAtEpochMillis == null }),
       ),
       firstDoseDateIso = liveLogs.minOfOrNull { it.scheduledDateIso },
       lastDoseDateIso = liveLogs.maxOfOrNull { it.scheduledDateIso },

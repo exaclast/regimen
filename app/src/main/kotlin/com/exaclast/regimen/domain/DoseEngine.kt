@@ -1,6 +1,6 @@
 package com.exaclast.regimen.domain
 
-import com.exaclast.regimen.model.Condition
+import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
@@ -76,7 +76,7 @@ data class ScheduledDoseItem(
   val suggestedSite: String?,
   val lastSiteUsed: String?,
   val pacing: PacingEvaluation,
-  val indicationCondition: Condition?,
+  val indications: List<Indication>,
   val prescriber: Provider?,
 ) {
   val isCompleted: Boolean
@@ -124,7 +124,7 @@ data class PrnDoseItem(
   val schedule: MedicationSchedule?,
   val suggestedSite: String?,
   val pacing: PacingEvaluation,
-  val indicationCondition: Condition?,
+  val indications: List<Indication>,
 ) {
   val doseAmount: Double
     get() = schedule?.doseAmount ?: medication.defaultDoseAmount
@@ -397,13 +397,13 @@ object DoseEngine {
     schedules: List<MedicationSchedule>,
     buckets: List<TimeOfDayBucket>,
     logs: List<DoseLog>,
-    conditions: List<Condition>,
+    indications: List<Indication>,
     providers: List<Provider>,
     nowMillis: Long = System.currentTimeMillis(),
   ): DailyDoseBoard {
     val targetDate = runCatching { LocalDate.parse(dateIso) }.getOrDefault(LocalDate.now())
     val activeMedMap = medications.filter { it.deletedAtEpochMillis == null }.associateBy { it.id }
-    val conditionMap = conditions.filter { it.deletedAtEpochMillis == null }.associateBy { it.id }
+    val indicationMap = indications.filter { it.deletedAtEpochMillis == null }.associateBy { it.id }
     val prescriberMap = providers.filter { it.deletedAtEpochMillis == null }.associateBy { it.id }
     val sortedBuckets = buckets.chronological()
 
@@ -453,7 +453,7 @@ object DoseEngine {
           suggestedSite = suggestedSite,
           lastSiteUsed = lastSite,
           pacing = pacing,
-          indicationCondition = med.indicationConditionId?.let { conditionMap[it] },
+          indications = med.indicationIds.mapNotNull { indicationMap[it] },
           prescriber = med.prescriberId?.let { prescriberMap[it] },
         )
       }
@@ -480,7 +480,7 @@ object DoseEngine {
           schedule = prnSchedule,
           suggestedSite = computeNextSite(med, logs),
           pacing = evaluatePacing(med, logs, nowMillis, dateIso, buckets),
-          indicationCondition = med.indicationConditionId?.let { conditionMap[it] },
+          indications = med.indicationIds.mapNotNull { indicationMap[it] },
         )
       }
 

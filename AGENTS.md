@@ -63,6 +63,7 @@ This repository is **Regimen**, an Android medication and dose-tracking app buil
 - **Number display**: `formatNum` rounds for reading (three decimals, or three significant digits below 1). Use `formatExact` to pre-fill an editable field, so saving doesn't change a stored dose.
 - **Prescription Label Parsing**:
   - On-device label extraction (`DrugBarcodeScanner.kt` and `DrugLabelParser.kt`) utilizes schema decoy fields (`patientName`, `pharmacyName`, `rxNumber`) and post-processing fuzzy token sanitization to ensure patient and prescriber names are never parsed as medication brand names.
+  - Photos are transcribed with on-device text recognition (`LabelTextRecognizer`) and only the text goes to Gemini Nano. AICore's safety check refuses many label photos outright (`statusCode = 4`) but accepts the same label as text. Several photos of one bottle are joined so a label that wraps around it can be read.
 - **Dose Windows (Buckets)**:
   - Windows can be added, deleted, and edited. They are **always ordered by start time** (`chronological()`); manual reordering was removed and `sortOrder` is legacy.
   - "Restore default windows" keeps any custom window a schedule still uses, so no medication loses its doses.
@@ -90,10 +91,14 @@ This repository is **Regimen**, an Android medication and dose-tracking app buil
   - Logging from a medication's page completes the next dose due (`DoseTimeline.nextDoseFor`); an unscheduled dose is the separate "Log an extra dose".
   - Show volumes through `Medication.doseVolumeMl`: prefilled devices have none, and "units" only convert to mL on a U-100 syringe.
   - FDA autofill never applies a name that isn't an exact match without asking (`exactNameMatch`): look-alike drugs can differ by a letter or two.
-- **Providers & Conditions**:
+  - A complete NDC that resolves to an FDA record overrides the strength read from a label (`ndcMatchIsConclusive`), since OCR garbles strengths. The name must still match exactly.
+- **Providers & Indications**:
   - "Provider" everywhere (model, tab, screens). A medication's provider is still labelled **Prescriber** (`Medication.prescriberId`), which is the role.
-  - Providers and conditions are many-to-many, stored on the condition (`Condition.providerIds`) and editable from either side.
-  - Conditions are `ACUTE` (status Active/Resolved) or `CHRONIC`. A condition is archived ("past") when resolved or after its end date; an acute condition without an end date ends with its linked medication courses (`ConditionTimeline`). Pickers skip past conditions and providers unless already linked. "Had this again" starts a new episode of a past acute condition.
+  - "Indication" everywhere (model, tab, screens): the reason a medication is taken, which isn't always a condition (PrEP is prevention).
+  - Providers and indications are many-to-many, stored on the indication (`Indication.providerIds`) and editable from either side.
+  - Medications and indications are many-to-many too, but stored on the medication (`Medication.indicationIds`), editable from the medication editor and from the indication's page (`setIndicationMedications`). Deleting an indication removes it from its medications; deleting a medication leaves its ids, since a deleted record is filtered out wherever it's read.
+  - Indications are `ACUTE` or `PREVENTIVE` (status Active/Resolved, shown as Completed for preventive) or `CHRONIC`. An indication is archived ("past") when resolved or after its end date; an acute or preventive one without an end date ends with its linked medication courses if they all end (`IndicationTimeline`), so PEP archives itself and PrEP doesn't. Lists and pickers group by kind (`IndicationTimeline.groupedByKind`: acute, chronic, preventive), with past ones last. Pickers skip past indications and providers unless already linked. "Had this again" starts a new episode of a past acute or preventive indication.
+  - The SQLite store stays compatible across this rename: `RegimenDatabase.onUpgrade` renames the table and moves older medication link keys to `indicationIds`. Backup files from before the rename lose their indications.
 - **Optional Tracking**:
-  - Providers and conditions are optional (`AppSettings.trackProviders` / `trackConditions`; null = on only if records exist). Use `RegimenSnapshot.tracksProviders` / `tracksConditions` to gate tabs and fields. Hiding never deletes data.
+  - Providers and indications are optional (`AppSettings.trackProviders` / `trackIndications`; null = on only if records exist). Use `RegimenSnapshot.tracksProviders` / `tracksIndications` to gate tabs and fields. Hiding never deletes data.
 

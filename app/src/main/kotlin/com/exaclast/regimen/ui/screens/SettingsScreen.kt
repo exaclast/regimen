@@ -112,7 +112,7 @@ data class DiagnosticsTarget(val label: String)
 fun SettingsScreen(
   settings: AppSettings,
   tracksProviders: Boolean,
-  tracksConditions: Boolean,
+  tracksIndications: Boolean,
   buckets: List<TimeOfDayBucket>,
   diagnosticsTarget: DiagnosticsTarget?,
   onBack: () -> Unit,
@@ -330,10 +330,10 @@ fun SettingsScreen(
           }
           GroupItem(1, 2) {
             SwitchRow(
-              title = "Conditions",
-              subtitle = "Keep a list of conditions and what each medication treats",
-              checked = tracksConditions,
-              onCheckedChange = { onSaveSettings(settings.copy(trackConditions = it)) },
+              title = "Indications",
+              subtitle = "Keep a list of indications and what each medication is for",
+              checked = tracksIndications,
+              onCheckedChange = { onSaveSettings(settings.copy(trackIndications = it)) },
             )
           }
         }
@@ -561,7 +561,7 @@ fun SettingsScreen(
           }
           GroupItem(1, 2, onClick = { confirmClear = true }) {
             ListItem(
-              supportingContent = { Text("Medications, providers, conditions and dose history") },
+              supportingContent = { Text("Medications, providers, indications and dose history") },
               colors = groupListItemColors(),
             ) { Text("Delete all data", color = MaterialTheme.colorScheme.error) }
           }
@@ -619,7 +619,7 @@ fun SettingsScreen(
   if (confirmClear) {
     ConfirmDialog(
       title = "Delete all data?",
-      text = "This permanently removes every medication, provider, condition and dose log. Copy a backup first if you might need it.",
+      text = "This permanently removes every medication, provider, indication and dose log. Copy a backup first if you might need it.",
       confirmLabel = "Delete everything",
       destructive = true,
       onConfirm = {
@@ -897,7 +897,7 @@ private fun DeleteWindowDialog(
 fun StartupPermissionsDialog(
   settings: AppSettings,
   tracksProviders: Boolean,
-  tracksConditions: Boolean,
+  tracksIndications: Boolean,
   onSaveSettings: (AppSettings) -> Unit,
   onDismiss: () -> Unit,
   onPermissionsChanged: () -> Unit,
@@ -999,10 +999,10 @@ fun StartupPermissionsDialog(
             onCheckedChange = { onSaveSettings(settings.copy(trackProviders = it)) },
           )
           SwitchRow(
-            title = "Conditions",
-            subtitle = "What each medication treats",
-            checked = tracksConditions,
-            onCheckedChange = { onSaveSettings(settings.copy(trackConditions = it)) },
+            title = "Indications",
+            subtitle = "What each medication is for",
+            checked = tracksIndications,
+            onCheckedChange = { onSaveSettings(settings.copy(trackIndications = it)) },
           )
         }
 

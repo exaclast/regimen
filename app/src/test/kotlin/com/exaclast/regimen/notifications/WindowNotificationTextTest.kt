@@ -31,7 +31,7 @@ class WindowNotificationTextTest {
     suggestedSite = site,
     lastSiteUsed = null,
     pacing = pacing,
-    indicationCondition = null,
+    indications = emptyList(),
     prescriber = null,
   )
 

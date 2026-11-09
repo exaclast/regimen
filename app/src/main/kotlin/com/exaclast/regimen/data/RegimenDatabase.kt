@@ -4,7 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
-import com.exaclast.regimen.model.Condition
+import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
@@ -12,6 +12,11 @@ import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.TimeOfDayBucket
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 
 class RegimenDatabase(context: Context) :
   SQLiteOpenHelper(context.applicationContext, DB_NAME, null, DB_VERSION) {
@@ -47,7 +52,7 @@ class RegimenDatabase(context: Context) :
     )
     db.execSQL(
       """
-      CREATE TABLE conditions (
+      CREATE TABLE indications (
         id TEXT PRIMARY KEY NOT NULL,
         name TEXT NOT NULL,
         updated_at INTEGER NOT NULL,
@@ -97,6 +102,26 @@ class RegimenDatabase(context: Context) :
   override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
     // Pre-release: only keeps development installs working across the prescriber → provider rename.
     if (oldVersion < 2) db.execSQL("ALTER TABLE prescribers RENAME TO providers")
+    if (oldVersion < 3) {
+      db.execSQL("ALTER TABLE conditions RENAME TO indications")
+      migrateMedicationIndicationLinks(db)
+    }
+  }
+
+  /** Rewrites only the payload: `updated_at` stays, since a migration isn't an edit to sync. */
+  private fun migrateMedicationIndicationLinks(db: SQLiteDatabase) {
+    val rows = buildList {
+      db.rawQuery("SELECT id, payload_json FROM medications", null).use { cursor ->
+        while (cursor.moveToNext()) add(cursor.getString(0) to cursor.getString(1))
+      }
+    }
+    rows.forEach { (id, payload) ->
+      val migrated = migrateMedicationPayload(payload)
+      if (migrated != payload) {
+        val values = ContentValues().apply { put("payload_json", migrated) }
+        db.update("medications", values, "id = ?", arrayOf(id))
+      }
+    }
   }
 
   /** Runs [block] in one transaction: much faster for bulk writes, and all-or-nothing. */
@@ -170,30 +195,30 @@ class RegimenDatabase(context: Context) :
     writableDatabase.insertWithOnConflict("providers", null, values, SQLiteDatabase.CONFLICT_REPLACE)
   }
 
-  fun getAllConditions(includeDeleted: Boolean = false): List<Condition> {
-    val result = mutableListOf<Condition>()
+  fun getAllIndications(includeDeleted: Boolean = false): List<Indication> {
+    val result = mutableListOf<Indication>()
     readableDatabase.rawQuery(
-      "SELECT payload_json FROM conditions ${liveOnly(includeDeleted)} ORDER BY name COLLATE NOCASE ASC",
+      "SELECT payload_json FROM indications ${liveOnly(includeDeleted)} ORDER BY name COLLATE NOCASE ASC",
       null
     ).use { cursor ->
       while (cursor.moveToNext()) {
         runCatching {
-          json.decodeFromString<Condition>(cursor.getString(0))
+          json.decodeFromString<Indication>(cursor.getString(0))
         }.getOrNull()?.let { result.add(it) }
       }
     }
     return result
   }
 
-  fun upsertCondition(condition: Condition) {
+  fun upsertIndication(indication: Indication) {
     val values = ContentValues().apply {
-      put("id", condition.id)
-      put("name", condition.name)
-      put("updated_at", condition.updatedAtEpochMillis)
-      put("deleted_at", condition.deletedAtEpochMillis)
-      put("payload_json", json.encodeToString(condition))
+      put("id", indication.id)
+      put("name", indication.name)
+      put("updated_at", indication.updatedAtEpochMillis)
+      put("deleted_at", indication.deletedAtEpochMillis)
+      put("payload_json", json.encodeToString(indication))
     }
-    writableDatabase.insertWithOnConflict("conditions", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    writableDatabase.insertWithOnConflict("indications", null, values, SQLiteDatabase.CONFLICT_REPLACE)
   }
 
   fun getAllBuckets(): List<TimeOfDayBucket> {
@@ -286,7 +311,7 @@ class RegimenDatabase(context: Context) :
       db.delete("schedules", null, null)
       db.delete("medications", null, null)
       db.delete("providers", null, null)
-      db.delete("conditions", null, null)
+      db.delete("indications", null, null)
       db.setTransactionSuccessful()
     } finally {
       db.endTransaction()
@@ -295,7 +320,31 @@ class RegimenDatabase(context: Context) :
 
   companion object {
     private const val DB_NAME = "regimen_store.db"
-    private const val DB_VERSION = 2
+    private const val DB_VERSION = 3
+
+    private const val LEGACY_SINGLE_LINK = "indicationConditionId"
+    private const val LEGACY_LINK_LIST = "indicationConditionIds"
+
+    /**
+     * Moves a stored medication's link(s) from either older key to `indicationIds`. Returns [payload]
+     * untouched if it has neither key or isn't readable.
+     */
+    internal fun migrateMedicationPayload(payload: String): String {
+      val root = runCatching { Json.parseToJsonElement(payload).jsonObject }.getOrNull() ?: return payload
+      if (LEGACY_SINGLE_LINK !in root && LEGACY_LINK_LIST !in root) return payload
+      val ids = buildList {
+        (root[LEGACY_LINK_LIST] as? JsonArray)?.forEach { element ->
+          (element as? JsonPrimitive)?.contentOrNull?.let(::add)
+        }
+        (root[LEGACY_SINGLE_LINK] as? JsonPrimitive)?.contentOrNull?.let(::add)
+      }.distinct()
+      val migrated = root.toMutableMap().apply {
+        remove(LEGACY_SINGLE_LINK)
+        remove(LEGACY_LINK_LIST)
+        put("indicationIds", JsonArray(ids.map { JsonPrimitive(it) }))
+      }
+      return JsonObject(migrated).toString()
+    }
   }
 }
 

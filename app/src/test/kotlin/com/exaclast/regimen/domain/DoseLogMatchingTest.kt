@@ -40,7 +40,7 @@ class DoseLogMatchingTest {
     schedules = schedules,
     buckets = TimeOfDayBucket.defaultBuckets(),
     logs = logs,
-    conditions = emptyList(),
+    indications = emptyList(),
     providers = emptyList(),
   )
 

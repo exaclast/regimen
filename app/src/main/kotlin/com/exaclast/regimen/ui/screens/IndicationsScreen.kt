@@ -3,6 +3,11 @@
 package com.exaclast.regimen.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,6 +26,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -48,15 +55,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.data.RegimenSnapshot
-import com.exaclast.regimen.domain.ConditionTimeline
-import com.exaclast.regimen.model.Condition
-import com.exaclast.regimen.model.ConditionKind
-import com.exaclast.regimen.model.ConditionStatus
+import com.exaclast.regimen.domain.IndicationTimeline
+import com.exaclast.regimen.model.Indication
+import com.exaclast.regimen.model.IndicationKind
+import com.exaclast.regimen.model.IndicationStatus
 import com.exaclast.regimen.ui.components.AppSnackbarHost
 import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.DatePickerField
@@ -71,31 +80,37 @@ import com.exaclast.regimen.ui.components.groupListItemColors
 import java.time.LocalDate
 
 /** Short labels that fit a four-way segmented button on a 360 dp phone. */
-private val ConditionStatus.shortLabel: String
-  get() = when (this) {
-    ConditionStatus.ACTIVE -> "Active"
-    ConditionStatus.MANAGED -> "Managed"
-    ConditionStatus.REMISSION -> "Remission"
-    ConditionStatus.RESOLVED -> "Resolved"
-  }
+private fun IndicationKind.shortStatusLabel(status: IndicationStatus): String = when (status) {
+  IndicationStatus.MANAGED -> "Managed"
+  IndicationStatus.REMISSION -> "Remission"
+  else -> statusLabel(status)
+}
 
-private fun Condition.matches(query: String): Boolean =
+private fun Indication.matches(query: String): Boolean =
   query.isBlank() || name.contains(query.trim(), ignoreCase = true) ||
     details?.contains(query.trim(), ignoreCase = true) == true
 
-/** One line under a condition: "Acute · Until Nov 15 · 1 medication" / "Acute · Ended Jun 3, 2026". */
-internal fun conditionSummary(condition: Condition, snapshot: RegimenSnapshot, archived: Boolean): String {
-  val end = snapshot.conditionEnd(condition)
-  val medCount = snapshot.medications.count { it.indicationConditionId == condition.id && it.deletedAtEpochMillis == null }
+/**
+ * One line under an indication: "Acute · Until Nov 15 · 1 medication" / "Acute · Ended Jun 3, 2026".
+ * [showKind] is off under a heading that already names the kind.
+ */
+internal fun indicationSummary(
+  indication: Indication,
+  snapshot: RegimenSnapshot,
+  archived: Boolean,
+  showKind: Boolean = true,
+): String {
+  val end = snapshot.indicationEnd(indication)
+  val medCount = snapshot.medications.count { indication.id in it.indicationIds && it.deletedAtEpochMillis == null }
   return if (archived) {
     listOfNotNull(
-      condition.kind.displayName,
-      end?.let { "Ended ${UiFormat.date(it.date, withWeekday = false)}" } ?: condition.status.displayName,
+      indication.kind.displayName,
+      end?.let { "Ended ${UiFormat.date(it.date, withWeekday = false)}" } ?: indication.kind.statusLabel(indication.status),
     ).joinToString(" · ")
   } else {
     listOfNotNull(
-      condition.kind.displayName,
-      condition.status.displayName.takeIf { condition.kind == ConditionKind.CHRONIC },
+      indication.kind.displayName.takeIf { showKind },
+      indication.status.displayName.takeIf { indication.kind == IndicationKind.CHRONIC },
       end?.let { "Until ${UiFormat.date(it.date, withWeekday = false)}" },
       medicationCount(medCount),
     ).joinToString(" · ")
@@ -103,10 +118,10 @@ internal fun conditionSummary(condition: Condition, snapshot: RegimenSnapshot, a
 }
 
 @Composable
-fun ConditionListScreen(
+fun IndicationListScreen(
   snapshot: RegimenSnapshot,
-  onOpenCondition: (String) -> Unit,
-  onAddCondition: () -> Unit,
+  onOpenIndication: (String) -> Unit,
+  onAddIndication: () -> Unit,
 ) {
   val listState = rememberLazyListState()
   val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
@@ -114,28 +129,28 @@ fun ConditionListScreen(
   var query by rememberSaveable { mutableStateOf("") }
   var showPast by rememberSaveable { mutableStateOf(false) }
 
-  val (pastAll, currentAll) = snapshot.conditions.partition { snapshot.isArchived(it, today) }
+  val (pastAll, currentAll) = snapshot.indications.partition { snapshot.isArchived(it, today) }
   val current = currentAll.filter { it.matches(query) }
-    .sortedWith(compareBy<Condition> { it.kind != ConditionKind.ACUTE }.thenBy { it.name.lowercase() })
+  val currentGroups = IndicationTimeline.groupedByKind(current)
   val past = pastAll.filter { it.matches(query) }
-    .sortedByDescending { snapshot.conditionEnd(it)?.date ?: LocalDate.MIN }
-  // Searching looks through past conditions too.
+    .sortedByDescending { snapshot.indicationEnd(it)?.date ?: LocalDate.MIN }
+  // Searching looks through past indications too.
   val pastExpanded = showPast || query.isNotBlank()
 
   Scaffold(
-    topBar = { TopAppBar(title = { Text("Conditions") }) },
+    topBar = { TopAppBar(title = { Text("Indications") }) },
     floatingActionButton = {
       ExtendedFloatingActionButton(
-        onClick = onAddCondition,
+        onClick = onAddIndication,
         expanded = fabExpanded,
         icon = { Icon(Icons.Default.Add, contentDescription = null) },
-        text = { Text("Add condition") },
+        text = { Text("Add indication") },
       )
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
-    if (snapshot.conditions.isEmpty()) {
-      EmptyListMessage("No conditions yet.", Modifier.padding(padding))
+    if (snapshot.indications.isEmpty()) {
+      EmptyListMessage("No indications yet.", Modifier.padding(padding))
       return@Scaffold
     }
     LazyColumn(
@@ -146,12 +161,12 @@ fun ConditionListScreen(
       contentPadding = ListContentPadding,
       verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-      if (pastAll.isNotEmpty() || snapshot.conditions.size > 6) {
+      if (pastAll.isNotEmpty() || snapshot.indications.size > 6) {
         item(key = "search") {
           OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            placeholder = { Text("Search conditions") },
+            placeholder = { Text("Search indications") },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
             trailingIcon = if (query.isNotEmpty()) {
               { IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, contentDescription = "Clear search") } }
@@ -166,25 +181,28 @@ fun ConditionListScreen(
       if (current.isEmpty() && query.isBlank()) {
         item(key = "no-current") {
           Text(
-            "No current conditions.",
+            "No current indications.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
           )
         }
       }
-      itemsIndexed(current, key = { _, c -> c.id }) { index, condition ->
-        GroupItem(index = index, count = current.size, onClick = { onOpenCondition(condition.id) }) {
-          ListItem(
-            supportingContent = { Text(conditionSummary(condition, snapshot, archived = false)) },
-            colors = groupListItemColors(),
-          ) { Text(condition.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+      currentGroups.forEach { (kind, group) ->
+        item(key = "header-$kind") { SectionHeader(kind.displayName) }
+        itemsIndexed(group, key = { _, c -> c.id }) { index, indication ->
+          GroupItem(index = index, count = group.size, onClick = { onOpenIndication(indication.id) }) {
+            ListItem(
+              supportingContent = { Text(indicationSummary(indication, snapshot, archived = false, showKind = false)) },
+              colors = groupListItemColors(),
+            ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+          }
         }
       }
       if (pastAll.isNotEmpty()) {
         item(key = "past-header") {
           SectionHeader(
-            title = "Past conditions (${if (query.isBlank()) pastAll.size else past.size})",
+            title = "Past indications (${if (query.isBlank()) pastAll.size else past.size})",
             action = if (query.isBlank()) {
               {
                 TextButton(onClick = { showPast = !showPast }) { Text(if (showPast) "Hide" else "Show") }
@@ -193,12 +211,12 @@ fun ConditionListScreen(
           )
         }
         if (pastExpanded) {
-          itemsIndexed(past, key = { _, c -> c.id }) { index, condition ->
-            GroupItem(index = index, count = past.size, onClick = { onOpenCondition(condition.id) }) {
+          itemsIndexed(past, key = { _, c -> c.id }) { index, indication ->
+            GroupItem(index = index, count = past.size, onClick = { onOpenIndication(indication.id) }) {
               ListItem(
-                supportingContent = { Text(conditionSummary(condition, snapshot, archived = true)) },
+                supportingContent = { Text(indicationSummary(indication, snapshot, archived = true)) },
                 colors = groupListItemColors(),
-              ) { Text(condition.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+              ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
           }
         }
@@ -206,7 +224,7 @@ fun ConditionListScreen(
       if (query.isNotBlank() && current.isEmpty() && past.isEmpty()) {
         item(key = "no-results") {
           Text(
-            "No conditions match \"${query.trim()}\".",
+            "No indications match \"${query.trim()}\".",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
@@ -218,25 +236,32 @@ fun ConditionListScreen(
 }
 
 @Composable
-fun ConditionDetailScreen(
-  conditionId: String,
+fun IndicationDetailScreen(
+  indicationId: String,
   snapshot: RegimenSnapshot,
   onBack: () -> Unit,
   onEdit: () -> Unit,
   onDelete: () -> Unit,
   onOpenMedication: (String) -> Unit,
   onOpenProvider: (String) -> Unit,
+  onSetMedications: (Set<String>) -> Unit,
+  onSetProviders: (Set<String>) -> Unit,
   onHadAgain: () -> Unit,
 ) {
-  val condition = snapshot.conditions.find { it.id == conditionId }
-  if (condition == null) {
-    LaunchedEffect(conditionId) { onBack() }
+  val indication = snapshot.indications.find { it.id == indicationId }
+  if (indication == null) {
+    LaunchedEffect(indicationId) { onBack() }
     return
   }
-  val linkedMeds = snapshot.medications.filter { it.indicationConditionId == condition.id }
-  val linkedProviders = snapshot.providers.filter { it.id in condition.providerIds }
-  val archived = snapshot.isArchived(condition)
-  val end = snapshot.conditionEnd(condition)
+  val linkedMeds = snapshot.medications.filter { indication.id in it.indicationIds && it.deletedAtEpochMillis == null }
+  val linkedProviders = snapshot.providers.filter { it.id in indication.providerIds }
+  val archived = snapshot.isArchived(indication)
+  val end = snapshot.indicationEnd(indication)
+  // Past providers stay listed only if already linked.
+  val providerOptions = snapshot.providers
+    .filter { !IndicationTimeline.isPast(it, LocalDate.now()) || it.id in indication.providerIds }
+  var editMedications by remember { mutableStateOf(false) }
+  var editProviders by remember { mutableStateOf(false) }
   var menuOpen by remember { mutableStateOf(false) }
   var confirmDelete by remember { mutableStateOf(false) }
   val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -245,10 +270,10 @@ fun ConditionDetailScreen(
     modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
     topBar = {
       MediumFlexibleTopAppBar(
-        title = { Text(condition.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        title = { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         subtitle = {
           Text(
-            listOf(condition.kind.displayName, if (archived) "Past" else condition.status.displayName)
+            listOf(indication.kind.displayName, if (archived) "Past" else indication.kind.statusLabel(indication.status))
               .joinToString(" · "),
           )
         },
@@ -256,11 +281,11 @@ fun ConditionDetailScreen(
           IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
         },
         actions = {
-          IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit condition") }
+          IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit indication") }
           OverflowDeleteMenu(
             expanded = menuOpen,
             onExpandedChange = { menuOpen = it },
-            label = "Delete condition",
+            label = "Delete indication",
             onDelete = { confirmDelete = true },
           )
         },
@@ -275,7 +300,7 @@ fun ConditionDetailScreen(
         .padding(padding),
       contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
     ) {
-      if (archived && condition.kind == ConditionKind.ACUTE) {
+      if (archived && indication.kind.endsWithCourse) {
         item(key = "again") {
           FilledTonalButton(onClick = onHadAgain, modifier = Modifier.padding(top = 8.dp)) {
             Icon(Icons.Default.Replay, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -287,16 +312,16 @@ fun ConditionDetailScreen(
         SectionHeader("Details")
         val endLabel = if (end != null && !end.date.isAfter(LocalDate.now()) || archived) "Ended" else "Ends"
         val endValue = when {
-          end == null -> if (condition.kind == ConditionKind.ACUTE) "When its medication course ends" else "Ongoing"
+          end == null -> if (indication.kind == IndicationKind.ACUTE) "When its medication course ends" else "Ongoing"
           end.fromCourse -> "${UiFormat.date(end.date)} (end of medication course)"
           else -> UiFormat.date(end.date)
         }
         val rows = listOfNotNull(
-          "Type" to condition.kind.displayName,
-          "Status" to condition.status.displayName,
-          "Started" to (UiFormat.dateIso(condition.diagnosedDateIso) ?: "Not set"),
+          "Type" to indication.kind.displayName,
+          "Status" to indication.kind.statusLabel(indication.status),
+          "Started" to (UiFormat.dateIso(indication.diagnosedDateIso) ?: "Not set"),
           endLabel to endValue,
-          condition.details?.takeIf { it.isNotBlank() }?.let { "Notes" to it },
+          indication.details?.takeIf { it.isNotBlank() }?.let { "Notes" to it },
         )
         GroupedColumn {
           rows.forEachIndexed { i, (label, value) -> GroupItem(index = i, count = rows.size) { InfoRow(label, value) } }
@@ -304,7 +329,12 @@ fun ConditionDetailScreen(
       }
       if (snapshot.tracksProviders) {
         item(key = "providers") {
-          SectionHeader("Providers")
+          SectionHeader(
+            title = "Providers",
+            action = if (providerOptions.isNotEmpty()) {
+              { TextButton(onClick = { editProviders = true }) { Text("Edit") } }
+            } else null,
+          )
           GroupedColumn {
             if (linkedProviders.isEmpty()) {
               GroupItem(0, 1) { ListItem(colors = groupListItemColors()) { Text("No providers linked") } }
@@ -321,19 +351,55 @@ fun ConditionDetailScreen(
         }
       }
       item(key = "meds") {
-        SectionHeader("Medications for this condition")
+        SectionHeader(
+          title = "Medications for this indication",
+          action = if (snapshot.medications.any { it.deletedAtEpochMillis == null }) {
+            { TextButton(onClick = { editMedications = true }) { Text("Edit") } }
+          } else null,
+        )
         LinkedMedicationGroup(linkedMeds, emptyText = "No medications linked", onOpenMedication = onOpenMedication)
       }
     }
   }
 
+  if (editProviders) {
+    IndicationLinksDialog(
+      title = "Providers helping manage it",
+      options = providerOptions
+        .sortedBy { it.name.lowercase() }
+        .map { LinkOption(it.id, it.name, it.specialty?.takeIf { s -> s.isNotBlank() }) },
+      initialSelection = linkedProviders.mapTo(HashSet()) { it.id },
+      onConfirm = {
+        editProviders = false
+        onSetProviders(it)
+      },
+      onDismiss = { editProviders = false },
+    )
+  }
+
+  if (editMedications) {
+    IndicationLinksDialog(
+      title = "Medications for this indication",
+      options = snapshot.medications
+        .filter { it.deletedAtEpochMillis == null }
+        .sortedBy { it.primaryName.lowercase() }
+        .map { LinkOption(it.id, it.primaryName, listOfNotNull(it.secondaryName, it.strength).joinToString(" · ")) },
+      initialSelection = linkedMeds.mapTo(HashSet()) { it.id },
+      onConfirm = {
+        editMedications = false
+        onSetMedications(it)
+      },
+      onDismiss = { editMedications = false },
+    )
+  }
+
   if (confirmDelete) {
     ConfirmDialog(
-      title = "Delete ${condition.name}?",
+      title = "Delete ${indication.name}?",
       text = if (linkedMeds.isEmpty()) {
-        "This removes the condition."
+        "This removes the indication."
       } else {
-        "This removes the condition and unlinks ${medicationCount(linkedMeds.size)}."
+        "This removes the indication and unlinks ${medicationCount(linkedMeds.size)}."
       },
       confirmLabel = "Delete",
       destructive = true,
@@ -346,45 +412,95 @@ fun ConditionDetailScreen(
   }
 }
 
+private class LinkOption(val id: String, val title: String, val subtitle: String?)
+
+/** Pick the medications or providers linked to an indication. */
+@Composable
+private fun IndicationLinksDialog(
+  title: String,
+  options: List<LinkOption>,
+  initialSelection: Set<String>,
+  onConfirm: (Set<String>) -> Unit,
+  onDismiss: () -> Unit,
+) {
+  var selection by remember { mutableStateOf(initialSelection) }
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(title) },
+    text = {
+      Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+        options.forEach { option ->
+          val checked = option.id in selection
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+              .fillMaxWidth()
+              .toggleable(
+                value = checked,
+                role = Role.Checkbox,
+                onValueChange = { selection = if (it) selection + option.id else selection - option.id },
+              )
+              .padding(vertical = 4.dp),
+          ) {
+            Checkbox(checked = checked, onCheckedChange = null)
+            Column(modifier = Modifier.padding(start = 12.dp)) {
+              Text(option.title, style = MaterialTheme.typography.bodyLarge)
+              option.subtitle?.let {
+                Text(
+                  it,
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+            }
+          }
+        }
+      }
+    },
+    confirmButton = { TextButton(onClick = { onConfirm(selection) }) { Text("Save") } },
+    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+  )
+}
+
 /**
- * Add or edit a condition. [template] pre-fills a new one (a new episode of an acute condition).
+ * Add or edit an indication. [template] pre-fills a new one (a new episode of a past indication).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ConditionEditorScreen(
-  initialCondition: Condition?,
-  template: Condition?,
+fun IndicationEditorScreen(
+  initialIndication: Indication?,
+  template: Indication?,
   snapshot: RegimenSnapshot,
   onClose: () -> Unit,
-  onSave: (Condition) -> Unit,
+  onSave: (Indication) -> Unit,
 ) {
-  val source = initialCondition ?: template
+  val source = initialIndication ?: template
   var name by rememberSaveable { mutableStateOf(source?.name.orEmpty()) }
   var details by rememberSaveable { mutableStateOf(source?.details.orEmpty()) }
-  var kind by rememberSaveable { mutableStateOf(source?.kind ?: ConditionKind.CHRONIC) }
-  var status by rememberSaveable { mutableStateOf(source?.status ?: ConditionStatus.ACTIVE) }
+  var kind by rememberSaveable { mutableStateOf(source?.kind ?: IndicationKind.CHRONIC) }
+  var status by rememberSaveable { mutableStateOf(source?.status ?: IndicationStatus.ACTIVE) }
   var startDateIso by rememberSaveable { mutableStateOf(source?.diagnosedDateIso.orEmpty()) }
   var endDateIso by rememberSaveable { mutableStateOf(source?.endDateIso.orEmpty()) }
   var providerIds by rememberSaveable { mutableStateOf(source?.providerIds.orEmpty()) }
 
   val today = LocalDate.now()
   // Past providers stay listed only if already linked.
-  val providerOptions = snapshot.providers.filter { !ConditionTimeline.isPast(it, today) || it.id in providerIds }
-  val courseEnd = initialCondition?.let { ConditionTimeline.courseEnd(it, snapshot.medications, snapshot.schedules) }
+  val providerOptions = snapshot.providers.filter { !IndicationTimeline.isPast(it, today) || it.id in providerIds }
+  val courseEnd = initialIndication?.let { IndicationTimeline.courseEnd(it, snapshot.medications, snapshot.schedules) }
   val endBeforeStart = startDateIso.isNotBlank() && endDateIso.isNotBlank() && endDateIso < startDateIso
 
   EditorScaffold(
     title = when {
-      initialCondition != null -> "Edit condition"
+      initialIndication != null -> "Edit indication"
       template != null -> "New episode"
-      else -> "Add condition"
+      else -> "Add indication"
     },
     onClose = onClose,
     saveEnabled = name.isNotBlank() && !endBeforeStart,
     onSave = {
       onSave(
-        Condition(
-          id = initialCondition?.id ?: java.util.UUID.randomUUID().toString(),
+        Indication(
+          id = initialIndication?.id ?: java.util.UUID.randomUUID().toString(),
           name = name.trim(),
           details = details.trim().takeIf { it.isNotBlank() },
           kind = kind,
@@ -392,7 +508,7 @@ fun ConditionEditorScreen(
           diagnosedDateIso = startDateIso.takeIf { it.isNotBlank() },
           endDateIso = endDateIso.takeIf { it.isNotBlank() },
           providerIds = providerIds.filter { id -> snapshot.providers.any { it.id == id } },
-          createdAtEpochMillis = initialCondition?.createdAtEpochMillis ?: System.currentTimeMillis(),
+          createdAtEpochMillis = initialIndication?.createdAtEpochMillis ?: System.currentTimeMillis(),
         )
       )
     },
@@ -401,30 +517,38 @@ fun ConditionEditorScreen(
       value = name,
       onValueChange = { name = it },
       label = { Text("Name *") },
-      placeholder = { Text(if (kind == ConditionKind.ACUTE) "e.g. Sinus infection" else "e.g. ADHD") },
+      placeholder = {
+        Text(
+          when (kind) {
+            IndicationKind.ACUTE -> "e.g. Sinus infection"
+            IndicationKind.CHRONIC -> "e.g. ADHD"
+            IndicationKind.PREVENTIVE -> "e.g. HIV PrEP"
+          },
+        )
+      },
       singleLine = true,
       modifier = Modifier.fillMaxWidth(),
     )
     Text("Type", style = MaterialTheme.typography.titleSmall)
     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-      ConditionKind.entries.forEachIndexed { i, k ->
+      IndicationKind.entries.forEachIndexed { i, k ->
         SegmentedButton(
           selected = kind == k,
           onClick = {
             kind = k
-            if (status !in k.statuses) status = ConditionStatus.ACTIVE
+            if (status !in k.statuses) status = IndicationStatus.ACTIVE
           },
-          shape = SegmentedButtonDefaults.itemShape(index = i, count = ConditionKind.entries.size),
+          shape = SegmentedButtonDefaults.itemShape(index = i, count = IndicationKind.entries.size),
           icon = {},
           label = { Text(k.displayName) },
         )
       }
     }
     Text(
-      if (kind == ConditionKind.ACUTE) {
-        "Short-term, like an infection or injury. Moves to past conditions when it ends."
-      } else {
-        "Ongoing, like diabetes or high blood pressure."
+      when (kind) {
+        IndicationKind.ACUTE -> "Short-term, like an infection or injury. Moves to past indications when it ends."
+        IndicationKind.CHRONIC -> "Ongoing, like diabetes or high blood pressure."
+        IndicationKind.PREVENTIVE -> "Taken to prevent something, like PrEP or PEP. Stays current unless its course ends."
       },
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -438,12 +562,12 @@ fun ConditionEditorScreen(
           onClick = { status = s },
           shape = SegmentedButtonDefaults.itemShape(index = i, count = statuses.size),
           icon = {},
-          label = { Text(s.shortLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+          label = { Text(kind.shortStatusLabel(s), maxLines = 1, overflow = TextOverflow.Ellipsis) },
         )
       }
     }
     DatePickerField(
-      label = if (kind == ConditionKind.ACUTE) "Started" else "Diagnosed",
+      label = if (kind == IndicationKind.CHRONIC) "Diagnosed" else "Started",
       valueIso = startDateIso,
       onValueChange = { startDateIso = it },
     )
@@ -454,9 +578,10 @@ fun ConditionEditorScreen(
       supportingText = when {
         endBeforeStart -> "Ends before it starts"
         endDateIso.isNotBlank() -> null
-        kind == ConditionKind.ACUTE && courseEnd != null ->
+        kind.endsWithCourse && courseEnd != null ->
           "Blank: ends with its medication course (${UiFormat.date(courseEnd, withWeekday = false)})"
-        kind == ConditionKind.ACUTE -> "Blank: ends when its medication course ends"
+        kind == IndicationKind.ACUTE -> "Blank: ends when its medication course ends"
+        kind == IndicationKind.PREVENTIVE -> "Blank: ongoing unless its medication course has an end"
         else -> "Blank: ongoing"
       },
     )

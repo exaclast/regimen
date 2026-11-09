@@ -7,7 +7,9 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.UUID
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNames
 
 /**
  * Process-wide clock preference. Updated from the device setting by the activity and the notification
@@ -124,8 +126,8 @@ data class Medication(
   val minIntervalMinutes: Int? = null,
   val maxDailyDoses: Double? = null,
   val maxDailyAmount: Double? = null,
-  // Indication
-  val indicationConditionId: String? = null,
+  // Indications: the indications this treats. Many-to-many with indications, edited from either side.
+  val indicationIds: List<String> = emptyList(),
   val indicationText: String = "",
   // Optional metadata
   val prescriberId: String? = null,
@@ -224,42 +226,55 @@ data class Provider(
 )
 
 @Serializable
-enum class ConditionStatus(val displayName: String) {
+enum class IndicationStatus(val displayName: String) {
   ACTIVE("Active"),
   MANAGED("Managed / Stable"),
   REMISSION("In Remission"),
   RESOLVED("Resolved"),
 }
 
-/** Acute conditions (an infection, an injury) are short-lived; chronic ones are ongoing. */
+/**
+ * Why a medication is taken. Acute (an infection, an injury) is short-lived, chronic is ongoing, and
+ * preventive (PrEP, PEP) stops something happening. Declared in display order: acute comes first
+ * because it usually needs attention soonest.
+ */
 @Serializable
-enum class ConditionKind(val displayName: String) {
+enum class IndicationKind(val displayName: String) {
   ACUTE("Acute"),
-  CHRONIC("Chronic");
+  CHRONIC("Chronic"),
+  PREVENTIVE("Preventive");
 
-  /** Statuses that make sense for this kind: an acute condition is either active or over. */
-  val statuses: List<ConditionStatus>
+  /** Statuses that make sense for this kind: acute and preventive are either active or over. */
+  val statuses: List<IndicationStatus>
     get() = when (this) {
-      ACUTE -> listOf(ConditionStatus.ACTIVE, ConditionStatus.RESOLVED)
-      CHRONIC -> ConditionStatus.entries
+      ACUTE, PREVENTIVE -> listOf(IndicationStatus.ACTIVE, IndicationStatus.RESOLVED)
+      CHRONIC -> IndicationStatus.entries
     }
+
+  /** With no end date of its own, it ends with its linked medication courses, if they all end. */
+  val endsWithCourse: Boolean
+    get() = this != CHRONIC
+
+  /** Nothing is "resolved" about prevention, so a preventive course is "Completed" instead. */
+  fun statusLabel(status: IndicationStatus): String =
+    if (this == PREVENTIVE && status == IndicationStatus.RESOLVED) "Completed" else status.displayName
 }
 
 @Serializable
-data class Condition(
+data class Indication(
   val id: String = UUID.randomUUID().toString(),
   val name: String,
   val details: String? = null,
-  val kind: ConditionKind = ConditionKind.CHRONIC,
-  val status: ConditionStatus = ConditionStatus.ACTIVE,
+  val kind: IndicationKind = IndicationKind.CHRONIC,
+  val status: IndicationStatus = IndicationStatus.ACTIVE,
   /** When it started or was diagnosed. */
   val diagnosedDateIso: String? = null,
   /**
-   * Last day of the condition (inclusive); after it the condition is archived. An acute condition
-   * without one ends with its linked medication courses (see `ConditionTimeline`).
+   * Last day of the indication (inclusive); after it the indication is archived. An acute or preventive
+   * one without an end date ends with its linked medication courses (see `IndicationTimeline`).
    */
   val endDateIso: String? = null,
-  /** Providers helping manage it. A provider can manage many conditions and vice versa. */
+  /** Providers helping manage it. A provider can manage many indications and vice versa. */
   val providerIds: List<String> = emptyList(),
   val createdAtEpochMillis: Long = System.currentTimeMillis(),
   val updatedAtEpochMillis: Long = System.currentTimeMillis(),
@@ -498,8 +513,10 @@ data class AppSettings(
   val patientName: String = "",
   /** Track providers (tab, fields). null = not chosen yet: on only if any provider exists. */
   val trackProviders: Boolean? = null,
-  /** Track conditions (tab, fields). null = not chosen yet: on only if any condition exists. */
-  val trackConditions: Boolean? = null,
+  /** Track indications (tab, fields). null = not chosen yet: on only if any indication exists. */
+  @OptIn(ExperimentalSerializationApi::class)
+  @JsonNames("trackConditions") // Stored settings saved before the rename to indications.
+  val trackIndications: Boolean? = null,
   /** When a [SharedSettings] field last changed on this device; 0 = never. */
   val sharedSettingsUpdatedAtEpochMillis: Long = 0L,
 ) {
@@ -507,14 +524,14 @@ data class AppSettings(
   fun shared(): SharedSettings = SharedSettings(
     patientName = patientName,
     trackProviders = trackProviders,
-    trackConditions = trackConditions,
+    trackIndications = trackIndications,
     updatedAtEpochMillis = sharedSettingsUpdatedAtEpochMillis,
   )
 
   fun withShared(shared: SharedSettings): AppSettings = copy(
     patientName = shared.patientName,
     trackProviders = shared.trackProviders,
-    trackConditions = shared.trackConditions,
+    trackIndications = shared.trackIndications,
     sharedSettingsUpdatedAtEpochMillis = shared.updatedAtEpochMillis,
   )
 
@@ -530,7 +547,7 @@ data class AppSettings(
 data class SharedSettings(
   val patientName: String = "",
   val trackProviders: Boolean? = null,
-  val trackConditions: Boolean? = null,
+  val trackIndications: Boolean? = null,
   val updatedAtEpochMillis: Long = 0L,
 ) {
   /** Equality of the user-visible values, ignoring when they were set. */
@@ -577,7 +594,7 @@ data class RegimenBackupBundle(
   val primary: PrimaryClaim? = null,
   val medications: List<Medication> = emptyList(),
   val providers: List<Provider> = emptyList(),
-  val conditions: List<Condition> = emptyList(),
+  val indications: List<Indication> = emptyList(),
   val buckets: List<TimeOfDayBucket> = emptyList(),
   val schedules: List<MedicationSchedule> = emptyList(),
   val doseLogs: List<DoseLog> = emptyList(),

@@ -19,7 +19,7 @@
   - Administration route (`IM`, `SC`, `ID`, `IV`).
   - Vial concentration (`mg/mL`) and volume (`mL`), with automatic draw volume. `U-100` syringe units are shown only on a U-100 syringe; prefilled devices show no volume.
   - Separate draw and injection needle specs (`Gauge × Length`) plus syringe size.
-- **On-device label scanner (Gemini Nano / AICore)**: the ML Kit GenAI Prompt API reads bottle/vial photos or pasted text on-device and returns structured fields (NDC, names, strength, form, manufacturer, lot, expiry, instructions). Decoy schema fields and token sanitization keep patient, pharmacy and prescriber names from being read as drug names. Scan buttons are disabled on devices without AICore; manual lookup works everywhere.
+- **On-device label scanner (Gemini Nano / AICore)**: ML Kit text recognition reads one or more bottle/vial photos (a label that wraps around a small bottle can take a few), then the ML Kit GenAI Prompt API turns that text, or pasted text, into structured fields on-device. Only text reaches the model, because AICore's safety check refuses many label photos. The result includes fields (NDC, names, strength, form, manufacturer, lot, expiry, instructions). Decoy schema fields and token sanitization keep patient, pharmacy and prescriber names from being read as drug names. Scan buttons are disabled on devices without AICore; manual lookup works everywhere.
 - **OpenFDA cross-reference**: an NDC takes first priority in the [OpenFDA NDC API](https://open.fda.gov/apis/drug/ndc/). Otherwise name, strength, form and manufacturer are combined. A name that is not an exact match is never applied without asking, and ambiguous matches open a disambiguation dialog.
 - **Pacing guardrails**: minimum interval between doses, maximum daily dose count, and maximum daily amount (totaled in the default unit). Daily limits count a dose on the calendar day it was taken, with overnight-window exceptions. Warnings appear on Today, in notifications and on the alarm screen. Logging a dose over its limit happens in the app, which explains the limit first.
 
@@ -42,9 +42,9 @@
 - **Discreet mode** hides medication names on the lock screen.
 - **Master switches** to pause all reminders or silence only the ringing alarm.
 
-### 5. Providers & Conditions (optional)
+### 5. Providers & Indications (optional)
 - **Providers**: name, specialty, practice, phone, email, primary-care status, care dates, and linked medications. A medication's provider is labelled *Prescriber*.
-- **Conditions**: `ACUTE` (Active/Resolved) or `CHRONIC`, with dates and notes, linked to medications as indications. Providers and conditions are many-to-many and editable from either side. Past conditions are archived, and "Had this again" starts a new episode of a past acute condition.
+- **Indications**: why a medication is taken: `ACUTE`, `CHRONIC` or `PREVENTIVE` (such as PrEP or PEP), with dates and notes, listed by kind. Providers and indications are many-to-many, and so are medications and indications; both links are editable from either side. Past indications are archived, and "Had this again" starts a new episode of a past acute or preventive one.
 - Both are optional: turn off either in Settings to hide its tab and fields. Hiding never deletes data.
 
 ### 6. Encrypted Backup & Sync Groundwork
@@ -69,7 +69,7 @@ app/src/main/kotlin/com/exaclast/regimen/
 ├── data/                                # SQLite storage, repository, backup + key store,
 │                                        #   Gemini Nano label scanner/parser, OpenFDA lookup
 ├── domain/                              # DoseEngine (schedules, pacing, site rotation), DoseTimeline,
-│                                        #   WindowDeletion, ConditionTimeline
+│                                        #   WindowDeletion, IndicationTimeline
 ├── model/Models.kt                      # Serializable entities, AppSettings, backup bundle
 ├── notifications/                       # DoseNotificationManager, action receiver, alarm screen/ringtone
 ├── sync/                                # BundleCrypto, BundleMerger, BackupFiles, DeviceIdentity
@@ -78,7 +78,7 @@ app/src/main/kotlin/com/exaclast/regimen/
     ├── navigation/Routes.kt             # Serializable Routes + Navigator
     ├── components/                      # Shared lists, switches, pickers, UiFormat
     ├── screens/                         # Today, Medications (list/detail/editor), Providers,
-    │                                    #   Conditions, Settings, Backup screens
+    │                                    #   Indications, Settings, Backup screens
     └── theme/                           # Material 3 Expressive theme
 ```
 

@@ -13,7 +13,7 @@ import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.DoseTimeline
 import com.exaclast.regimen.domain.ScheduledDoseItem
 import com.exaclast.regimen.model.AppSettings
-import com.exaclast.regimen.model.Condition
+import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
@@ -170,7 +170,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
       schedules = snapshot.schedules,
       buckets = snapshot.buckets,
       logs = snapshot.doseLogs,
-      conditions = snapshot.conditions,
+      indications = snapshot.indications,
       providers = snapshot.providers,
       nowMillis = now,
     )
@@ -325,12 +325,18 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
 
   fun deleteProvider(prescriberId: String) = repository.deleteProvider(prescriberId)
 
-  fun setProviderConditions(providerId: String, conditionIds: Set<String>) =
-    repository.setProviderConditions(providerId, conditionIds)
+  fun setProviderIndications(providerId: String, indicationIds: Set<String>) =
+    repository.setProviderIndications(providerId, indicationIds)
 
-  fun saveCondition(condition: Condition) = repository.saveCondition(condition)
+  fun setIndicationProviders(indicationId: String, providerIds: Set<String>) =
+    repository.setIndicationProviders(indicationId, providerIds)
 
-  fun deleteCondition(conditionId: String) = repository.deleteCondition(conditionId)
+  fun setIndicationMedications(indicationId: String, medicationIds: Set<String>) =
+    repository.setIndicationMedications(indicationId, medicationIds)
+
+  fun saveIndication(indication: Indication) = repository.saveIndication(indication)
+
+  fun deleteIndication(indicationId: String) = repository.deleteIndication(indicationId)
 
   fun saveBucket(bucket: TimeOfDayBucket) = repository.saveBucket(bucket)
 

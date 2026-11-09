@@ -91,7 +91,8 @@ import com.exaclast.regimen.data.DrugCrossReferenceCriteria
 import com.exaclast.regimen.data.FdaDrugLookupResult
 import com.exaclast.regimen.data.FdaNdcLookupService
 import com.exaclast.regimen.data.ParsedMedicationLabel
-import com.exaclast.regimen.model.Condition
+import com.exaclast.regimen.domain.IndicationTimeline
+import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.InjectableDetails
 import com.exaclast.regimen.model.InjectionRoute
@@ -238,10 +239,10 @@ private fun CollapsibleFormSection(
 @Composable
 fun MedicationEditorScreen(
   initialMedication: Medication?,
-  conditions: List<Condition>,
+  indications: List<Indication>,
   providers: List<Provider>,
   // Optional tracking: hidden fields keep any existing link untouched.
-  showConditions: Boolean = true,
+  showIndications: Boolean = true,
   showProviders: Boolean = true,
   configuredPatientName: String = "",
   allowFdaLookup: Boolean = false,
@@ -309,7 +310,7 @@ fun MedicationEditorScreen(
   }
 
   // Indication & Provider
-  var selectedConditionId by rememberSaveable { mutableStateOf(initialMedication?.indicationConditionId) }
+  var selectedIndicationIds by rememberSaveable { mutableStateOf(initialMedication?.indicationIds.orEmpty()) }
   var indicationText by rememberSaveable { mutableStateOf(initialMedication?.indicationText.orEmpty()) }
   var selectedPrescriberId by rememberSaveable { mutableStateOf(initialMedication?.prescriberId) }
   var prescribedDateIso by rememberSaveable { mutableStateOf(initialMedication?.prescribedDateIso.orEmpty()) }
@@ -326,6 +327,9 @@ fun MedicationEditorScreen(
   var showLabelScanDialog by remember { mutableStateOf(false) }
   var manualLabelInput by remember { mutableStateOf("") }
   var pendingLabelPhotoUri by remember { mutableStateOf<Uri?>(null) }
+  // Photos taken so far of one container; a small bottle's label wraps around it, so it takes several.
+  val capturedLabelPhotos = remember { mutableStateListOf<Uri>() }
+  var showCapturedPhotosDialog by remember { mutableStateOf(false) }
   var disambiguationPrompt by remember {
     mutableStateOf<CrossReferenceOutcome.NeedsUserSelection?>(null)
   }
@@ -462,14 +466,14 @@ fun MedicationEditorScreen(
     }
   }
 
-  fun runGeminiLabelImageAnalysis(imageUri: Uri) {
+  fun runLabelPhotoAnalysis(imageUris: List<Uri>) {
     isLookingUpNdc = true
     ndcErrorText = null
-    ndcStatusText = "Analyzing label with on-device Gemini Nano..."
+    ndcStatusText = "Reading label text..."
     coroutineScope.launch {
-      val res = DrugBarcodeScanner.analyzeLabelFromImageUri(
+      val res = DrugBarcodeScanner.analyzeLabelFromPhotos(
         context = context,
-        imageUri = imageUri,
+        imageUris = imageUris,
         userConfiguredPatientName = configuredPatientName.takeIf { it.isNotBlank() },
         onStatusUpdate = { status -> ndcStatusText = status },
       )
@@ -504,16 +508,24 @@ fun MedicationEditorScreen(
   ) { success ->
     val uri = pendingLabelPhotoUri
     if (success && uri != null) {
-      runGeminiLabelImageAnalysis(uri)
+      capturedLabelPhotos.add(uri)
     }
+    // Also covers a cancelled shot after "Add another": the photos already taken stay reachable.
+    if (capturedLabelPhotos.isNotEmpty()) showCapturedPhotosDialog = true
   }
 
   val galleryLabelLauncher = rememberLauncherForActivityResult(
-    contract = ActivityResultContracts.GetContent()
-  ) { uri: Uri? ->
-    if (uri != null) {
-      runGeminiLabelImageAnalysis(uri)
+    contract = ActivityResultContracts.GetMultipleContents()
+  ) { uris: List<Uri> ->
+    if (uris.isNotEmpty()) {
+      runLabelPhotoAnalysis(uris)
     }
+  }
+
+  fun captureLabelPhoto() {
+    val uri = runCatching { DrugBarcodeScanner.createTempLabelPhotoUri(context) }.getOrNull() ?: return
+    pendingLabelPhotoUri = uri
+    cameraLabelLauncher.launch(uri)
   }
 
   fun runNdcOrBarcodeLookup(rawQuery: String) {
@@ -619,7 +631,7 @@ fun MedicationEditorScreen(
       minIntervalMinutes = minIntervalMins,
       maxDailyDoses = maxDailyDosesCheck.validOrNull(),
       maxDailyAmount = maxDailyAmountCheck.validOrNull(),
-      indicationConditionId = selectedConditionId,
+      indicationIds = selectedIndicationIds,
       indicationText = indicationText.trim(),
       prescriberId = selectedPrescriberId,
       prescribedDateIso = prescribedDateIso.trim().takeIf { it.isNotBlank() },
@@ -745,6 +757,14 @@ fun MedicationEditorScreen(
                   }
                 }
 
+                if (isGeminiNanoSupported) {
+                  Text(
+                    text = "Scanning reads the label on this device. A small bottle may need a few photos. Check the results against your bottle.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
+
                 if (!activeFeedback.isNullOrBlank()) {
                   Text(
                     text = activeFeedback,
@@ -836,17 +856,35 @@ fun MedicationEditorScreen(
             )
           }
 
-          // Indication (Condition selector + optional notes)
-          if (showConditions) {
-            val selectedConditionObj = conditions.find { it.id == selectedConditionId }
-            DropdownSelectorField(
-              label = "Indication (Condition)",
-              selectedText = selectedConditionObj?.name ?: "None linked",
-              options = listOf<Condition?>(null) + conditions,
-              optionLabel = { it?.name ?: "None linked" },
-              onOptionSelected = { selectedConditionId = it?.id },
-              modifier = Modifier.fillMaxWidth(),
-            )
+          // Indications (any number, grouped by kind + optional notes)
+          if (showIndications && indications.isNotEmpty()) {
+            Text("Indications", style = MaterialTheme.typography.titleSmall)
+            IndicationTimeline.groupedByKind(indications).forEach { (kind, group) ->
+              Text(
+                kind.displayName,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+              ) {
+                group.forEach { indication ->
+                  val selected = indication.id in selectedIndicationIds
+                  FilterChip(
+                    selected = selected,
+                    onClick = {
+                      selectedIndicationIds =
+                        if (selected) selectedIndicationIds - indication.id else selectedIndicationIds + indication.id
+                    },
+                    label = { Text(indication.name) },
+                    leadingIcon = if (selected) {
+                      { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                    } else null,
+                  )
+                }
+              }
+            }
           }
 
           // 2. Injectable specifications (only when Form is Injectable). Prefilled devices
@@ -1244,6 +1282,54 @@ fun MedicationEditorScreen(
               modifier = Modifier.fillMaxWidth(),
             )
           }
+  }
+
+  // Shown after each camera shot so the bottle can be turned and photographed again.
+  if (showCapturedPhotosDialog && capturedLabelPhotos.isNotEmpty()) {
+    AlertDialog(
+      onDismissRequest = {},
+      title = {
+        Text(if (capturedLabelPhotos.size == 1) "1 photo taken" else "${capturedLabelPhotos.size} photos taken")
+      },
+      text = {
+        Text(
+          "If the label wraps around the bottle, turn it a little and add another photo. Overlap " +
+            "generously: each line, especially the drug name, should appear whole in at least one photo.",
+        )
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            val photos = capturedLabelPhotos.toList()
+            capturedLabelPhotos.clear()
+            showCapturedPhotosDialog = false
+            runLabelPhotoAnalysis(photos)
+          },
+        ) {
+          Text("Read label")
+        }
+      },
+      dismissButton = {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+          TextButton(
+            onClick = {
+              capturedLabelPhotos.clear()
+              showCapturedPhotosDialog = false
+            },
+          ) {
+            Text("Discard")
+          }
+          TextButton(
+            onClick = {
+              showCapturedPhotosDialog = false
+              captureLabelPhoto()
+            },
+          ) {
+            Text("Add another")
+          }
+        }
+      },
+    )
   }
 
   // Label OCR Photo / Paste Dialog (for pharmacy vials, compounded bottles, and OTC labels)

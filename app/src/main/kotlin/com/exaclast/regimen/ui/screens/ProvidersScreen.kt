@@ -63,8 +63,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.data.RegimenSnapshot
-import com.exaclast.regimen.domain.ConditionTimeline
-import com.exaclast.regimen.model.Condition
+import com.exaclast.regimen.domain.IndicationTimeline
+import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.ui.components.AppSnackbarHost
@@ -90,7 +90,7 @@ fun ProviderListScreen(
   val listState = rememberLazyListState()
   val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
   val today = LocalDate.now()
-  val (past, providers) = snapshot.providers.partition { ConditionTimeline.isPast(it, today) }
+  val (past, providers) = snapshot.providers.partition { IndicationTimeline.isPast(it, today) }
   var showPast by rememberSaveable { mutableStateOf(false) }
   Scaffold(
     topBar = { TopAppBar(title = { Text("Providers") }) },
@@ -143,7 +143,7 @@ fun ProviderListScreen(
 @Composable
 private fun ProviderListItem(doc: Provider, snapshot: RegimenSnapshot, past: Boolean) {
   val medCount = snapshot.medications.count { it.prescriberId == doc.id }
-  val conditionCount = snapshot.conditions.count { doc.id in it.providerIds }
+  val indicationCount = snapshot.indications.count { doc.id in it.providerIds }
   ListItem(
     supportingContent = {
       Text(
@@ -152,7 +152,7 @@ private fun ProviderListItem(doc: Provider, snapshot: RegimenSnapshot, past: Boo
           doc.practice?.takeIf { it.isNotBlank() },
           if (past) UiFormat.dateIso(doc.careEndDateIso)?.let { "Care ended $it" } else null,
           medicationCount(medCount).takeIf { medCount > 0 },
-          conditionCount(conditionCount).takeIf { conditionCount > 0 && snapshot.tracksConditions },
+          indicationCount(indicationCount).takeIf { indicationCount > 0 && snapshot.tracksIndications },
         ).joinToString(" · "),
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
@@ -163,7 +163,7 @@ private fun ProviderListItem(doc: Provider, snapshot: RegimenSnapshot, past: Boo
   ) { Text(doc.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 }
 
-internal fun conditionCount(n: Int): String = if (n == 1) "1 condition" else "$n conditions"
+internal fun indicationCount(n: Int): String = if (n == 1) "1 indication" else "$n indications"
 
 internal fun medicationCount(n: Int): String = if (n == 1) "1 medication" else "$n medications"
 
@@ -186,8 +186,8 @@ fun ProviderDetailScreen(
   onEdit: () -> Unit,
   onDelete: () -> Unit,
   onOpenMedication: (String) -> Unit,
-  onOpenCondition: (String) -> Unit,
-  onSetConditions: (Set<String>) -> Unit,
+  onOpenIndication: (String) -> Unit,
+  onSetIndications: (Set<String>) -> Unit,
 ) {
   val provider = snapshot.providers.find { it.id == providerId }
   if (provider == null) {
@@ -196,10 +196,10 @@ fun ProviderDetailScreen(
   }
   val context = LocalContext.current
   val linkedMeds = snapshot.medications.filter { it.prescriberId == provider.id }
-  val linkedConditions = snapshot.conditions
+  val linkedIndications = snapshot.indications
     .filter { provider.id in it.providerIds }
-    .sortedWith(compareBy<Condition> { snapshot.isArchived(it) }.thenBy { it.name.lowercase() })
-  var editConditions by remember { mutableStateOf(false) }
+    .sortedWith(compareBy<Indication> { snapshot.isArchived(it) }.thenBy { it.name.lowercase() })
+  var editIndications by remember { mutableStateOf(false) }
   var menuOpen by remember { mutableStateOf(false) }
   var confirmDelete by remember { mutableStateOf(false) }
   val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -289,24 +289,24 @@ fun ProviderDetailScreen(
         }
       }
 
-      if (snapshot.tracksConditions) {
-        item(key = "conditions") {
+      if (snapshot.tracksIndications) {
+        item(key = "indications") {
           SectionHeader(
-            title = "Conditions they manage",
-            action = if (snapshot.conditions.isNotEmpty()) {
-              { TextButton(onClick = { editConditions = true }) { Text("Edit") } }
+            title = "Indications they manage",
+            action = if (snapshot.indications.isNotEmpty()) {
+              { TextButton(onClick = { editIndications = true }) { Text("Edit") } }
             } else null,
           )
           GroupedColumn {
-            if (linkedConditions.isEmpty()) {
-              GroupItem(0, 1) { ListItem(colors = groupListItemColors()) { Text("No conditions linked") } }
+            if (linkedIndications.isEmpty()) {
+              GroupItem(0, 1) { ListItem(colors = groupListItemColors()) { Text("No indications linked") } }
             }
-            linkedConditions.forEachIndexed { i, condition ->
-              GroupItem(index = i, count = linkedConditions.size, onClick = { onOpenCondition(condition.id) }) {
+            linkedIndications.forEachIndexed { i, indication ->
+              GroupItem(index = i, count = linkedIndications.size, onClick = { onOpenIndication(indication.id) }) {
                 ListItem(
-                  supportingContent = { Text(conditionSummary(condition, snapshot, snapshot.isArchived(condition))) },
+                  supportingContent = { Text(indicationSummary(indication, snapshot, snapshot.isArchived(indication))) },
                   colors = groupListItemColors(),
-                ) { Text(condition.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                ) { Text(indication.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
               }
             }
           }
@@ -320,15 +320,15 @@ fun ProviderDetailScreen(
     }
   }
 
-  if (editConditions) {
-    ProviderConditionsDialog(
+  if (editIndications) {
+    ProviderIndicationsDialog(
       snapshot = snapshot,
-      initialSelection = linkedConditions.mapTo(HashSet()) { it.id },
+      initialSelection = linkedIndications.mapTo(HashSet()) { it.id },
       onConfirm = {
-        editConditions = false
-        onSetConditions(it)
+        editIndications = false
+        onSetIndications(it)
       },
-      onDismiss = { editConditions = false },
+      onDismiss = { editIndications = false },
     )
   }
 
@@ -351,43 +351,47 @@ fun ProviderDetailScreen(
   }
 }
 
-/** Pick the conditions a provider manages: current ones first, then past ones. */
+/** Pick the indications a provider manages: current ones by kind, then past ones. */
 @Composable
-private fun ProviderConditionsDialog(
+private fun ProviderIndicationsDialog(
   snapshot: RegimenSnapshot,
   initialSelection: Set<String>,
   onConfirm: (Set<String>) -> Unit,
   onDismiss: () -> Unit,
 ) {
   var selection by remember { mutableStateOf(initialSelection) }
-  val options = snapshot.conditions
-    .sortedWith(compareBy<Condition> { snapshot.isArchived(it) }.thenBy { it.name.lowercase() })
+  val (past, current) = snapshot.indications.partition { snapshot.isArchived(it) }
+  val sections = IndicationTimeline.groupedByKind(current).map { (kind, group) -> kind.displayName to group } +
+    listOfNotNull(past.sortedBy { it.name.lowercase() }.takeIf { it.isNotEmpty() }?.let { "Past" to it })
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("Conditions they manage") },
+    title = { Text("Indications they manage") },
     text = {
       Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-        options.forEach { condition ->
-          val checked = condition.id in selection
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-              .fillMaxWidth()
-              .toggleable(
-                value = checked,
-                role = Role.Checkbox,
-                onValueChange = { selection = if (it) selection + condition.id else selection - condition.id },
-              )
-              .padding(vertical = 4.dp),
-          ) {
-            Checkbox(checked = checked, onCheckedChange = null)
-            Column(modifier = Modifier.padding(start = 12.dp)) {
-              Text(condition.name, style = MaterialTheme.typography.bodyLarge)
-              Text(
-                conditionSummary(condition, snapshot, snapshot.isArchived(condition)),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
+        sections.forEach { (title, group) ->
+          Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+          group.forEach { indication ->
+            val checked = indication.id in selection
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                  value = checked,
+                  role = Role.Checkbox,
+                  onValueChange = { selection = if (it) selection + indication.id else selection - indication.id },
+                )
+                .padding(vertical = 4.dp),
+            ) {
+              Checkbox(checked = checked, onCheckedChange = null)
+              Column(modifier = Modifier.padding(start = 12.dp)) {
+                Text(indication.name, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                  indicationSummary(indication, snapshot, snapshot.isArchived(indication)),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
             }
           }
         }

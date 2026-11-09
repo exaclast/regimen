@@ -238,7 +238,7 @@ class BundleMergerTest {
   @Test
   fun sharedSettingsMergeAndDevicesUnion() {
     val base = bundle()
-    val tabletShared = SharedSettings(trackConditions = false, updatedAtEpochMillis = 300)
+    val tabletShared = SharedSettings(trackIndications = false, updatedAtEpochMillis = 300)
     val result = BundleMerger.merge(
       base,
       bundle(devices = listOf(SyncDevice(phone, "Pixel", firstSeenEpochMillis = 1, lastSyncedEpochMillis = 50))),
@@ -251,7 +251,7 @@ class BundleMergerTest {
       ),
       localDeviceId = phone,
     )
-    assertEquals(false, result.bundle.sharedSettings.trackConditions)
+    assertEquals(false, result.bundle.sharedSettings.trackIndications)
     assertEquals(listOf(phone, tablet), result.bundle.devices.map { it.id })
     assertEquals(50L, result.bundle.devices.first().lastSyncedEpochMillis)
   }
