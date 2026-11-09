@@ -492,16 +492,19 @@ object FdaNdcLookupService {
   }
 
   /**
-   * An NDC record settles the lookup only if the name and strength also entered agree with it. A
-   * misread NDC digit commonly lands on a sibling strength of the same product, or another drug.
+   * A complete NDC that resolves to an FDA record settles the lookup, and the record then fills in
+   * the strength, form and the rest. The strength read off a label is the noisiest field (OCR
+   * glitches like "200 mg/25 S mg"), so it never overrules an NDC.
+   *
+   * The name still has to agree: a name that is not an exact match means the NDC or the label was
+   * misread (a wrong digit can land on a look-alike drug), so the user is asked instead.
    */
   internal fun ndcMatchIsConclusive(
     scored: CrossReferencedFdaCandidate,
     criteria: DrugCrossReferenceCriteria,
   ): Boolean {
     val nameEntered = !criteria.formulaName.isNullOrBlank() || !criteria.brandName.isNullOrBlank()
-    val strengthConflict = !criteria.strength.isNullOrBlank() && !scored.matchesStrength
-    return (!nameEntered || scored.exactNameMatch) && !strengthConflict
+    return !nameEntered || scored.exactNameMatch
   }
 
   internal fun scoreAndFilterCandidates(

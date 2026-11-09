@@ -343,7 +343,16 @@ class FdaNdcLookupServiceTest {
     assertEquals(false, conclusive(criteria("Prednisone")))
     assertEquals(true, conclusive(criteria("Prednisolone")))
     assertEquals(true, conclusive(DrugCrossReferenceCriteria(ndc = "00000-0000-01")))
-    assertEquals(false, conclusive(criteria("Prednisolone").copy(strength = "10 mg")))
+  }
+
+  @Test
+  fun ndcRecordWinsOverAStrengthReadFromTheLabel() {
+    val record = fdaResult("Prednisolone")
+    fun conclusive(c: DrugCrossReferenceCriteria) =
+      FdaNdcLookupService.ndcMatchIsConclusive(FdaNdcLookupService.scoreCandidateAgainstCriteria(record, c), c)
+    // A different strength and an OCR-garbled one ("200 mg/25 S mg") must not block a matching NDC.
+    assertEquals(true, conclusive(criteria("Prednisolone").copy(strength = "10 mg")))
+    assertEquals(true, conclusive(criteria("Prednisolone").copy(strength = "200 mg/25 S mg")))
   }
 
   /** A product with several package sizes; the FDA lists the -14 bottle first. */
