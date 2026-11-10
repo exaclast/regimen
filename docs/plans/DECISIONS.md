@@ -15,6 +15,7 @@ When a decision is made, add it here with the date. When one is reversed, say so
 | D-5 | **Should a History tab replace Providers and Indications in the bottom bar?** Proposed 2026-11-03, before those became optional tabs | Keep four tabs; reach history from the medication page and the calendar |
 | D-7 | **Where does list/detail start, and which tabs get it?** At 852 dp (foldable inner) two panes are tight and one column already looks good | Start around 1,000 dp; all three tabs for consistency |
 | D-8 | **Today in wide windows: a grid or a capped column?** | Try the grid (T-070) after the width cap (T-066) |
+| D-9 | **How does a watch get its data?** A companion that talks to the phone, or a standalone app with its own copy kept in step by sync. See `designs/wear-os.md` | Companion first: it needs no sync, and standalone can follow once sync (M6) exists |
 
 ---
 

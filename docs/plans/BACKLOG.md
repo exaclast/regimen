@@ -14,7 +14,7 @@ The one list of everything still to do. Last reconciled 2026-11-10 against commi
 
 ## How to use this file
 
-**Adding something.** Add one row in the matching area, using the next free number (next: **T-106**). IDs never change
+**Adding something.** Add one row in the matching area, using the next free number (next: **T-111**). IDs never change
 or get reused. One sentence is enough; anything longer goes in `designs/`. An audit or device pass adds rows here, and its
 raw report goes in `archive/`.
 
@@ -54,6 +54,7 @@ changes need real migrations, so anything that reshapes data belongs before it.
 | **M4** | **Everyday features** | The features that make it worth using daily | T-017, T-018, T-021, T-028–030, T-039, T-040, T-044, T-045, T-093–096, T-098 |
 | **M5** | **Stable release** | First non-prerelease tag | T-056, T-078, T-081, T-087, T-090, T-097, T-100 |
 | **M6** | **Sync** | Google Drive sync | T-102 |
+| **M7** | **Wear OS** | Doses from the wrist. Later, and D-9 (how the watch gets its data) has to be settled first | T-106–110 |
 
 ### Up next
 
@@ -230,6 +231,18 @@ Designs are in `designs/features.md` and `designs/sync-and-backup.md`.
 | T-103 | Second sync destination (WebDAV / self-hosted) | P3 | M | — | T-102 | phase 5 |
 | T-104 | Plain-language schedule creation with Gemini Nano | P3 | L | — | T-014, T-015, T-030, T-057 | O11 |
 | T-105 | Share Gemini Nano scaffolding between label and schedule parsing, if T-104 duplicates it | P3 | M | — | T-104 | O11 |
+
+### Wear OS
+
+Options and constraints are in `designs/wear-os.md`.
+
+| ID | Task | Pri | Size | Goal | Needs | Was |
+|----|------|-----|------|------|-------|-----|
+| T-106 | Find out what a paired watch already gets: how reminders look there, whether Take and Skip work from the watch, and what happens to swipe-to-snooze on an ongoing notification. No code; a device check first | P2 | S | M7 | | new |
+| T-107 | Move the pure dose logic (`model`, `domain`, most of `sync`) into a shared module a watch app can use | P2 | L | M7 | D-9, T-060 | new |
+| T-108 | Watch app: today's doses with Take, Skip and Snooze | P2 | L | M7 | T-107, T-110 | new |
+| T-109 | Tile or widget and a complication for the next dose | P3 | M | M7 | T-108 | new |
+| T-110 | Phone and watch data path: Data Layer for a companion watch app, or Drive sync for a standalone one | P2 | L | M7 | D-9, T-062–065 | new |
 
 ---
 
