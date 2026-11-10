@@ -36,6 +36,9 @@ sealed interface Route : NavKey {
   /** [copyFromId]: start a new episode pre-filled from that past indication. */
   @Serializable data class IndicationEditor(val id: String? = null, val copyFromId: String? = null) : Route
 
+  /** Corrects a logged dose (time, amount, site, note). */
+  @Serializable data class DoseLogEditor(val id: String) : Route
+
   @Serializable data object Settings : Route
 
   @Serializable data class DoseWindowEditor(val id: String? = null) : Route
@@ -61,6 +64,7 @@ val Route.isFullScreenTask: Boolean
     this is Route.ScheduleEditor ||
     this is Route.ProviderEditor ||
     this is Route.IndicationEditor ||
+    this is Route.DoseLogEditor ||
     this is Route.Settings ||
     this is Route.DoseWindowEditor ||
     this is Route.BackupEncryption ||

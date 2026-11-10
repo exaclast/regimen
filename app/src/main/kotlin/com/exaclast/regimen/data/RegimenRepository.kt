@@ -358,6 +358,12 @@ class RegimenRepository private constructor(context: Context) {
     reloadSnapshot()
   }
 
+  /** Saves an edited dose log (time, amount, site, notes), stamping it so the change syncs. */
+  fun updateDoseLog(log: DoseLog) {
+    db.upsertDoseLog(log.copy(updatedAtEpochMillis = System.currentTimeMillis()))
+    reloadSnapshot()
+  }
+
   /**
    * Restores [log] exactly as it was (used by Undo): un-deletes it, or puts back the state a newer action
    * overwrote. A restored future snooze is re-armed by the refresh in reloadSnapshot.

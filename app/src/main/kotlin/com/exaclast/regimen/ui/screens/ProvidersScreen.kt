@@ -216,7 +216,11 @@ fun ProviderDetailScreen(
         subtitle = {
           Text(
             listOfNotNull(
-              if (provider.isPcp) "Primary care" else null,
+              when {
+                provider.isPcp -> "Primary care"
+                provider.seenRegularly -> "Seen regularly"
+                else -> null
+              },
               provider.specialty?.takeIf { it.isNotBlank() },
             ).joinToString(" · ").ifEmpty { "Provider" },
             maxLines = 1,

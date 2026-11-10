@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.ScheduledDoseItem
+import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
@@ -70,10 +71,13 @@ import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.GroupedColumn
 import com.exaclast.regimen.ui.components.InfoRow
+import com.exaclast.regimen.ui.components.LogTimeDialog
 import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.groupListItemColors
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 
 @Composable
 fun MedicationDetailScreen(
@@ -84,14 +88,15 @@ fun MedicationDetailScreen(
   promptForSchedule: Boolean,
   /** The scheduled dose "Log dose" should complete, if one is still to do today. */
   dueDose: ScheduledDoseItem?,
-  onTakeDose: (ScheduledDoseItem, String?) -> Unit,
+  onTakeDose: (item: ScheduledDoseItem, site: String?, takenAtMillis: Long?, note: String?) -> Unit,
   onBack: () -> Unit,
   onEdit: () -> Unit,
   onDelete: () -> Unit,
   onAddSchedule: () -> Unit,
   onEditSchedule: (MedicationSchedule) -> Unit,
   onDeleteSchedule: (MedicationSchedule) -> Unit,
-  onLogDose: (Medication, String?) -> Unit,
+  onLogDose: (medication: Medication, site: String?, takenAtMillis: Long?, note: String?) -> Unit,
+  onEditLog: (DoseLog) -> Unit,
   onOpenProvider: (String) -> Unit,
   onOpenIndication: (String) -> Unit,
 ) {
@@ -121,19 +126,37 @@ fun MedicationDetailScreen(
 
   // An extra dose is logged on its own; otherwise logging completes the dose that's due.
   var loggingExtra by remember { mutableStateOf(false) }
+  // When the dose in progress was taken (null = now) and its note, picked in the time dialog.
+  var loggingAt by remember { mutableStateOf<Long?>(null) }
+  var loggingNote by remember { mutableStateOf<String?>(null) }
+  var timeChoice by remember { mutableStateOf<TimeChoice?>(null) }
   val warning = pacing.warningText()
 
+  // A dose logged at another time is paced against that time, not now.
+  fun pacingFor(takenAtMillis: Long?) = if (takenAtMillis == null) {
+    pacing
+  } else {
+    val day = Instant.ofEpochMilli(takenAtMillis).atZone(ZoneId.systemDefault()).toLocalDate().toString()
+    DoseEngine.evaluatePacing(medication, snapshot.doseLogs, takenAtMillis, day, snapshot.buckets, backdated = true)
+  }
+
   fun log(site: String?) {
-    if (dueDose != null && !loggingExtra) onTakeDose(dueDose, site) else onLogDose(medication, site)
+    if (dueDose != null && !loggingExtra) {
+      onTakeDose(dueDose, site, loggingAt, loggingNote)
+    } else {
+      onLogDose(medication, site, loggingAt, loggingNote)
+    }
   }
 
   fun proceedWithoutPacingCheck() {
     if (multiSite) choosingSite = true else log(nextSite)
   }
 
-  fun startLogging(extra: Boolean) {
+  fun startLogging(extra: Boolean, takenAtMillis: Long? = null, note: String? = null) {
     loggingExtra = extra
-    if (warning != null) pacingPrompt = true else proceedWithoutPacingCheck()
+    loggingAt = takenAtMillis
+    loggingNote = note
+    if (pacingFor(takenAtMillis).warningText() != null) pacingPrompt = true else proceedWithoutPacingCheck()
   }
 
   Scaffold(
@@ -213,9 +236,14 @@ fun MedicationDetailScreen(
                 Text(logLabel)
               }
             }
-            if (dueDose != null) {
-              TextButton(onClick = { startLogging(extra = true) }, modifier = Modifier.fillMaxWidth()) {
-                Text("Log an extra dose")
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+              TextButton(onClick = { timeChoice = TimeChoice(extra = false, startWithOtherTime = true) }) {
+                Text("Other time")
+              }
+              if (dueDose != null) {
+                TextButton(onClick = { timeChoice = TimeChoice(extra = true, startWithOtherTime = false) }) {
+                  Text("Extra dose")
+                }
               }
             }
           }
@@ -355,10 +383,18 @@ fun MedicationDetailScreen(
             }
           }
           logs.forEachIndexed { i, log ->
-            GroupItem(index = i, count = logs.size) {
+            GroupItem(index = i, count = logs.size, onClick = { onEditLog(log) }) {
               ListItem(
                 supportingContent = {
-                  Text(listOfNotNull(UiFormat.dateTime(log.actionTimestampMillis), log.siteUsed).joinToString(" · "))
+                  Text(
+                    listOfNotNull(
+                      UiFormat.dateTime(log.actionTimestampMillis),
+                      log.siteUsed,
+                      log.notes?.takeIf { it.isNotBlank() },
+                    ).joinToString(" · "),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                  )
                 },
                 colors = groupListItemColors(),
               ) {
@@ -385,7 +421,23 @@ fun MedicationDetailScreen(
     )
   }
 
+  timeChoice?.let { choice ->
+    val duePart = dueDose.takeIf { !choice.extra }
+    LogTimeDialog(
+      title = duePart?.let { "Log ${it.bucket.name} dose" } ?: "Log ${medication.primaryName}",
+      doseLabel = duePart?.formattedDoseInstruction() ?: medication.formattedDefaultDose(),
+      defaultDateIso = todayIso,
+      startWithOtherTime = choice.startWithOtherTime,
+      onDismiss = { timeChoice = null },
+      onConfirm = { takenAtMillis, note ->
+        timeChoice = null
+        startLogging(choice.extra, takenAtMillis, note)
+      },
+    )
+  }
+
   if (pacingPrompt) {
+    val shownPacing = pacingFor(loggingAt)
     AlertDialog(
       onDismissRequest = { pacingPrompt = false },
       icon = { Icon(Icons.Default.Warning, contentDescription = null) },
@@ -393,8 +445,8 @@ fun MedicationDetailScreen(
       text = {
         Text(
           listOfNotNull(
-            pacing.nextAllowedText()?.let { "The next dose isn't due until $it." },
-            if (pacing.isDailyLimitReached) "You've reached today's limit." else null,
+            shownPacing.nextAllowedText()?.let { "The next dose isn't due until $it." },
+            if (shownPacing.isDailyLimitReached) "You've reached the daily limit." else null,
             "These limits come from this medication's settings.",
           ).joinToString(" ")
         )
@@ -437,6 +489,9 @@ fun MedicationDetailScreen(
     )
   }
 }
+
+/** Which time dialog to open from the medication page: for an extra dose, or for the dose that's due. */
+private data class TimeChoice(val extra: Boolean, val startWithOtherTime: Boolean)
 
 private fun doseCount(value: Double): String {
   val n = formatNum(value)

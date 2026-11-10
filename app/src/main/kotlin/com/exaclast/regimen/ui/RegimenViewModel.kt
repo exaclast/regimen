@@ -195,8 +195,13 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
   // region Dose logging (each emits a message with Undo)
 
   /** Logs a scheduled dose as taken, now or at [takenAtMillis] (e.g. the window end for "taken on time"). */
-  fun takeScheduledDose(item: ScheduledDoseItem, site: String? = item.suggestedSite, takenAtMillis: Long? = null) {
-    val log = writeScheduledLog(item, DoseStatus.TAKEN, site, takenAtMillis = takenAtMillis) ?: return
+  fun takeScheduledDose(
+    item: ScheduledDoseItem,
+    site: String? = item.suggestedSite,
+    takenAtMillis: Long? = null,
+    note: String? = null,
+  ) {
+    val log = writeScheduledLog(item, DoseStatus.TAKEN, site, takenAtMillis = takenAtMillis, notes = note) ?: return
     val siteNote = log.siteUsed?.let { " · $it" } ?: ""
     val timeNote = takenAtMillis?.let { " as taken at ${UiFormat.time(it)}" } ?: ""
     post(
@@ -250,6 +255,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     siteUsed: String? = null,
     dateIso: String = uiState.value.todayIso,
     takenAtMillis: Long? = null,
+    note: String? = null,
   ) {
     val day = takenAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().toString() } ?: dateIso
     val log = repository.logDose(
@@ -261,6 +267,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
       amountTaken = amount,
       amountUnit = unit,
       siteUsed = siteUsed,
+      notes = note,
       actionTimestampMillis = takenAtMillis,
     ) ?: return
     val timeNote = takenAtMillis?.let { " · ${UiFormat.dateTime(it)}" } ?: ""
@@ -274,6 +281,14 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
   fun deleteDoseLog(log: DoseLog) {
     repository.deleteDoseLog(log.id)
     post("Log entry deleted", UndoAction.RestoreDeletedLog(log))
+  }
+
+  /** Saves an edited log; Undo puts the previous version back. */
+  fun saveDoseLog(updated: DoseLog) {
+    val previous = repository.snapshot.value.doseLogs.find { it.id == updated.id } ?: return
+    if (previous == updated) return
+    repository.updateDoseLog(updated)
+    post("Dose log updated", UndoAction.RestoreLogs(listOf(previous to updated.id)))
   }
 
   fun undo(action: UndoAction) {
@@ -296,6 +311,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     site: String?,
     snoozedUntil: Long? = null,
     takenAtMillis: Long? = null,
+    notes: String? = null,
   ): DoseLog? = repository.logDose(
     medicationId = item.medication.id,
     scheduleId = item.schedule.id,
@@ -305,6 +321,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     amountTaken = item.schedule.doseAmount,
     amountUnit = item.schedule.doseUnit,
     siteUsed = site,
+    notes = notes,
     snoozedUntilMillis = snoozedUntil,
     existingLogId = item.existingLog?.id,
     actionTimestampMillis = takenAtMillis,

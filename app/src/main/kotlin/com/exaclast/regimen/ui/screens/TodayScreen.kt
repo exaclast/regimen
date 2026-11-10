@@ -63,9 +63,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -74,7 +71,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -111,15 +107,13 @@ import com.exaclast.regimen.notifications.DoseAlarmTiming
 import com.exaclast.regimen.ui.RegimenUiState
 import com.exaclast.regimen.ui.components.AppSnackbarHost
 import com.exaclast.regimen.ui.components.ConfirmDialog
-import com.exaclast.regimen.ui.components.DatePickerField
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.GroupedColumn
+import com.exaclast.regimen.ui.components.LogTimeDialog
 import com.exaclast.regimen.ui.components.SectionHeader
-import com.exaclast.regimen.ui.components.TimePickerField
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.groupListItemColors
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.ZoneId
 
 @Composable
@@ -134,8 +128,9 @@ fun TodayScreen(
   onSnooze: (ScheduledDoseItem) -> Unit,
   onClearLog: (ScheduledDoseItem) -> Unit,
   onTakeAll: (List<ScheduledDoseItem>) -> Unit,
-  onLogPrn: (item: PrnDoseItem, site: String?, takenAtMillis: Long?) -> Unit,
+  onLogPrn: (item: PrnDoseItem, site: String?, takenAtMillis: Long?, note: String?) -> Unit,
   onDeleteLog: (DoseLog) -> Unit,
+  onEditLog: (DoseLog) -> Unit,
   onOpenMedication: (String) -> Unit,
   onOpenWindow: (String) -> Unit,
   onAddMedication: () -> Unit,
@@ -179,7 +174,7 @@ fun TodayScreen(
   fun commit(request: TakeRequest, site: String?) {
     when (request) {
       is TakeRequest.Scheduled -> onTake(request.item, site, request.takenAtMillis)
-      is TakeRequest.Prn -> onLogPrn(request.item, site, request.takenAtMillis)
+      is TakeRequest.Prn -> onLogPrn(request.item, site, request.takenAtMillis, request.note)
     }
   }
 
@@ -213,9 +208,9 @@ fun TodayScreen(
   }
 
   // Pacing for a dose logged at another time is judged at that time, not now.
-  fun requestPrnDose(item: PrnDoseItem, takenAtMillis: Long?) {
+  fun requestPrnDose(item: PrnDoseItem, takenAtMillis: Long?, note: String?) {
     if (takenAtMillis == null) {
-      requestTake(TakeRequest.Prn(item))
+      requestTake(TakeRequest.Prn(item, note = note))
       return
     }
     val snapshot = uiState.snapshot
@@ -223,7 +218,7 @@ fun TodayScreen(
     val pacing = DoseEngine.evaluatePacing(
       item.medication, snapshot.doseLogs, takenAtMillis, day, snapshot.buckets, backdated = true,
     )
-    requestTake(TakeRequest.Prn(item.copy(pacing = pacing), takenAtMillis))
+    requestTake(TakeRequest.Prn(item.copy(pacing = pacing), takenAtMillis, note))
   }
 
   val title = if (uiState.isToday) "Today" else UiFormat.date(selectedDate)
@@ -396,6 +391,7 @@ fun TodayScreen(
             logs = dayLogs,
             medications = uiState.snapshot.medications,
             onDelete = onDeleteLog,
+            onEdit = onEditLog,
           )
         }
       }
@@ -415,14 +411,14 @@ fun TodayScreen(
 
   timePrompt?.let { request ->
     LogTimeDialog(
-      medication = request.item.medication,
+      title = "Log ${request.item.medication.primaryName}",
       doseLabel = "${formatNum(request.item.doseAmount)} ${request.item.doseUnit.symbol}",
       defaultDateIso = uiState.selectedDateIso,
       startWithOtherTime = request.startWithOtherTime,
       onDismiss = { timePrompt = null },
-      onConfirm = { takenAtMillis ->
+      onConfirm = { takenAtMillis, note ->
         timePrompt = null
-        requestPrnDose(request.item, takenAtMillis)
+        requestPrnDose(request.item, takenAtMillis, note)
       },
     )
   }
@@ -551,66 +547,6 @@ private fun ExtraDosePickerDialog(
 /** An as-needed or extra dose waiting for the user to say when it was taken. */
 private data class LogTimeRequest(val item: PrnDoseItem, val startWithOtherTime: Boolean)
 
-/**
- * Asks whether a dose was taken now or at another date and time. Confirms with null for "now", or the
- * chosen moment; a time in the future can't be logged.
- */
-@Composable
-private fun LogTimeDialog(
-  medication: Medication,
-  doseLabel: String,
-  defaultDateIso: String,
-  startWithOtherTime: Boolean,
-  onDismiss: () -> Unit,
-  onConfirm: (takenAtMillis: Long?) -> Unit,
-) {
-  val initial = remember { LocalDateTime.now() }
-  var otherTime by rememberSaveable { mutableStateOf(startWithOtherTime) }
-  var dateIso by rememberSaveable { mutableStateOf(defaultDateIso) }
-  var hour by rememberSaveable { mutableIntStateOf(initial.hour) }
-  var minute by rememberSaveable { mutableIntStateOf(initial.minute) }
-  val takenAt = runCatching {
-    LocalDate.parse(dateIso).atTime(hour, minute).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-  }.getOrNull()
-  val inFuture = takenAt != null && takenAt > System.currentTimeMillis()
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text("Log ${medication.primaryName}") },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(doseLabel, style = MaterialTheme.typography.bodyLarge)
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-          listOf("Now", "Other time").forEachIndexed { index, label ->
-            SegmentedButton(
-              selected = otherTime == (index == 1),
-              onClick = { otherTime = index == 1 },
-              shape = SegmentedButtonDefaults.itemShape(index, 2),
-            ) { Text(label) }
-          }
-        }
-        if (otherTime) {
-          DatePickerField(label = "Date", valueIso = dateIso, onValueChange = { dateIso = it }, allowClear = false)
-          TimePickerField(label = "Time", hour = hour, minute = minute, onTimeChange = { h, m -> hour = h; minute = m })
-          if (inFuture) {
-            Text(
-              "That time hasn't happened yet.",
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.error,
-            )
-          }
-        }
-      }
-    },
-    confirmButton = {
-      Button(
-        onClick = { onConfirm(if (otherTime) takenAt else null) },
-        enabled = !otherTime || (takenAt != null && !inFuture),
-      ) { Text("Log dose") }
-    },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-  )
-}
-
 /** A pending "take" through the pacing/confirmation flow. */
 private sealed interface TakeRequest {
   val medication: Medication
@@ -628,8 +564,8 @@ private sealed interface TakeRequest {
     override val suggestedSite get() = item.suggestedSite
   }
 
-  /** [takenAtMillis] logs the dose at that time instead of now. */
-  data class Prn(val item: PrnDoseItem, val takenAtMillis: Long? = null) : TakeRequest {
+  /** [takenAtMillis] logs the dose at that time instead of now. [note] is saved with the log. */
+  data class Prn(val item: PrnDoseItem, val takenAtMillis: Long? = null, val note: String? = null) : TakeRequest {
     override val medication get() = item.medication
     override val pacing get() = item.pacing
     override val suggestedSite get() = item.suggestedSite
@@ -1131,6 +1067,7 @@ private fun DayLogList(
   logs: List<DoseLog>,
   medications: List<Medication>,
   onDelete: (DoseLog) -> Unit,
+  onEdit: (DoseLog) -> Unit,
 ) {
   val medMap = remember(medications) { medications.associateBy { it.id } }
   GroupedColumn {
@@ -1138,10 +1075,19 @@ private fun DayLogList(
       val med = medMap[log.medicationId]
       val name = med?.primaryName ?: "Medication"
       val verb = if (log.status == DoseStatus.SKIPPED) "Skipped" else "Taken"
-      GroupItem(index = index, count = logs.size) {
+      // The editor needs the medication, so a log whose medication was deleted stays read-only.
+      GroupItem(index = index, count = logs.size, onClick = if (med != null) ({ onEdit(log) }) else null) {
         ListItem(
           supportingContent = {
-            Text(listOfNotNull("$verb ${UiFormat.time(log.actionTimestampMillis)}", log.siteUsed).joinToString(" · "))
+            Text(
+              listOfNotNull(
+                "$verb ${UiFormat.time(log.actionTimestampMillis)}",
+                log.siteUsed,
+                log.notes?.takeIf { it.isNotBlank() },
+              ).joinToString(" · "),
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis,
+            )
           },
           trailingContent = {
             IconButton(onClick = { onDelete(log) }) {

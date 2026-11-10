@@ -44,6 +44,7 @@ import com.exaclast.regimen.ui.screens.IndicationDetailScreen
 import com.exaclast.regimen.ui.screens.IndicationEditorScreen
 import com.exaclast.regimen.ui.screens.IndicationListScreen
 import com.exaclast.regimen.ui.screens.DiagnosticsTarget
+import com.exaclast.regimen.ui.screens.DoseLogEditorScreen
 import com.exaclast.regimen.ui.screens.DoseWindowEditorScreen
 import com.exaclast.regimen.ui.screens.MedicationDetailScreen
 import com.exaclast.regimen.ui.screens.MedicationEditorScreen
@@ -154,7 +155,7 @@ fun RegimenApp(
                 onSnooze = { viewModel.snoozeScheduledDose(it) },
                 onClearLog = viewModel::clearScheduledDoseLog,
                 onTakeAll = viewModel::takeAllPending,
-                onLogPrn = { item, site, takenAtMillis ->
+                onLogPrn = { item, site, takenAtMillis, note ->
                   viewModel.logPrnOrCustomDose(
                     item.medication,
                     item.doseAmount,
@@ -162,9 +163,11 @@ fun RegimenApp(
                     site,
                     uiState.selectedDateIso,
                     takenAtMillis,
+                    note,
                   )
                 },
                 onDeleteLog = viewModel::deleteDoseLog,
+                onEditLog = { navigator.navigate(Route.DoseLogEditor(it.id)) },
                 onOpenMedication = { navigator.navigate(Route.MedicationDetail(it)) },
                 onOpenWindow = { navigator.navigate(Route.DoseWindowEditor(it)) },
                 onAddMedication = { navigator.navigate(Route.MedicationEditor()) },
@@ -195,7 +198,9 @@ fun RegimenApp(
                 todayIso = uiState.todayIso,
                 promptForSchedule = key.promptForSchedule,
                 dueDose = DoseTimeline.nextDoseFor(key.id, uiState.carriedOver, uiState.todayBoard),
-                onTakeDose = { item, site -> viewModel.takeScheduledDose(item, site) },
+                onTakeDose = { item, site, takenAtMillis, note ->
+                  viewModel.takeScheduledDose(item, site, takenAtMillis, note)
+                },
                 onBack = navigator::back,
                 onEdit = { navigator.navigate(Route.MedicationEditor(key.id)) },
                 onDelete = {
@@ -205,7 +210,10 @@ fun RegimenApp(
                 onAddSchedule = { navigator.navigate(Route.ScheduleEditor(key.id)) },
                 onEditSchedule = { navigator.navigate(Route.ScheduleEditor(key.id, it.id)) },
                 onDeleteSchedule = viewModel::deleteSchedule,
-                onLogDose = { med, site -> viewModel.logPrnOrCustomDose(med, siteUsed = site) },
+                onLogDose = { med, site, takenAtMillis, note ->
+                  viewModel.logPrnOrCustomDose(med, siteUsed = site, takenAtMillis = takenAtMillis, note = note)
+                },
+                onEditLog = { navigator.navigate(Route.DoseLogEditor(it.id)) },
                 onOpenProvider = { navigator.navigate(Route.ProviderDetail(it)) },
                 onOpenIndication = { navigator.navigate(Route.IndicationDetail(it)) },
               )
@@ -268,6 +276,24 @@ fun RegimenApp(
                 onOpenProvider = { navigator.navigate(Route.ProviderDetail(it)) },
                 onAddProvider = { navigator.navigate(Route.ProviderEditor()) },
               )
+            }
+
+            entry<Route.DoseLogEditor> { key ->
+              val log = snapshot.doseLogs.find { it.id == key.id }
+              val medication = log?.let { l -> snapshot.medications.find { it.id == l.medicationId } }
+              if (log == null || medication == null) {
+                LaunchedEffect(key) { navigator.back() }
+              } else {
+                DoseLogEditorScreen(
+                  log = log,
+                  medication = medication,
+                  onClose = navigator::back,
+                  onSave = { updated ->
+                    viewModel.saveDoseLog(updated)
+                    navigator.back()
+                  },
+                )
+              }
             }
 
             entry<Route.ProviderDetail> { key ->
