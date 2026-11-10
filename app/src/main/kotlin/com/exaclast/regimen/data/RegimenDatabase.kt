@@ -181,7 +181,9 @@ class RegimenDatabase(context: Context) :
         }.getOrNull()?.let { result.add(it) }
       }
     }
-    return result.sortedWith(compareByDescending<Provider> { it.isPcp }.thenBy { it.name.lowercase() })
+    return result.sortedWith(
+      compareByDescending<Provider> { it.isPcp }.thenByDescending { it.isRegular }.thenBy { it.name.lowercase() }
+    )
   }
 
   fun upsertProvider(provider: Provider) {

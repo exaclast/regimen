@@ -2,7 +2,9 @@
 
 package com.exaclast.regimen.ui.screens
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.filled.Vaccines
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -30,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
@@ -51,16 +55,23 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.data.RegimenSnapshot
+import com.exaclast.regimen.domain.MedicationGroups
+import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationForm
+import com.exaclast.regimen.model.MedicationGrouping
 import com.exaclast.regimen.ui.ScheduleText
 import com.exaclast.regimen.ui.components.AppSnackbarHost
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.ListContentPadding
+import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.ui.components.groupListItemColors
+import java.time.LocalDate
 
 @Composable
 fun MedicationListScreen(
   snapshot: RegimenSnapshot,
+  grouping: MedicationGrouping,
+  onGroupingChange: (MedicationGrouping) -> Unit,
   onOpenMedication: (String) -> Unit,
   onAddMedication: () -> Unit,
 ) {
@@ -69,9 +80,18 @@ fun MedicationListScreen(
   val listState = rememberLazyListState()
   val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
 
-  val meds = remember(snapshot.medications, query) {
+  var showFinished by rememberSaveable { mutableStateOf(false) }
+  // The indication chip goes away with indication tracking; the saved choice is kept for if it returns.
+  val groupingOptions = MedicationGrouping.entries.filter {
+    it != MedicationGrouping.INDICATION || snapshot.tracksIndications
+  }
+  val activeGrouping = grouping.takeIf { it in groupingOptions } ?: MedicationGrouping.SCHEDULE
+  val today = LocalDate.now()
+
+  val grouped = remember(snapshot.medications, snapshot.schedules, snapshot.indications, activeGrouping, today, query) {
     val q = query.trim().lowercase()
-    snapshot.medications
+    MedicationGroups
+      .group(activeGrouping, snapshot.medications, snapshot.schedules, snapshot.indications, today)
       .filter {
         q.isEmpty() ||
           it.formulaName.lowercase().contains(q) ||
@@ -79,7 +99,6 @@ fun MedicationListScreen(
           it.indicationText.lowercase().contains(q) ||
           it.ndc11?.contains(q) == true
       }
-      .sortedBy { it.primaryName.lowercase() }
   }
 
   Scaffold(
@@ -119,31 +138,68 @@ fun MedicationListScreen(
         .fillMaxSize()
         .padding(padding),
       contentPadding = ListContentPadding,
-      verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
+      verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-      if (meds.isEmpty()) {
+      item(key = "grouping") {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          groupingOptions.forEach { option ->
+            FilterChip(
+              selected = option == activeGrouping,
+              onClick = { onGroupingChange(option) },
+              label = { Text(option.displayName) },
+            )
+          }
+        }
+      }
+      if (grouped.sections.isEmpty() && grouped.finished.isEmpty()) {
         item { Text("No matches for \"$query\"", modifier = Modifier.padding(16.dp)) }
       }
-      itemsIndexed(meds, key = { _, m -> m.id }) { index, med ->
-        GroupItem(index = index, count = meds.size, onClick = { onOpenMedication(med.id) }) {
-          ListItem(
-            leadingContent = { FormIcon(med.form) },
-            supportingContent = {
-              Text(
-                text = listOfNotNull(
-                  listOfNotNull(med.secondaryName, med.strength).joinToString(" · "),
-                  ScheduleText.summary(snapshot.schedules.filter { it.medicationId == med.id }, snapshot.buckets),
-                ).joinToString("\n"),
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-              )
-            },
-            colors = groupListItemColors(),
-          ) { Text(med.primaryName, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+      grouped.sections.forEach { section ->
+        item(key = "header-${section.key}") { SectionHeader(section.title) }
+        // Grouped by indication a medication can be in several sections, so its id alone isn't unique.
+        itemsIndexed(section.medications, key = { _, m -> "${section.key}/${m.id}" }) { index, med ->
+          GroupItem(index = index, count = section.medications.size, onClick = { onOpenMedication(med.id) }) {
+            MedicationListItem(med, snapshot)
+          }
+        }
+      }
+      if (grouped.finished.isNotEmpty()) {
+        // A search looks through finished medications too, or a match could stay hidden.
+        val expanded = showFinished || query.isNotBlank()
+        item(key = "finished-header") {
+          SectionHeader(
+            title = "Finished (${grouped.finished.size})",
+            action = { TextButton(onClick = { showFinished = !showFinished }) { Text(if (expanded) "Hide" else "Show") } },
+          )
+        }
+        if (expanded) {
+          itemsIndexed(grouped.finished, key = { _, m -> "finished/${m.id}" }) { index, med ->
+            GroupItem(index = index, count = grouped.finished.size, onClick = { onOpenMedication(med.id) }) {
+              MedicationListItem(med, snapshot)
+            }
+          }
         }
       }
     }
   }
+}
+
+@Composable
+private fun MedicationListItem(med: Medication, snapshot: RegimenSnapshot) {
+  ListItem(
+    leadingContent = { FormIcon(med.form) },
+    supportingContent = {
+      Text(
+        text = listOfNotNull(
+          listOfNotNull(med.secondaryName, med.strength).joinToString(" · "),
+          ScheduleText.summary(snapshot.schedules.filter { it.medicationId == med.id }, snapshot.buckets),
+        ).joinToString("\n"),
+        maxLines = 3,
+        overflow = TextOverflow.Ellipsis,
+      )
+    },
+    colors = groupListItemColors(),
+  ) { Text(med.primaryName, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 }
 
 /** Form icon in a tonal circle. */

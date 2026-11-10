@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,6 +30,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Check
@@ -48,22 +51,30 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -84,6 +95,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.domain.BucketDoseGroup
+import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.DoseTimeline
 import com.exaclast.regimen.domain.PacingEvaluation
 import com.exaclast.regimen.domain.PrnDoseItem
@@ -99,12 +111,16 @@ import com.exaclast.regimen.notifications.DoseAlarmTiming
 import com.exaclast.regimen.ui.RegimenUiState
 import com.exaclast.regimen.ui.components.AppSnackbarHost
 import com.exaclast.regimen.ui.components.ConfirmDialog
+import com.exaclast.regimen.ui.components.DatePickerField
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.GroupedColumn
 import com.exaclast.regimen.ui.components.SectionHeader
+import com.exaclast.regimen.ui.components.TimePickerField
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.groupListItemColors
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
 
 @Composable
 fun TodayScreen(
@@ -118,7 +134,7 @@ fun TodayScreen(
   onSnooze: (ScheduledDoseItem) -> Unit,
   onClearLog: (ScheduledDoseItem) -> Unit,
   onTakeAll: (List<ScheduledDoseItem>) -> Unit,
-  onLogPrn: (PrnDoseItem, String?) -> Unit,
+  onLogPrn: (item: PrnDoseItem, site: String?, takenAtMillis: Long?) -> Unit,
   onDeleteLog: (DoseLog) -> Unit,
   onOpenMedication: (String) -> Unit,
   onOpenWindow: (String) -> Unit,
@@ -156,11 +172,14 @@ fun TodayScreen(
   var confirmPrompt by remember { mutableStateOf<TakeRequest?>(null) }
   var sitePrompt by remember { mutableStateOf<TakeRequest?>(null) }
   var takeAllPrompt by remember { mutableStateOf<List<ScheduledDoseItem>?>(null) }
+  var pickingExtraDose by remember { mutableStateOf(false) }
+  var timePrompt by remember { mutableStateOf<LogTimeRequest?>(null) }
+  val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
 
   fun commit(request: TakeRequest, site: String?) {
     when (request) {
       is TakeRequest.Scheduled -> onTake(request.item, site, request.takenAtMillis)
-      is TakeRequest.Prn -> onLogPrn(request.item, site)
+      is TakeRequest.Prn -> onLogPrn(request.item, site, request.takenAtMillis)
     }
   }
 
@@ -178,6 +197,33 @@ fun TodayScreen(
 
   fun requestTake(request: TakeRequest) {
     if (!request.pacing.canTakeNow) pacingPrompt = request else afterPacing(request, alreadyConfirmed = false)
+  }
+
+  // An extra dose of any medication, scheduled or not, takes the same pacing, site and time flow as an
+  // as-needed one, and is logged on the day being viewed.
+  fun extraDoseItem(medication: Medication): PrnDoseItem {
+    val snapshot = uiState.snapshot
+    return PrnDoseItem(
+      medication = medication,
+      schedule = null,
+      suggestedSite = DoseEngine.computeNextSite(medication, snapshot.doseLogs),
+      pacing = DoseEngine.evaluatePacing(medication, snapshot.doseLogs, now, uiState.selectedDateIso, snapshot.buckets),
+      indications = emptyList(),
+    )
+  }
+
+  // Pacing for a dose logged at another time is judged at that time, not now.
+  fun requestPrnDose(item: PrnDoseItem, takenAtMillis: Long?) {
+    if (takenAtMillis == null) {
+      requestTake(TakeRequest.Prn(item))
+      return
+    }
+    val snapshot = uiState.snapshot
+    val day = java.time.Instant.ofEpochMilli(takenAtMillis).atZone(ZoneId.systemDefault()).toLocalDate().toString()
+    val pacing = DoseEngine.evaluatePacing(
+      item.medication, snapshot.doseLogs, takenAtMillis, day, snapshot.buckets, backdated = true,
+    )
+    requestTake(TakeRequest.Prn(item.copy(pacing = pacing), takenAtMillis))
   }
 
   val title = if (uiState.isToday) "Today" else UiFormat.date(selectedDate)
@@ -246,6 +292,16 @@ fun TodayScreen(
         scrollBehavior = scrollBehavior,
       )
     },
+    floatingActionButton = {
+      if (!uiState.isFuture && uiState.snapshot.medications.isNotEmpty()) {
+        ExtendedFloatingActionButton(
+          onClick = { pickingExtraDose = true },
+          expanded = fabExpanded,
+          icon = { Icon(Icons.Default.Add, contentDescription = null) },
+          text = { Text("Log extra dose") },
+        )
+      }
+    },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
     LazyColumn(
@@ -253,7 +309,8 @@ fun TodayScreen(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
+      // Bottom room so the last card can scroll clear of the button.
+      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       if (!settings.notificationsEnabled) {
@@ -323,6 +380,7 @@ fun TodayScreen(
             isToday = uiState.isToday,
             enabled = !uiState.isFuture,
             onLog = { requestTake(TakeRequest.Prn(prn)) },
+            onLogAtOtherTime = { timePrompt = LogTimeRequest(prn, startWithOtherTime = true) },
             onOpenMedication = { onOpenMedication(prn.medication.id) },
           )
         }
@@ -342,6 +400,31 @@ fun TodayScreen(
         }
       }
     }
+  }
+
+  if (pickingExtraDose) {
+    ExtraDosePickerDialog(
+      medications = uiState.snapshot.medications,
+      onDismiss = { pickingExtraDose = false },
+      onPick = {
+        pickingExtraDose = false
+        timePrompt = LogTimeRequest(extraDoseItem(it), startWithOtherTime = false)
+      },
+    )
+  }
+
+  timePrompt?.let { request ->
+    LogTimeDialog(
+      medication = request.item.medication,
+      doseLabel = "${formatNum(request.item.doseAmount)} ${request.item.doseUnit.symbol}",
+      defaultDateIso = uiState.selectedDateIso,
+      startWithOtherTime = request.startWithOtherTime,
+      onDismiss = { timePrompt = null },
+      onConfirm = { takenAtMillis ->
+        timePrompt = null
+        requestPrnDose(request.item, takenAtMillis)
+      },
+    )
   }
 
   pacingPrompt?.let { request ->
@@ -407,6 +490,127 @@ fun TodayScreen(
   }
 }
 
+/** Pick any medication to log an extra dose of; searchable, since the list can be long. */
+@Composable
+private fun ExtraDosePickerDialog(
+  medications: List<Medication>,
+  onDismiss: () -> Unit,
+  onPick: (Medication) -> Unit,
+) {
+  var query by rememberSaveable { mutableStateOf("") }
+  val matches = remember(medications, query) {
+    val q = query.trim().lowercase()
+    medications
+      .filter {
+        q.isEmpty() || it.formulaName.lowercase().contains(q) || it.brandName?.lowercase()?.contains(q) == true
+      }
+      .sortedBy { it.primaryName.lowercase() }
+  }
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Log extra dose") },
+    text = {
+      Column {
+        if (medications.size > 6) {
+          OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = { Text("Search medications") },
+            singleLine = true,
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(bottom = 8.dp),
+          )
+        }
+        if (matches.isEmpty()) {
+          Text("No matches for \"$query\"", modifier = Modifier.padding(vertical = 8.dp))
+        }
+        LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+          items(matches, key = { it.id }) { med ->
+            ListItem(
+              leadingContent = { FormIcon(med.form) },
+              supportingContent = {
+                Text(
+                  listOfNotNull(med.secondaryName, med.strength).joinToString(" · "),
+                  maxLines = 2,
+                  overflow = TextOverflow.Ellipsis,
+                )
+              },
+              colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+              modifier = Modifier.clickable { onPick(med) },
+            ) { Text(med.primaryName, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+          }
+        }
+      }
+    },
+    confirmButton = {},
+    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+  )
+}
+
+/** An as-needed or extra dose waiting for the user to say when it was taken. */
+private data class LogTimeRequest(val item: PrnDoseItem, val startWithOtherTime: Boolean)
+
+/**
+ * Asks whether a dose was taken now or at another date and time. Confirms with null for "now", or the
+ * chosen moment; a time in the future can't be logged.
+ */
+@Composable
+private fun LogTimeDialog(
+  medication: Medication,
+  doseLabel: String,
+  defaultDateIso: String,
+  startWithOtherTime: Boolean,
+  onDismiss: () -> Unit,
+  onConfirm: (takenAtMillis: Long?) -> Unit,
+) {
+  val initial = remember { LocalDateTime.now() }
+  var otherTime by rememberSaveable { mutableStateOf(startWithOtherTime) }
+  var dateIso by rememberSaveable { mutableStateOf(defaultDateIso) }
+  var hour by rememberSaveable { mutableIntStateOf(initial.hour) }
+  var minute by rememberSaveable { mutableIntStateOf(initial.minute) }
+  val takenAt = runCatching {
+    LocalDate.parse(dateIso).atTime(hour, minute).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+  }.getOrNull()
+  val inFuture = takenAt != null && takenAt > System.currentTimeMillis()
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Log ${medication.primaryName}") },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(doseLabel, style = MaterialTheme.typography.bodyLarge)
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+          listOf("Now", "Other time").forEachIndexed { index, label ->
+            SegmentedButton(
+              selected = otherTime == (index == 1),
+              onClick = { otherTime = index == 1 },
+              shape = SegmentedButtonDefaults.itemShape(index, 2),
+            ) { Text(label) }
+          }
+        }
+        if (otherTime) {
+          DatePickerField(label = "Date", valueIso = dateIso, onValueChange = { dateIso = it }, allowClear = false)
+          TimePickerField(label = "Time", hour = hour, minute = minute, onTimeChange = { h, m -> hour = h; minute = m })
+          if (inFuture) {
+            Text(
+              "That time hasn't happened yet.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.error,
+            )
+          }
+        }
+      }
+    },
+    confirmButton = {
+      Button(
+        onClick = { onConfirm(if (otherTime) takenAt else null) },
+        enabled = !otherTime || (takenAt != null && !inFuture),
+      ) { Text("Log dose") }
+    },
+    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+  )
+}
+
 /** A pending "take" through the pacing/confirmation flow. */
 private sealed interface TakeRequest {
   val medication: Medication
@@ -424,7 +628,8 @@ private sealed interface TakeRequest {
     override val suggestedSite get() = item.suggestedSite
   }
 
-  data class Prn(val item: PrnDoseItem) : TakeRequest {
+  /** [takenAtMillis] logs the dose at that time instead of now. */
+  data class Prn(val item: PrnDoseItem, val takenAtMillis: Long? = null) : TakeRequest {
     override val medication get() = item.medication
     override val pacing get() = item.pacing
     override val suggestedSite get() = item.suggestedSite
@@ -858,6 +1063,7 @@ private fun PrnCard(
   isToday: Boolean,
   enabled: Boolean,
   onLog: () -> Unit,
+  onLogAtOtherTime: () -> Unit,
   onOpenMedication: () -> Unit,
 ) {
   val med = item.medication
@@ -875,7 +1081,12 @@ private fun PrnCard(
         contentDescription = listOfNotNull(med.primaryName, med.secondaryName, med.strength, warning ?: "Ready", dailyNote)
           .joinToString(", ")
         onClick(label = "Open medication") { onOpenMedication(); true }
-        if (enabled) customActions = listOf(CustomAccessibilityAction(logLabel) { onLog(); true })
+        if (enabled) {
+          customActions = listOf(
+            CustomAccessibilityAction(logLabel) { onLog(); true },
+            CustomAccessibilityAction("$logLabel at another time") { onLogAtOtherTime(); true },
+          )
+        }
       },
   ) {
     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -897,7 +1108,13 @@ private fun PrnCard(
         StatusLine(icon = Icons.Default.Check, text = listOfNotNull("Ready", dailyNote).joinToString(" · "))
       }
       if (enabled) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.End,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          TextButton(onClick = onLogAtOtherTime) { Text("Other time") }
+          Spacer(Modifier.width(4.dp))
           if (warning != null) {
             OutlinedButton(onClick = onLog) { Text("$logLabel anyway…") }
           } else {

@@ -154,8 +154,15 @@ fun RegimenApp(
                 onSnooze = { viewModel.snoozeScheduledDose(it) },
                 onClearLog = viewModel::clearScheduledDoseLog,
                 onTakeAll = viewModel::takeAllPending,
-                onLogPrn = { item, site ->
-                  viewModel.logPrnOrCustomDose(item.medication, item.doseAmount, item.doseUnit, site, uiState.selectedDateIso)
+                onLogPrn = { item, site, takenAtMillis ->
+                  viewModel.logPrnOrCustomDose(
+                    item.medication,
+                    item.doseAmount,
+                    item.doseUnit,
+                    site,
+                    uiState.selectedDateIso,
+                    takenAtMillis,
+                  )
                 },
                 onDeleteLog = viewModel::deleteDoseLog,
                 onOpenMedication = { navigator.navigate(Route.MedicationDetail(it)) },
@@ -173,6 +180,8 @@ fun RegimenApp(
             entry<Route.Medications> {
               MedicationListScreen(
                 snapshot = snapshot,
+                grouping = settings.medicationGrouping,
+                onGroupingChange = { viewModel.saveSettings(settings.copy(medicationGrouping = it)) },
                 onOpenMedication = { navigator.navigate(Route.MedicationDetail(it)) },
                 onAddMedication = { navigator.navigate(Route.MedicationEditor()) },
               )

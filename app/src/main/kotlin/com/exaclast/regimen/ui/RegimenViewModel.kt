@@ -239,26 +239,34 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     post("Logged ${entries.size} $noun", UndoAction.RestoreLogs(entries))
   }
 
+  /**
+   * Logs an unscheduled dose on [dateIso] (the day being viewed), taken now. With [takenAtMillis] it's
+   * logged at that time instead, on that time's own day.
+   */
   fun logPrnOrCustomDose(
     medication: Medication,
     amount: Double = medication.defaultDoseAmount,
     unit: DoseUnit = medication.defaultDoseUnit,
     siteUsed: String? = null,
     dateIso: String = uiState.value.todayIso,
+    takenAtMillis: Long? = null,
   ) {
+    val day = takenAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().toString() } ?: dateIso
     val log = repository.logDose(
       medicationId = medication.id,
       scheduleId = null,
       bucketId = null,
-      scheduledDateIso = dateIso,
+      scheduledDateIso = day,
       status = DoseStatus.TAKEN,
       amountTaken = amount,
       amountUnit = unit,
       siteUsed = siteUsed,
+      actionTimestampMillis = takenAtMillis,
     ) ?: return
+    val timeNote = takenAtMillis?.let { " · ${UiFormat.dateTime(it)}" } ?: ""
     val siteNote = log.siteUsed?.let { " · $it" } ?: ""
     post(
-      "Logged ${medication.primaryName} ${formatNum(log.amountTaken)} ${log.amountUnit.symbol}$siteNote",
+      "Logged ${medication.primaryName} ${formatNum(log.amountTaken)} ${log.amountUnit.symbol}$timeNote$siteNote",
       UndoAction.RestoreLogs(listOf(null to log.id)),
     )
   }

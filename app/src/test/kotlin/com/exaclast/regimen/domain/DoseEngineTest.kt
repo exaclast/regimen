@@ -186,6 +186,22 @@ class DoseEngineTest {
   }
 
   @Test
+  fun backdatedPacing_ignoresDosesTakenAfterThatTime() {
+    fun at(hour: Int) = LocalDateTime.of(2026, 11, 3, hour, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    val med = limitedMed().copy(minIntervalMinutes = 240)
+    val afternoon = takenLog("2026-11-03", LocalDateTime.of(2026, 11, 3, 14, 0), scheduleId = null)
+    // Logging a 10 AM dose after taking one at 2 PM: nothing came before it, so nothing is too close.
+    assertTrue(DoseEngine.evaluatePacing(med, listOf(afternoon), at(10), "2026-11-03", backdated = true).canTakeNow)
+    // Read as "now", the later dose would block it.
+    assertFalse(DoseEngine.evaluatePacing(med, listOf(afternoon), at(10), "2026-11-03").canTakeNow)
+    // An earlier dose still counts: 8 AM to 10 AM is inside the 4-hour interval.
+    val morning = takenLog("2026-11-03", LocalDateTime.of(2026, 11, 3, 8, 0), scheduleId = null)
+    val tooSoon = DoseEngine.evaluatePacing(med, listOf(morning, afternoon), at(10), "2026-11-03", backdated = true)
+    assertFalse(tooSoon.canTakeNow)
+    assertEquals(120L, tooSoon.remainingWaitMinutes)
+  }
+
+  @Test
   fun dailyAmountLimit_onlyTotalsItsOwnUnit() {
     val logs = listOf(
       takenLog("2026-11-03", LocalDateTime.of(2026, 11, 3, 8, 0), amount = 500.0, unit = DoseUnit.MG),

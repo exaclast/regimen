@@ -191,7 +191,9 @@ object DoseEngine {
   }
 
   /**
-   * Evaluates pacing and daily limit constraints defined on the Medication object.
+   * Evaluates pacing and daily limit constraints defined on the Medication object. With [backdated],
+   * [nowMillis] is a past time the dose is being logged at, so only doses taken at or before it count
+   * toward the minimum interval; a later dose would otherwise read as "too soon".
    */
   fun evaluatePacing(
     medication: Medication,
@@ -200,6 +202,7 @@ object DoseEngine {
     todayIso: String = LocalDate.now().toString(),
     buckets: List<TimeOfDayBucket> = emptyList(),
     zoneId: ZoneId = ZoneId.systemDefault(),
+    backdated: Boolean = false,
   ): PacingEvaluation {
     val activeTakenLogs = allLogs.filter {
       it.medicationId == medication.id &&
@@ -207,7 +210,9 @@ object DoseEngine {
         it.status == DoseStatus.TAKEN
     }
 
-    val lastTaken = activeTakenLogs.maxByOrNull { it.actionTimestampMillis }
+    val lastTaken = activeTakenLogs
+      .filter { !backdated || it.actionTimestampMillis <= nowMillis }
+      .maxByOrNull { it.actionTimestampMillis }
     val todayLogs = activeTakenLogs.filter { limitDayOf(it, buckets, zoneId) == todayIso }
     val dosesTakenToday = todayLogs.size
     // The limit is in the medication's default unit; other units can't be added to it.

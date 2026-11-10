@@ -217,13 +217,18 @@ data class Provider(
   val phone: String? = null,
   val email: String? = null,
   val isPcp: Boolean = false,
+  /** Someone the patient keeps going back to, as opposed to a specialist seen only when needed. */
+  val seenRegularly: Boolean = false,
   val careStartDateIso: String? = null,
   val careEndDateIso: String? = null,
   val notes: String? = null,
   val createdAtEpochMillis: Long = System.currentTimeMillis(),
   val updatedAtEpochMillis: Long = System.currentTimeMillis(),
   val deletedAtEpochMillis: Long? = null,
-)
+) {
+  val isRegular: Boolean
+    get() = isPcp || seenRegularly
+}
 
 @Serializable
 enum class IndicationStatus(val displayName: String) {
@@ -424,6 +429,14 @@ data class MedicationSchedule(
 
   fun endDateOrNull(): LocalDate? = endDateIso?.let { runCatching { LocalDate.parse(it.trim()) }.getOrNull() }
 
+  /** The last day a timed schedule produces doses; null when it's open-ended. */
+  fun lastDayOrNull(): LocalDate? =
+    if (frequencyType == ScheduleFrequencyType.SPECIFIC_DATES) {
+      specificDatesIso.mapNotNull { runCatching { LocalDate.parse(it.trim()) }.getOrNull() }.maxOrNull()
+    } else {
+      endDateOrNull()
+    }
+
   /** True when [date] falls inside the schedule's start/end range (always true when unbounded). */
   fun isInDateRange(date: LocalDate): Boolean {
     if (!usesDateRange) return true
@@ -498,6 +511,14 @@ enum class ThemeMode(val displayName: String) {
   DARK("Dark"),
 }
 
+/** How the medication list is split into sections. */
+@Serializable
+enum class MedicationGrouping(val displayName: String) {
+  SCHEDULE("Schedule"),
+  INDICATION("Indication"),
+  FORM("Form"),
+}
+
 @Serializable
 data class AppSettings(
   val notificationsEnabled: Boolean = true,
@@ -517,6 +538,7 @@ data class AppSettings(
   @OptIn(ExperimentalSerializationApi::class)
   @JsonNames("trackConditions") // Stored settings saved before the rename to indications.
   val trackIndications: Boolean? = null,
+  val medicationGrouping: MedicationGrouping = MedicationGrouping.SCHEDULE,
   /** When a [SharedSettings] field last changed on this device; 0 = never. */
   val sharedSettingsUpdatedAtEpochMillis: Long = 0L,
 ) {

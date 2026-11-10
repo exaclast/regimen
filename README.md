@@ -21,6 +21,7 @@
   - Separate draw and injection needle specs (`Gauge × Length`) plus syringe size.
 - **On-device label scanner (Gemini Nano / AICore)**: ML Kit text recognition reads one or more bottle/vial photos (a label that wraps around a small bottle can take a few), then the ML Kit GenAI Prompt API turns that text, or pasted text, into structured fields on-device. Only text reaches the model, because AICore's safety check refuses many label photos. The result includes fields (NDC, names, strength, form, manufacturer, lot, expiry, instructions). Decoy schema fields and token sanitization keep patient, pharmacy and prescriber names from being read as drug names. Scan buttons are disabled on devices without AICore; manual lookup works everywhere.
 - **OpenFDA cross-reference**: an NDC takes first priority in the [OpenFDA NDC API](https://open.fda.gov/apis/drug/ndc/). Otherwise name, strength, form and manufacturer are combined. A name that is not an exact match is never applied without asking, and ambiguous matches open a disambiguation dialog.
+- **Organized list**: chips group medications by schedule (short-term, ongoing, as needed), indication or form, alphabetical within each section. Finished medications collapse out of the way.
 - **Pacing guardrails**: minimum interval between doses, maximum daily dose count, and maximum daily amount (totaled in the default unit). Daily limits count a dose on the calendar day it was taken, with overnight-window exceptions. Warnings appear on Today, in notifications and on the alarm screen. Logging a dose over its limit happens in the app, which explains the limit first.
 
 ### 2. Anatomical Site Rotation
@@ -43,7 +44,7 @@
 - **Master switches** to pause all reminders or silence only the ringing alarm.
 
 ### 5. Providers & Indications (optional)
-- **Providers**: name, specialty, practice, phone, email, primary-care status, care dates, and linked medications. A medication's provider is labelled *Prescriber*.
+- **Providers**: name, specialty, practice, phone, email, primary-care status, care dates, and linked medications, listed as regular, as needed, or past. A medication's provider is labelled *Prescriber*.
 - **Indications**: why a medication is taken: `ACUTE`, `CHRONIC` or `PREVENTIVE` (such as PrEP or PEP), with dates and notes, listed by kind. Providers and indications are many-to-many, and so are medications and indications; both links are editable from either side. Past indications are archived, and "Had this again" starts a new episode of a past acute or preventive one.
 - Both are optional: turn off either in Settings to hide its tab and fields. Hiding never deletes data.
 

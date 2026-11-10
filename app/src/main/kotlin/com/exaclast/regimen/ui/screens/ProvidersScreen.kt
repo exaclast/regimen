@@ -91,6 +91,7 @@ fun ProviderListScreen(
   val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
   val today = LocalDate.now()
   val (past, providers) = snapshot.providers.partition { IndicationTimeline.isPast(it, today) }
+  val (regular, asNeeded) = providers.partition { it.isRegular }
   var showPast by rememberSaveable { mutableStateOf(false) }
   Scaffold(
     topBar = { TopAppBar(title = { Text("Providers") }) },
@@ -116,9 +117,12 @@ fun ProviderListScreen(
       contentPadding = ListContentPadding,
       verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-      itemsIndexed(providers, key = { _, p -> p.id }) { index, doc ->
-        GroupItem(index = index, count = providers.size, onClick = { onOpenProvider(doc.id) }) {
-          ProviderListItem(doc, snapshot, past = false)
+      listOf("Regular" to regular, "As needed" to asNeeded).filter { it.second.isNotEmpty() }.forEach { (title, group) ->
+        item(key = "header-$title") { SectionHeader(title) }
+        itemsIndexed(group, key = { _, p -> p.id }) { index, doc ->
+          GroupItem(index = index, count = group.size, onClick = { onOpenProvider(doc.id) }) {
+            ProviderListItem(doc, snapshot, past = false)
+          }
         }
       }
       if (past.isNotEmpty()) {
@@ -464,6 +468,7 @@ fun ProviderEditorScreen(
   var phone by rememberSaveable { mutableStateOf(initialProvider?.phone.orEmpty()) }
   var email by rememberSaveable { mutableStateOf(initialProvider?.email.orEmpty()) }
   var isPcp by rememberSaveable { mutableStateOf(initialProvider?.isPcp ?: false) }
+  var seenRegularly by rememberSaveable { mutableStateOf(initialProvider?.seenRegularly ?: false) }
   var startDate by rememberSaveable { mutableStateOf(initialProvider?.careStartDateIso.orEmpty()) }
   var endDate by rememberSaveable { mutableStateOf(initialProvider?.careEndDateIso.orEmpty()) }
   var notes by rememberSaveable { mutableStateOf(initialProvider?.notes.orEmpty()) }
@@ -482,6 +487,7 @@ fun ProviderEditorScreen(
           phone = phone.trim().takeIf { it.isNotBlank() },
           email = email.trim().takeIf { it.isNotBlank() },
           isPcp = isPcp,
+          seenRegularly = seenRegularly,
           careStartDateIso = startDate.takeIf { it.isNotBlank() },
           careEndDateIso = endDate.takeIf { it.isNotBlank() },
           notes = notes.trim().takeIf { it.isNotBlank() },
@@ -528,8 +534,21 @@ fun ProviderEditorScreen(
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
       modifier = Modifier.fillMaxWidth(),
     )
-    GroupItem(0, 1) {
-      SwitchRow(title = "Primary care provider", checked = isPcp, onCheckedChange = { isPcp = it })
+    GroupedColumn {
+      GroupItem(0, if (isPcp) 1 else 2) {
+        SwitchRow(title = "Primary care provider", checked = isPcp, onCheckedChange = { isPcp = it })
+      }
+      // A primary care provider always counts as regular.
+      if (!isPcp) {
+        GroupItem(1, 2) {
+          SwitchRow(
+            title = "See regularly",
+            subtitle = "Off for specialists you only see when needed",
+            checked = seenRegularly,
+            onCheckedChange = { seenRegularly = it },
+          )
+        }
+      }
     }
     DatePickerField(label = "Care started", valueIso = startDate, onValueChange = { startDate = it })
     DatePickerField(label = "Care ended", valueIso = endDate, onValueChange = { endDate = it })

@@ -48,14 +48,7 @@ object IndicationTimeline {
         it.frequencyType != ScheduleFrequencyType.AS_NEEDED
     }
     if (courses.isEmpty()) return null
-    val ends = courses.map { schedule ->
-      if (schedule.frequencyType == ScheduleFrequencyType.SPECIFIC_DATES) {
-        schedule.specificDatesIso.mapNotNull(::parse).maxOrNull()
-      } else {
-        schedule.endDateOrNull()
-      } ?: return null
-    }
-    return ends.max()
+    return courses.map { it.lastDayOrNull() ?: return null }.max()
   }
 
   /** Past indications: resolved, or their (expected) end date has passed. */
