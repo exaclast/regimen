@@ -35,5 +35,5 @@ google-services.json
 # Android Profiling
 *.hprof
 
-# Agent plans
-docs/plans
+# Superseded plans, kept locally for reference
+docs/plans/archive

@@ -61,6 +61,10 @@ android {
   }
 
   buildTypes {
+    debug {
+      // Installs beside a release build instead of conflicting with it.
+      applicationIdSuffix = ".debug"
+    }
     release {
       isMinifyEnabled = false
       if (hasReleaseSigning) {

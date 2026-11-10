@@ -107,7 +107,7 @@ Unit tests live in `app/src/test/kotlin/` and cover the dose engine and timeline
 
 # Install and launch
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n com.exaclast.regimen/.MainActivity
+adb shell am start -n com.exaclast.regimen.debug/com.exaclast.regimen.MainActivity
 ```
 
 ---

@@ -1,0 +1,48 @@
+# Regimen: Done and Retired
+
+What has shipped, and what was merged or dropped. Open work is in `BACKLOG.md`; reasons are in `DECISIONS.md`.
+
+**Adding an entry.** When a task is finished, delete its row from `BACKLOG.md` and add one row at the top of **Shipped**:
+the T-number (or old ID), what changed, the commit, and the proof (tests, device, or "not run"). Anything left over goes
+back into the backlog as a new task. Old audit and plan IDs (A, B, O, R, U) stay listed so searches in `archive/` still
+resolve.
+
+---
+
+## Shipped
+
+Newest first.
+
+| Item | Commit | Proof |
+|------|--------|-------|
+| T-086 Debug builds use their own application id (`com.exaclast.regimen.debug`, labelled "Regimen Debug") | "Add debug application id and track plans" | APK checked with `aapt2`; 179 tests; not yet installed on a device |
+| Dose editing (time, amount, site, note), notes when logging, time choice on the medication page | `2d089d9` | `DoseLogEditsTest`, back-dated pacing test; phone; laptop |
+| Medication grouping chips, provider sections, "Log extra dose", "Now / Other time" (most of B32) | `27ae543` | `MedicationGroupsTest`; phone |
+| OCR label scanning, Conditions → Indications, Preventive kind, many-to-many links | `315ccfb` | Migration and timeline tests; phone |
+| NDC overrides a strength read from a label | `56ea60b` | `FdaNdcLookupServiceTest` |
+| B1, B2, B7–B9, B11, B12; A6, A8, A9, A11, A13, A15 | `158e553` and earlier | Tests; phone |
+| B3–B6, B10, B13, B14, B16, B27, B39; `minSdk` 35 | `62251b7` | Tests; some device checks still open (see Device checks) |
+| Prescriber → Provider, acute and chronic conditions | `15a231b` | Tests; phone |
+| Backup format, three-way merge, encryption, export and import (phases 1–2) | `1c72744` | `BundleMergerTest`, `BundleCryptoTest`, `BackupFilesTest` |
+| R1–R17 (Expressive theme, Navigation 3, top bars, Today timeline, Undo, pacing text, lists, Settings, accessibility actions); U1–U17, U21–U25 | `5a09267` | Emulator at about 443 dp and 360 dp |
+| A1–A4 (A7): dose matching, numeric strengths, snooze across midnight, strict input | `d3bd85f` | Tests; phone |
+
+## Merged or retired
+
+Nothing was lost; each item points to where it went.
+
+| Item | Outcome |
+|------|---------|
+| Legacy notification code (O9 and roadmap) | One task, T-009 |
+| Soft-delete windows (O6 and known gaps) | One task, T-061 |
+| Widget (2026-11-03 P2 and roadmap 10) | One task, T-100 |
+| `strings.xml` (R3b, O10, roadmap) | One task, T-081 |
+| Dose history (O10 and roadmap 13) | One task, T-094; the calendar builds on it |
+| Recovery-code `FLAG_SECURE` and app-wide preview hiding | Separate on purpose: T-053 is a small fix now, T-097 is the feature |
+| B32 backfilled doses | Narrowed to T-016 now that "Other time" exists |
+| A14 PHI | Only the photos remain (T-050); clipboard, FDA consent and sample names are gone |
+| "Log a dose" FAB, one notification per window, export via file picker, patient name save-on-blur | Shipped |
+| Material 3 "stay on 1.4 until P3" | Superseded: pinned to `1.5.0-beta02` |
+| B16 lock-screen swipe, B12 vial volume note | Platform limit and intended behavior; no task |
+| Tracking which drugs AICore refuses | Moot: only text reaches the model now |
+| "Bottom bar → Today · Medications · History" | Still open as a question, D-5 |

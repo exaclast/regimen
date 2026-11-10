@@ -4,6 +4,16 @@ This repository is **Regimen**, an Android medication and dose-tracking app buil
 
 ---
 
+## Where Work Is Tracked
+
+- **`docs/plans/BACKLOG.md`**: the one list of open bugs, tasks and features, with milestones and what's up next. Add new work there rather than starting a new plan file; its top section explains how to add, triage and close items.
+- **`docs/plans/DONE.md`**: what has shipped (with commits and proof) and what was merged or retired. When you finish a backlog task, move it here.
+- **`docs/plans/DECISIONS.md`**: decisions already made and why, plus the ones still open. Check it before reversing a behavior.
+- **`docs/plans/designs/`**: design notes for larger work (sync and backup, features, form factors).
+- `docs/plans/archive/` holds superseded plans. It's local only and isn't in git.
+
+---
+
 ## 1. Build, Test & Device Commands
 
 - **Run Unit Tests**:
@@ -20,12 +30,14 @@ This repository is **Regimen**, an Android medication and dose-tracking app buil
   ```
 - **Launch MainActivity**:
   ```bash
-  adb shell am start -n com.exaclast.regimen/.MainActivity
+  adb shell am start -n com.exaclast.regimen.debug/com.exaclast.regimen.MainActivity
   ```
 - **Clean Restart App on Device**:
   ```bash
-  adb shell am force-stop com.exaclast.regimen && adb shell am start -n com.exaclast.regimen/.MainActivity
+  adb shell am force-stop com.exaclast.regimen.debug && adb shell am start -n com.exaclast.regimen.debug/com.exaclast.regimen.MainActivity
   ```
+
+> **Application IDs**: debug builds are `com.exaclast.regimen.debug` (labelled "Regimen Debug") and install beside a release build (`com.exaclast.regimen`). Each has its own data.
 
 > **Environment Note**: Java 17 is configured via SDKMAN (`/Users/cbrown/.sdkman/candidates/java/current`). When running in sandboxed agent sessions, elevate sandbox permissions for Gradle and ADB socket access.
 
