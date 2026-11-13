@@ -84,7 +84,6 @@ enum class DoseUnit(val symbol: String, val displayName: String) {
 @Serializable
 data class InjectableDetails(
   val route: InjectionRoute = InjectionRoute.IM,
-  val concentrationMgPerMl: Double? = null,
   val vialVolumeMl: Double? = null,
   val syringeVolumeMl: Double? = null,
   val syringeDescription: String? = null,
@@ -105,25 +104,6 @@ data class InjectableDetails(
     val g = injectNeedleGauge?.let { "${it}G" } ?: ""
     val l = injectNeedleLengthInches?.let { "${formatNum(it)}\"" } ?: ""
     return listOf(g, l).filter { it.isNotEmpty() }.joinToString(" × ")
-  }
-
-  /**
-   * Calculates volume in mL for a given dose if concentration is known.
-   */
-  fun calculateVolumeMl(doseAmount: Double, doseUnit: DoseUnit): Double? {
-    return when (doseUnit) {
-      DoseUnit.ML -> doseAmount
-      DoseUnit.UNITS -> doseAmount / 100.0
-      DoseUnit.MG -> {
-        val conc = concentrationMgPerMl ?: return null
-        if (conc > 0.0) doseAmount / conc else null
-      }
-      DoseUnit.MCG -> {
-        val conc = concentrationMgPerMl ?: return null
-        if (conc > 0.0) (doseAmount / 1000.0) / conc else null
-      }
-      else -> null
-    }
   }
 }
 
@@ -180,22 +160,33 @@ data class Medication(
   val secondaryName: String?
     get() = formulaName.takeIf { !brandName.isNullOrBlank() }
 
+  /** Amount per mL, worked out from [strength]; null when it isn't written per mL or is a combination. */
+  val concentration: Concentration?
+    get() = Concentration.parse(strength)
+
+  /** Forms measured out by volume: drawn from a vial, or poured or drawn up as an oral liquid. */
+  val measuredByVolume: Boolean
+    get() = form == MedicationForm.INJECTABLE_VIAL || form == MedicationForm.LIQUID
+
   /**
-   * Volume to draw up for a dose, or null when it doesn't apply. Prefilled devices are dialed or
-   * fixed, not drawn up, and "units" only convert to mL on a U-100 syringe: a U-200 pen's 20 units
-   * is 0.1 mL, not 0.2.
+   * Volume to measure for a dose, or null when it doesn't apply or can't be worked out. Prefilled
+   * devices are dialed or fixed, not drawn up. Units only convert when the strength is in units per mL:
+   * a U-200 insulin's 20 units is 0.1 mL, not 0.2.
    */
-  fun doseVolumeMl(amount: Double, unit: DoseUnit): Double? =
-    if (form.isPrefilledInjector) null else injectableDetails?.calculateVolumeMl(amount, unit)
+  fun doseVolumeMl(amount: Double, unit: DoseUnit): Double? = when {
+    !measuredByVolume -> null
+    unit == DoseUnit.ML -> amount
+    else -> concentration?.volumeMl(amount, unit)
+  }
 
   fun formattedDefaultDose(): String {
     val base = "${formatNum(defaultDoseAmount)} ${defaultDoseUnit.symbol}"
     val volMl = doseVolumeMl(defaultDoseAmount, defaultDoseUnit)
-    return if (volMl != null && defaultDoseUnit != DoseUnit.ML) {
-      val units = (volMl * 100.0)
-      "$base (${formatNum(volMl)} mL / ${formatNum(units)} U)"
-    } else {
-      base
+    return when {
+      volMl == null || defaultDoseUnit == DoseUnit.ML -> base
+      // On a U-100 syringe, the markings are hundredths of a mL.
+      form.isInjectable -> "$base (${formatNum(volMl)} mL / ${formatNum(volMl * 100.0)} U)"
+      else -> "$base (${formatNum(volMl)} mL)"
     }
   }
 

@@ -98,6 +98,7 @@ import com.exaclast.regimen.data.FdaDrugLookupResult
 import com.exaclast.regimen.data.FdaNdcLookupService
 import com.exaclast.regimen.data.ParsedMedicationLabel
 import com.exaclast.regimen.domain.IndicationTimeline
+import com.exaclast.regimen.model.Concentration
 import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.InjectableDetails
@@ -127,6 +128,25 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
+
+/**
+ * The line under the strength for forms measured by volume: what one mL holds and how much the default
+ * dose is, or how to write the strength so volumes can be worked out. The flag marks a problem.
+ */
+internal fun volumeHint(strength: String, dose: Double?, doseUnit: DoseUnit): Pair<String, Boolean>? {
+  if (strength.isBlank()) return null
+  val concentration = Concentration.parse(strength)
+    ?: return "To show volumes, write the strength per mL, like 200 mg/mL or 400 mg/5 mL." to false
+  val perMl = "${concentration.formatted()}."
+  if (dose == null || doseUnit == DoseUnit.ML) return perMl to false
+  val volume = concentration.volumeMl(dose, doseUnit)
+  return when {
+    volume != null -> "$perMl ${formatNum(dose)} ${doseUnit.symbol} is ${formatNum(volume)} mL." to false
+    doseUnit in listOf(DoseUnit.MG, DoseUnit.MCG, DoseUnit.UNITS, DoseUnit.IU) ->
+      "$perMl A dose in ${doseUnit.symbol} can't be converted to mL from ${concentration.unit.symbol}." to true
+    else -> perMl to false
+  }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -272,9 +292,6 @@ fun MedicationEditorScreen(
   // Injectable fields
   val initInj = initialMedication?.injectableDetails
   var route by rememberSaveable { mutableStateOf(initInj?.route ?: InjectionRoute.IM) }
-  var concentrationText by rememberSaveable {
-    mutableStateOf(initInj?.concentrationMgPerMl?.let { formatExact(it) }.orEmpty())
-  }
   var vialVolumeText by rememberSaveable {
     mutableStateOf(initInj?.vialVolumeMl?.let { formatExact(it) }.orEmpty())
   }
@@ -367,7 +384,6 @@ fun MedicationEditorScreen(
     form = fda.form
     defaultDoseUnit = fda.defaultDoseUnit
     fda.route?.let { route = it }
-    fda.concentrationMgPerMl?.let { concentrationText = formatExact(it) }
     fda.vialVolumeMl?.let { vialVolumeText = formatExact(it) }
     val metaParts = mutableListOf<String>()
     fda.lotNumber?.let { metaParts.add("Lot: $it") }
@@ -577,7 +593,6 @@ fun MedicationEditorScreen(
   // Strict numeric validation: unparseable input blocks Save instead of silently becoming a
   // default (e.g. "0,5" → 1.0 or "4h" → no interval limit).
   val doseCheck = checkRequiredPositiveDecimal(defaultDoseAmountText)
-  val concentrationCheck = checkOptionalPositiveDecimal(concentrationText)
   val vialVolumeCheck = checkOptionalPositiveDecimal(vialVolumeText)
   val syringeVolumeCheck = checkOptionalPositiveDecimal(syringeVolumeText)
   val drawGaugeCheck = checkOptionalPositiveInt(drawGaugeText)
@@ -592,7 +607,6 @@ fun MedicationEditorScreen(
     if (!doseCheck.isValid) add("Default Dose")
     if (form.isInjectable) {
       val pen = form.isPrefilledInjector
-      if (!concentrationCheck.isValid) add("Concentration")
       if (!vialVolumeCheck.isValid) add(if (pen) "Device Volume" else "Vial Size")
       // Syringe and draw-needle fields are hidden for prefilled devices, so they can't block Save.
       if (!pen) {
@@ -617,7 +631,6 @@ fun MedicationEditorScreen(
     val injDetails = if (form.isInjectable) {
       InjectableDetails(
         route = route,
-        concentrationMgPerMl = concentrationCheck.validOrNull(),
         vialVolumeMl = vialVolumeCheck.validOrNull(),
         syringeVolumeMl = syringeVolumeCheck.validOrNull(),
         syringeDescription = syringeDesc.takeIf { it.isNotBlank() },
@@ -865,6 +878,17 @@ fun MedicationEditorScreen(
             )
           }
 
+          // Volumes come from the strength, so there's no separate concentration to keep in step.
+          if (form == MedicationForm.INJECTABLE_VIAL || form == MedicationForm.LIQUID) {
+            volumeHint(strength, doseCheck.validOrNull(), defaultDoseUnit)?.let { (text, isProblem) ->
+              Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (isProblem) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+          }
+
           // Indications (any number, grouped by kind + optional notes)
           if (showIndications && indications.isNotEmpty()) {
             Text("Indications", style = MaterialTheme.typography.titleSmall)
@@ -926,28 +950,16 @@ fun MedicationEditorScreen(
                   modifier = Modifier.fillMaxWidth(),
                 )
 
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                  ValidatedNumberField(
-                    check = concentrationCheck,
-                    keyboardType = KeyboardType.Decimal,
-                    value = concentrationText,
-                    onValueChange = { concentrationText = it },
-                    label = { Text("Conc. (mg/mL)") },
-                    placeholder = { Text("200") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                  )
-                  ValidatedNumberField(
-                    check = vialVolumeCheck,
-                    keyboardType = KeyboardType.Decimal,
-                    value = vialVolumeText,
-                    onValueChange = { vialVolumeText = it },
-                    label = { Text(if (pen) "Device Volume (mL)" else "Vial Size (mL)") },
-                    placeholder = { Text(if (pen) "3" else "10") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                  )
-                }
+                ValidatedNumberField(
+                  check = vialVolumeCheck,
+                  keyboardType = KeyboardType.Decimal,
+                  value = vialVolumeText,
+                  onValueChange = { vialVolumeText = it },
+                  label = { Text(if (pen) "Device Volume (mL)" else "Vial Size (mL)") },
+                  placeholder = { Text(if (pen) "3" else "10") },
+                  singleLine = true,
+                  modifier = Modifier.fillMaxWidth(),
+                )
 
                 if (!pen) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                   ValidatedNumberField(

@@ -30,7 +30,6 @@ class DoseEngineTest {
     defaultDoseUnit = DoseUnit.MG,
     injectableDetails = InjectableDetails(
       route = InjectionRoute.IM,
-      concentrationMgPerMl = 200.0,
       vialVolumeMl = 10.0,
       syringeVolumeMl = 1.0,
       drawNeedleGauge = 18,
@@ -328,7 +327,8 @@ class DoseEngineTest {
 
   @Test
   fun vial_stillShowsSyringeVolume() {
-    assertEquals("20 units (0.2 mL / 20 U)", injectable(MedicationForm.INJECTABLE_VIAL).formattedDefaultDose())
+    // 200 units/mL: 20 units is 0.1 mL (10 marks on a U-100 syringe), not the 0.2 mL a U-100 guess gave.
+    assertEquals("20 units (0.1 mL / 10 U)", injectable(MedicationForm.INJECTABLE_VIAL).formattedDefaultDose())
   }
 
   @Test
@@ -362,9 +362,9 @@ class DoseEngineTest {
   }
 
   @Test
-  fun injectableVolumeCalculation_computesCorrectMlFromConcentration() {
-    val inj = sampleInjectable.injectableDetails!!
-    assertEquals(0.5, inj.calculateVolumeMl(100.0, DoseUnit.MG)!!, 0.001)
+  fun injectableVolumeCalculation_computesCorrectMlFromStrength() {
+    // The sample's strength is "200 mg/mL".
+    assertEquals(0.5, sampleInjectable.doseVolumeMl(100.0, DoseUnit.MG)!!, 0.001)
   }
 
   @Test

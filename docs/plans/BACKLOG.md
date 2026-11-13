@@ -48,9 +48,9 @@ changes need real migrations, so anything that reshapes data belongs before it.
 
 | | Milestone | Why | Tasks |
 |-|-----------|-----|-------|
-| **M1** | **Trust** | Make reminders reliable, protect health data, fix wrong information | T-001–006, T-011–013, T-016, T-019, T-025–027, T-038, T-050–053, T-068, T-084 |
+| **M1** | **Trust** | Make reminders reliable, protect health data, fix wrong information | T-001–006, T-011–013, T-016, T-019, T-026, T-027, T-038, T-050–053, T-068, T-084 |
 | **M2** | **Adaptive** | Tablet, foldable and desktop. UI only, so it can overlap M1 | T-036, T-066, T-067, T-069–074 |
-| **M3** | **Foundations** | Data integrity, threading, a sync-ready model, tests | T-014, T-015, T-054, T-055, T-057–065, T-085, T-112, T-113 |
+| **M3** | **Foundations** | Data integrity, threading, a sync-ready model, tests | T-014, T-015, T-054, T-055, T-057–065, T-085, T-113 |
 | **M4** | **Everyday features** | The features that make it worth using daily | T-017, T-018, T-021, T-029, T-030, T-039, T-040, T-044, T-045, T-093–096, T-098 |
 | **M5** | **Stable release** | First non-prerelease tag | T-056, T-078, T-081, T-087, T-090, T-097, T-100 |
 | **M6** | **Sync** | Google Drive sync | T-102 |
@@ -58,20 +58,19 @@ changes need real migrations, so anything that reshapes data belongs before it.
 
 ### Up next
 
-Suggested order. The first two reshape medication and schedule data, so they come first while there are no users to
-migrate (user decision, 2026-11-12; T-111 sites, the first of the three, is done):
+Suggested order. T-113 reshapes schedule data, so it comes first while there are no users to migrate (user decision,
+2026-11-12; T-111 and T-112, which also reshaped data, are done):
 
-1. **T-112** Concentration worked out from the strength (with T-025)
-2. **T-113** Dose steps: dose changes on set dates
-3. **T-011** Dialogs clip on short windows
-4. **T-050** Delete label photos
-5. **T-001** Warn when reminders can't work
-6. **T-002** Don't lose alarms while the phone is off
-7. **T-038** Editors lose selections
-8. **T-003** / **T-004** Test notifications and demo data touch real alarms
-9. **T-026** Scans overwriting the dose
-10. **T-068** Invisible "Review" button
-11. **T-084** Lint in CI, so all of this stays fixed
+1. **T-113** Dose steps: dose changes on set dates
+2. **T-011** Dialogs clip on short windows
+3. **T-050** Delete label photos
+4. **T-001** Warn when reminders can't work
+5. **T-002** Don't lose alarms while the phone is off
+6. **T-038** Editors lose selections
+7. **T-003** / **T-004** Test notifications and demo data touch real alarms
+8. **T-026** Scans overwriting the dose
+9. **T-068** Invisible "Review" button
+10. **T-084** Lint in CI, so all of this stays fixed
 
 ---
 
@@ -116,7 +115,6 @@ migrate (user decision, 2026-11-12; T-111 sites, the first of the three, is done
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-025 | Insulin concentration reads "100 mg/mL". The detail page and editor hard-code mg/mL when the strength is units/mL. Done as part of T-112 | P1 | S | M1 | B59 |
 | T-026 | The scan prompt's example is `"defaultDoseAmount": 1.0`, so a scan tends to overwrite the dose with 1 | P1 | S | M1 | B38, A12 |
 | T-027 | A record with no package gets a made-up NDC (`<product>-01` or `00000-0000-00`) that can be saved. Use null | P1 | S | M1 | B41 |
 | T-029 | Being offline reads as "no matching FDA record". Separate network errors from empty results | P2 | S | M4 | B40 |
@@ -127,7 +125,6 @@ migrate (user decision, 2026-11-12; T-111 sites, the first of the three, is done
 | T-034 | "Match FDA" stays enabled during a lookup, so requests can stack | P3 | S | — | Low |
 | T-035 | FDA match dialog: collapse identical multi-salt strengths ("4 × 2.5 mg"). Don't sum them | P3 | S | — | roadmap |
 | T-036 | Scan buttons on desktop: untried. Decide what camera and AICore should do there; a file picker suits a label photo | P2 | S | M2 | form factors |
-| T-112 | Remove the stored concentration (`InjectableDetails.concentrationMgPerMl`): it duplicates the strength and the two can disagree. Work out the per-mL amount from the strength (mg, mcg or units per mL, including "200 mg/10 mL") and show it read-only; if the strength can't be read, say how to write it instead of offering a second field. Volumes for oral liquids too. Includes T-025 | P1 | M | M3 | new |
 | T-037 | OCR quality on wrapped labels: words split across photos still produce wrong names. Collect more cases before changing anything; no hard-coded parsing | P3 | M | — | new |
 
 ### Editors and forms

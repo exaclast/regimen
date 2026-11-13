@@ -286,12 +286,15 @@ fun MedicationDetailScreen(
           val pen = medication.form.isPrefilledInjector
           val rows = buildList {
             add("Route" to inj.route.displayName)
-            inj.concentrationMgPerMl?.let { add("Concentration" to "${formatNum(it)} mg/mL") }
+            // Worked out from the strength; only worth a row when the strength isn't already per 1 mL.
+            medication.concentration?.formatted()
+              ?.takeUnless { medication.strength.contains(it, ignoreCase = true) }
+              ?.let { add("Per mL" to it) }
             inj.vialVolumeMl?.let { add((if (pen) "Device volume" else "Vial size") to "${formatNum(it)} mL") }
             if (pen) {
               inj.formattedInjectNeedle()?.let { add("Pen needle" to it) }
             } else {
-              inj.calculateVolumeMl(medication.defaultDoseAmount, medication.defaultDoseUnit)?.let {
+              medication.doseVolumeMl(medication.defaultDoseAmount, medication.defaultDoseUnit)?.let {
                 add("Draw volume" to "${formatNum(it)} mL (${formatNum(it * 100.0)} units on a U-100 syringe)")
               }
               val syringe = listOfNotNull(inj.syringeVolumeMl?.let { "${formatNum(it)} mL" }, inj.syringeDescription)

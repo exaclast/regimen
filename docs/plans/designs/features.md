@@ -23,15 +23,6 @@ rewrites past days, or ending the schedule and starting another, which loses the
 - **Not covered:** a change in how often or which windows (40 mg once a day → twice a day). That's T-015.
 - **Tests:** `doseOn` at, before and between steps; overnight windows; a step on the schedule's start date.
 
-## Concentration from strength (T-112)
-
-- Parse the strength into an amount per mL: "200 mg/mL", "100 units/mL", "200 mg/10 mL" (= 20 mg/mL), "400 mg/5 mL",
-  "0.5 mg/0.5 mL". The unit is mg, mcg or units. Reuse and test `FdaNdcLookupService.parseConcentrationMgPerMl` logic.
-- Drop `InjectableDetails.concentrationMgPerMl`; a database migration moves nothing, since the strength is already there.
-- Volume = dose ÷ amount per mL when the dose unit matches (mg/mcg convert to each other; units only to units). Oral
-  liquids get volumes too. Prefilled devices still show none.
-- The editor shows "20 mg per mL (from strength)" under the strength, or a hint when it can't be read.
-
 ## Refill and supply tracking (T-095)
 
 There's no supply count, run-out date or refill info on a medication.

@@ -603,7 +603,6 @@ class RegimenRepository private constructor(context: Context) {
       defaultDoseUnit = DoseUnit.UNITS,
       injectableDetails = InjectableDetails(
         route = InjectionRoute.SC,
-        concentrationMgPerMl = 100.0,
         vialVolumeMl = 10.0,
         syringeVolumeMl = 0.5,
         syringeDescription = "0.5 mL U-100 Insulin Syringe (31G 5/16\")",

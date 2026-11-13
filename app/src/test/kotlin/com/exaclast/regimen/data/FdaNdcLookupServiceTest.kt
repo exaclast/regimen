@@ -1,5 +1,6 @@
 package com.exaclast.regimen.data
 
+import com.exaclast.regimen.model.Concentration
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.InjectionRoute
 import com.exaclast.regimen.model.MedicationForm
@@ -68,7 +69,7 @@ class FdaNdcLookupServiceTest {
     assertEquals(MedicationForm.INJECTABLE_VIAL, result.form)
     assertEquals(DoseUnit.MG, result.defaultDoseUnit)
     assertEquals(InjectionRoute.IM, result.route)
-    assertEquals(1.0, result.concentrationMgPerMl!!, 0.001)
+    assertEquals(1.0, Concentration.parse(result.strength)!!.amountPerMl, 0.001)
     assertEquals(30.0, result.vialVolumeMl!!, 0.001)
   }
 

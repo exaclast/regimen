@@ -41,7 +41,7 @@ class WindowNotificationTextTest {
   @Test
   fun doseComesBeforeStrengthSoItSurvivesBeingCutOff() {
     assertEquals(
-      listOf("Lantus — 20 units · Thigh - Left · 100 units/mL (U-100)"),
+      listOf("Lantus — 20 units (0.2 mL) · Thigh - Left · 100 units/mL (U-100)"),
       DoseNotificationManager.windowBodyLines(listOf(item(ready, site = "Thigh - Left"))),
     )
   }
@@ -49,7 +49,7 @@ class WindowNotificationTextTest {
   @Test
   fun pacingLimitGetsItsOwnLine() {
     assertEquals(
-      listOf("Lantus — 20 units · 100 units/mL (U-100)", "Lantus: Daily limit reached (1 of 1)"),
+      listOf("Lantus — 20 units (0.2 mL) · 100 units/mL (U-100)", "Lantus: Daily limit reached (1 of 1)"),
       DoseNotificationManager.windowBodyLines(listOf(item(atLimit))),
     )
   }

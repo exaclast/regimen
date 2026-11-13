@@ -95,17 +95,10 @@ data class ScheduledDoseItem(
   fun formattedDoseInstruction(): String {
     val amt = formatNum(schedule.doseAmount)
     val unit = schedule.doseUnit.symbol
-    val inj = medication.injectableDetails
-    if (inj != null) {
-      val volMl = medication.doseVolumeMl(schedule.doseAmount, schedule.doseUnit)
-      val volStr = if (volMl != null && schedule.doseUnit != DoseUnit.ML) {
-        " (${formatNum(volMl)} mL)"
-      } else {
-        ""
-      }
-      return "$amt $unit$volStr • ${inj.route.code}"
-    }
-    return "$amt $unit"
+    val volMl = medication.doseVolumeMl(schedule.doseAmount, schedule.doseUnit)
+    val volStr = if (volMl != null && schedule.doseUnit != DoseUnit.ML) " (${formatNum(volMl)} mL)" else ""
+    val route = medication.injectableDetails?.takeIf { medication.form.isInjectable }?.let { " • ${it.route.code}" }
+    return "$amt $unit$volStr${route.orEmpty()}"
   }
 }
 

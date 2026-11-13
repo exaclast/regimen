@@ -1,5 +1,6 @@
 package com.exaclast.regimen.data
 
+import com.exaclast.regimen.model.Concentration
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.InjectionRoute
 import com.exaclast.regimen.model.MedicationForm
@@ -30,7 +31,6 @@ data class FdaDrugLookupResult(
   val form: MedicationForm,
   val defaultDoseUnit: DoseUnit,
   val route: InjectionRoute? = null,
-  val concentrationMgPerMl: Double? = null,
   val vialVolumeMl: Double? = null,
   val packageDescription: String? = null,
   val expirationDateIso: String? = null,
@@ -862,6 +862,8 @@ object FdaNdcLookupService {
     val form = mapDosageForm(item.dosageForm, packageDesc, item.route)
     val route = mapRoute(item.route, form)
     val defaultUnit = when {
+      // Insulin and other biologics are dosed in units.
+      form.isInjectable && Concentration.parse(rawStrength)?.unit == Concentration.AmountUnit.UNITS -> DoseUnit.UNITS
       form.isInjectable -> DoseUnit.MG
       form == MedicationForm.TABLET -> DoseUnit.TABLET
       form == MedicationForm.CAPSULE -> DoseUnit.CAPSULE
@@ -872,7 +874,6 @@ object FdaNdcLookupService {
       else -> DoseUnit.MG
     }
 
-    val concentrationMgPerMl = parseConcentrationMgPerMl(rawStrength)
     val vialVolumeMl = parseVialVolumeMl(packageDesc)
 
     return FdaDrugLookupResult(
@@ -884,7 +885,6 @@ object FdaNdcLookupService {
       form = form,
       defaultDoseUnit = defaultUnit,
       route = route,
-      concentrationMgPerMl = concentrationMgPerMl,
       vialVolumeMl = vialVolumeMl,
       packageDescription = packageDesc,
     )
@@ -961,12 +961,6 @@ object FdaNdcLookupService {
       // Only drop a bare "/1" (per dose unit); "/1.5mL" and "/10mL" are real denominators.
       .replace(BARE_PER_ONE_REGEX, "")
       .trim()
-  }
-
-  internal fun parseConcentrationMgPerMl(strength: String): Double? {
-    val regex = Regex("""([0-9]+(?:\.[0-9]+)?)\s*mg\s*/\s*(?:1\s*)?mL""", RegexOption.IGNORE_CASE)
-    val match = regex.find(strength) ?: return null
-    return match.groupValues.getOrNull(1)?.toDoubleOrNull()
   }
 
   private val PARENTERAL_ROUTES = listOf("SUBCUTANEOUS", "INTRAMUSCULAR", "INTRAVENOUS", "INTRADERMAL")
