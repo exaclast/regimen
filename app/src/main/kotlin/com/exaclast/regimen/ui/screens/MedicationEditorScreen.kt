@@ -87,6 +87,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -1322,7 +1323,7 @@ fun MedicationEditorScreen(
             OutlinedTextField(
               value = ndc11,
               onValueChange = {
-                ndc11 = it
+                ndc11 = NumberInput.filterNdc(it)
                 ndcErrorText = null
                 ndcStatusText = null
                 ndcMatched = false
@@ -1330,6 +1331,7 @@ fun MedicationEditorScreen(
               label = { Text("NDC-11 (Optional)") },
               placeholder = { Text("e.g. 00781-1852-20") },
               singleLine = true,
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
               trailingIcon = {
                 if (allowFdaLookup && ndc11.isNotBlank()) {
                   TextButton(

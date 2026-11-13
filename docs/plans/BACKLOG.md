@@ -264,7 +264,6 @@ Shipped, but never confirmed on a device. Clear these opportunistically; if one 
 | Dark theme on tablet and foldable | Repeat the screen pass | No contrast problems | form factors |
 | Passphrase timing | Time the PBKDF2 step (600k iterations) | Well under 1 second | known gap |
 | Delete from a detail page | Delete a medication, a provider and an indication from their pages | Goes back once, to the list | T-045 |
-| NDC clears on a new strength | Edit Lantus, change the strength, save, choose "From a date" | The dialog says the NDC will be blank from that date; the change lists "NDC cleared"; after that date the NDC row is gone until the lookup fills it in | T-113 |
 | Plan a change with a strength | Plan a change, type a strength | The NDC field's hint says it will be blank from that date | T-113 |
 | Insulin syringe migration | Install over a build from before `d617fdf` with a syringe description | Type is filled in, text gone | T-113 |
 

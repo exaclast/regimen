@@ -1,6 +1,7 @@
 package com.exaclast.regimen.ui.screens
 
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
@@ -14,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import com.exaclast.regimen.domain.Adjustments
 import com.exaclast.regimen.model.DoseAmount
 import com.exaclast.regimen.model.Medication
@@ -23,6 +25,7 @@ import com.exaclast.regimen.model.ScheduleDose
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.formatExact
 import com.exaclast.regimen.model.formatNum
+import com.exaclast.regimen.ui.NumberInput
 import com.exaclast.regimen.ui.ScheduleText
 import com.exaclast.regimen.ui.checkOptionalPositiveDecimal
 import com.exaclast.regimen.ui.components.DatePickerField
@@ -140,7 +143,8 @@ fun AdjustmentEditorScreen(
     )
     OutlinedTextField(
       value = ndcText,
-      onValueChange = { ndcText = it },
+      onValueChange = { ndcText = NumberInput.filterNdc(it) },
+      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
       label = { Text("NDC-11 (optional)") },
       placeholder = { Text(if (clearsNdc) "Blank from this date" else before.ndc11.orEmpty().ifEmpty { "None" }) },
       supportingText = {

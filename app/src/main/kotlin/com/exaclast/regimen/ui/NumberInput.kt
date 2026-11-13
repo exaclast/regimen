@@ -10,6 +10,13 @@ import java.time.LocalDate
  */
 object NumberInput {
 
+  /**
+   * An NDC as typed or pasted: only digits (0-9) and hyphens survive, so "NDC 00781-1852-20" and stray spaces
+   * or letters don't reach the lookup. Not validated here; [com.exaclast.regimen.model.Medication.normalizeNdc11]
+   * formats a complete one.
+   */
+  fun filterNdc(raw: String): String = raw.filter { it in '0'..'9' || it == '-' }
+
   private val UNICODE_FRACTIONS = mapOf(
     '½' to 0.5,
     '¼' to 0.25,

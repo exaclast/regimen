@@ -10,6 +10,19 @@ import org.junit.Test
 class NumberInputTest {
 
   @Test
+  fun filterNdc_keepsOnlyDigitsAndHyphens() {
+    assertEquals("00781-1852-20", NumberInput.filterNdc("00781-1852-20"))
+    // Pasted text: prefix, spaces, letters and other punctuation are dropped.
+    assertEquals("00781-1852-20", NumberInput.filterNdc("NDC 00781-1852-20"))
+    assertEquals("007811852", NumberInput.filterNdc(" 00781 1852 "))
+    // Only the ASCII hyphen counts, not an en dash.
+    assertEquals("00781", NumberInput.filterNdc("0078–1."))
+    assertEquals("", NumberInput.filterNdc("abc"))
+    // Digits from other scripts aren't digits here.
+    assertEquals("12", NumberInput.filterNdc("1٣٤2"))
+  }
+
+  @Test
   fun parseDecimal_acceptsCommonDoseNotations() {
     mapOf(
       "1" to 1.0,
