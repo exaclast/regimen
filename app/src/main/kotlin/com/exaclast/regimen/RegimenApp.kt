@@ -275,9 +275,11 @@ fun RegimenApp(
                   }
                 }
                 pendingEdit?.let { edited ->
-                  val parts = Adjustments.changedParts(Adjustments.asOf(existing!!, today), edited)
+                  val current = Adjustments.asOf(existing!!, today)
+                  val parts = Adjustments.askParts(current, edited)
                   ChangeOrFixDialog(
                     what = "the " + parts.joinToString(" and ") { it.label },
+                    clearsNdc = Adjustments.clearsNdc(current, edited),
                     onDismiss = { pendingEdit = null },
                     onConfirm = { mode ->
                       pendingEdit = null

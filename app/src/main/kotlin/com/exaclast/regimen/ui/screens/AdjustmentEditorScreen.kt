@@ -50,6 +50,8 @@ fun AdjustmentEditorScreen(
   }
   var note by rememberSaveable { mutableStateOf(initial?.note.orEmpty()) }
   var strength by rememberSaveable { mutableStateOf(initial?.strength.orEmpty()) }
+  // Blank here is not "keep": a new strength clears the NDC (see below), so only a typed one is shown.
+  var ndcText by rememberSaveable { mutableStateOf(initial?.ndc11.orEmpty()) }
   var defaultDoseText by rememberSaveable { mutableStateOf(initial?.defaultDose?.amount?.let(::formatExact).orEmpty()) }
   var doseTexts by rememberSaveable {
     mutableStateOf(
@@ -67,6 +69,10 @@ fun AdjustmentEditorScreen(
   val doseChecks = doseTexts.map { checkOptionalPositiveDecimal(it) }
   val defaultDoseCheck = checkOptionalPositiveDecimal(defaultDoseText)
 
+  // A different strength has a different NDC, so it's blank from this date unless one is entered.
+  val clearsNdc = strength.isNotBlank() && !before.ndc11.isNullOrBlank() && ndcText.isBlank() &&
+    strength.trim() != before.strength.trim()
+
   fun build(): MedicationAdjustment {
     val doses = schedules.mapIndexedNotNull { i, s ->
       doseChecks[i].validOrNull()?.let { amount ->
@@ -77,6 +83,13 @@ fun AdjustmentEditorScreen(
       effectiveDateIso = dateIso,
       note = note.trim().ifEmpty { null },
       strength = strength.trim().ifEmpty { null },
+      ndc11 = when {
+        ndcText.isNotBlank() -> Medication.normalizeNdc11(ndcText)
+        clearsNdc -> ""
+        // Kept from before: an injection change that cleared it stays cleared while that change is kept.
+        initial?.ndc11 == "" && keepInjection && initial.injectableDetails != null -> ""
+        else -> null
+      },
       defaultDose = defaultDoseCheck.validOrNull()?.let { DoseAmount(it, before.defaultDoseUnit) },
       injectableDetails = initial?.injectableDetails?.takeIf { keepInjection },
       scheduleDoses = doses,
@@ -125,11 +138,28 @@ fun AdjustmentEditorScreen(
       singleLine = true,
       modifier = Modifier.fillMaxWidth(),
     )
+    OutlinedTextField(
+      value = ndcText,
+      onValueChange = { ndcText = it },
+      label = { Text("NDC-11 (optional)") },
+      placeholder = { Text(if (clearsNdc) "Blank from this date" else before.ndc11.orEmpty().ifEmpty { "None" }) },
+      supportingText = {
+        Text(
+          if (clearsNdc) {
+            "A different strength has a different NDC. Leave it blank and use the FDA lookup when the change starts."
+          } else {
+            "Only if it changes. Leave blank to keep the NDC before this date."
+          },
+        )
+      },
+      singleLine = true,
+      modifier = Modifier.fillMaxWidth(),
+    )
 
     initial?.injectableDetails?.let { details ->
       SwitchRow(
         title = "Keep injection change",
-        subtitle = Adjustments.describe(initial.copy(scheduleDoses = emptyList(), strength = null, defaultDose = null)) { null }
+        subtitle = Adjustments.describe(initial.copy(scheduleDoses = emptyList(), strength = null, ndc11 = null, defaultDose = null)) { null }
           .joinToString().ifEmpty { details.route.displayName },
         checked = keepInjection,
         onCheckedChange = { keepInjection = it },

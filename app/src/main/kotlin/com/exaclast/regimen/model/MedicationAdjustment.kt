@@ -23,6 +23,12 @@ data class MedicationAdjustment(
   val effectiveDateIso: String,
   val note: String? = null,
   val strength: String? = null,
+  /**
+   * The NDC from this date on. A different strength or package has a different NDC, so a change to either
+   * clears it: blank means "no NDC from this date" until the FDA lookup fills it in. Null carries the
+   * earlier one over.
+   */
+  val ndc11: String? = null,
   val defaultDose: DoseAmount? = null,
   /** The whole set of injection details from this date on (route, vial, syringe, needles). */
   val injectableDetails: InjectableDetails? = null,
@@ -33,5 +39,5 @@ data class MedicationAdjustment(
 
   /** Nothing to change: no values set. */
   val isEmpty: Boolean
-    get() = strength == null && defaultDose == null && injectableDetails == null && scheduleDoses.isEmpty()
+    get() = strength == null && ndc11 == null && defaultDose == null && injectableDetails == null && scheduleDoses.isEmpty()
 }

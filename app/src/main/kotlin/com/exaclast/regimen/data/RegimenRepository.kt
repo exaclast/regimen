@@ -136,6 +136,10 @@ class RegimenRepository private constructor(context: Context) {
     val now = System.currentTimeMillis()
     val normalized = medication.copy(
       ndc11 = Medication.normalizeNdc11(medication.ndc11),
+      // A blank NDC on an adjustment means "cleared" and must stay blank, not become null (carry over).
+      adjustments = medication.adjustments.map { adjustment ->
+        adjustment.ndc11?.takeIf { it.isNotBlank() }?.let { adjustment.copy(ndc11 = Medication.normalizeNdc11(it)) } ?: adjustment
+      },
       updatedAtEpochMillis = now,
     )
     db.upsertMedication(normalized)

@@ -34,6 +34,8 @@ import java.time.LocalDate
 @Composable
 fun ChangeOrFixDialog(
   what: String,
+  /** The change would clear the NDC (new strength or package), so say so and where to get the new one. */
+  clearsNdc: Boolean = false,
   onDismiss: () -> Unit,
   onConfirm: (EditMode) -> Unit,
 ) {
@@ -67,6 +69,14 @@ fun ChangeOrFixDialog(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           DatePickerField(label = "Starting", valueIso = dateIso, onValueChange = { dateIso = it }, allowClear = false)
+          if (clearsNdc) {
+            Text(
+              "A different strength or package has a different NDC, so it's blank from that date. " +
+                "Edit the medication and use the FDA lookup to fill it in.",
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
           OutlinedTextField(
             value = note,
             onValueChange = { note = it },

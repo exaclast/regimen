@@ -72,6 +72,11 @@ When a decision is made, add it here with the date. When one is reversed, say so
   per schedule, default dose, strength and injection details, not frequency or windows (T-015).
 - **Editors show today's values and ask "From a date" or "Correction"** when a tracked value changes and doses were
   logged (2026-11-13). A correction rewrites whichever value is in effect today; a change of form is always a correction.
+- **A change to the strength or the vial or device size clears the NDC from that date** (user request, 2026-11-13). A
+  different product has a different NDC (and usually a different 9-digit product code), so the old one would be wrong.
+  It stays blank until the user fills it in with the FDA lookup; the app never guesses one. Needle, syringe and route
+  changes don't clear it. A correction keeps it, since the strength was always that. Filling in a blank NDC is always a
+  silent correction, never a step.
 - **Syringes are a type plus a size, not free text** (2026-11-13). Free text repeated the size and needle. Insulin
   syringes have the needle attached, so there's no draw needle, and only they show unit markings.
 - **Needle hub colors follow ISO 6009** and say so, since some brands differ (user request, 2026-11-13).

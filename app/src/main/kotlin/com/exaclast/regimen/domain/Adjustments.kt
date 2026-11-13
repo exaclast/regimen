@@ -23,6 +23,7 @@ object Adjustments {
   /** The kinds of value an adjustment can carry. */
   enum class Part(val label: String) {
     STRENGTH("strength"),
+    NDC("NDC"),
     DEFAULT_DOSE("default dose"),
     EQUIPMENT("injection details"),
     DOSE("dose"),
@@ -51,6 +52,7 @@ object Adjustments {
     var result = medication
     inEffect(medication, date).forEach { adjustment ->
       adjustment.strength?.let { result = result.copy(strength = it) }
+      adjustment.ndc11?.let { result = result.copy(ndc11 = it.takeIf { ndc -> ndc.isNotBlank() }) }
       adjustment.defaultDose?.let { result = result.copy(defaultDoseAmount = it.amount, defaultDoseUnit = it.unit) }
       // Injection details only mean something while the form is injectable.
       adjustment.injectableDetails?.takeIf { medication.form.isInjectable }?.let {
@@ -89,6 +91,7 @@ object Adjustments {
   /** Tracked values that differ between [current] (as of today) and what the editor produced. */
   fun changedParts(current: Medication, edited: Medication): Set<Part> = buildSet {
     if (current.strength.trim() != edited.strength.trim()) add(Part.STRENGTH)
+    if (Medication.normalizeNdc11(current.ndc11) != Medication.normalizeNdc11(edited.ndc11)) add(Part.NDC)
     if (current.defaultDoseAmount != edited.defaultDoseAmount || current.defaultDoseUnit != edited.defaultDoseUnit) {
       add(Part.DEFAULT_DOSE)
     }
@@ -101,12 +104,32 @@ object Adjustments {
   }
 
   /**
+   * The changes worth asking about. Filling in an NDC that was blank (after a change cleared it, or never
+   * known) is never a step: it just completes the record.
+   */
+  fun askParts(current: Medication, edited: Medication): Set<Part> =
+    changedParts(current, edited).filterNot { it == Part.NDC && current.ndc11.isNullOrBlank() }.toSet()
+
+  /**
+   * True when recording [edited] as a change would clear the NDC: the strength or the vial or device size
+   * differs, so the old NDC no longer describes the product, and the user hasn't entered a new one. The
+   * lookup fills it in later.
+   */
+  fun clearsNdc(current: Medication, edited: Medication): Boolean {
+    if (current.ndc11.isNullOrBlank()) return false
+    if (changedParts(current, edited).contains(Part.NDC)) return false
+    val packageChanged = edited.form.isInjectable &&
+      current.injectableDetails?.vialVolumeMl != edited.injectableDetails?.vialVolumeMl
+    return current.strength.trim() != edited.strength.trim() || packageChanged
+  }
+
+  /**
    * Whether saving [edited] should ask "change or fix". Only when a tracked value changed, the form is the
    * same (a new form is a correction, not a step), and there's history to protect.
    */
   fun shouldAskForMedication(original: Medication?, edited: Medication, logs: List<DoseLog>, today: LocalDate): Boolean {
     if (original == null || original.form != edited.form) return false
-    if (changedParts(asOf(original, today), edited).isEmpty()) return false
+    if (askParts(asOf(original, today), edited).isEmpty()) return false
     return original.adjustments.isNotEmpty() || logs.any { it.medicationId == original.id && it.deletedAtEpochMillis == null }
   }
 
@@ -130,10 +153,12 @@ object Adjustments {
    * (name, sites, limits…) are taken as they are.
    */
   fun applyMedicationEdit(original: Medication, edited: Medication, mode: EditMode, today: LocalDate): Medication {
-    val parts = changedParts(asOf(original, today), edited)
+    val current = asOf(original, today)
+    val parts = changedParts(current, edited)
     val formChanged = original.form != edited.form
     val untouched = edited.copy(
       strength = original.strength,
+      ndc11 = original.ndc11,
       defaultDoseAmount = original.defaultDoseAmount,
       defaultDoseUnit = original.defaultDoseUnit,
       injectableDetails = if (formChanged) edited.injectableDetails else original.injectableDetails,
@@ -147,6 +172,12 @@ object Adjustments {
           effectiveDateIso = mode.dateIso,
           note = mode.note?.trim()?.ifEmpty { null },
           strength = edited.strength.trim().takeIf { Part.STRENGTH in parts },
+          ndc11 = when {
+            // A new (or removed) NDC is recorded as entered; otherwise a new strength or package clears it.
+            Part.NDC in parts -> Medication.normalizeNdc11(edited.ndc11).orEmpty()
+            clearsNdc(current, edited) -> ""
+            else -> null
+          },
           defaultDose = DoseAmount(edited.defaultDoseAmount, edited.defaultDoseUnit).takeIf { Part.DEFAULT_DOSE in parts },
           injectableDetails = edited.injectableDetails.takeIf { Part.EQUIPMENT in parts },
         ),
@@ -160,6 +191,7 @@ object Adjustments {
     val source = inEffect(medication, today).lastOrNull { adjustment ->
       when (part) {
         Part.STRENGTH -> adjustment.strength != null
+        Part.NDC -> adjustment.ndc11 != null
         Part.DEFAULT_DOSE -> adjustment.defaultDose != null
         Part.EQUIPMENT -> adjustment.injectableDetails != null
         Part.DOSE -> false
@@ -168,6 +200,7 @@ object Adjustments {
     if (source == null) {
       return when (part) {
         Part.STRENGTH -> medication.copy(strength = edited.strength.trim())
+        Part.NDC -> medication.copy(ndc11 = Medication.normalizeNdc11(edited.ndc11))
         Part.DEFAULT_DOSE -> medication.copy(defaultDoseAmount = edited.defaultDoseAmount, defaultDoseUnit = edited.defaultDoseUnit)
         Part.EQUIPMENT -> medication.copy(injectableDetails = edited.injectableDetails)
         Part.DOSE -> medication
@@ -175,6 +208,7 @@ object Adjustments {
     }
     val fixed = when (part) {
       Part.STRENGTH -> source.copy(strength = edited.strength.trim())
+      Part.NDC -> source.copy(ndc11 = Medication.normalizeNdc11(edited.ndc11).orEmpty())
       Part.DEFAULT_DOSE -> source.copy(defaultDose = DoseAmount(edited.defaultDoseAmount, edited.defaultDoseUnit))
       Part.EQUIPMENT -> source.copy(injectableDetails = edited.injectableDetails)
       Part.DOSE -> source
@@ -225,6 +259,7 @@ object Adjustments {
     val merged = sameDay.copy(
       note = adjustment.note ?: sameDay.note,
       strength = adjustment.strength ?: sameDay.strength,
+      ndc11 = adjustment.ndc11 ?: sameDay.ndc11,
       defaultDose = adjustment.defaultDose ?: sameDay.defaultDose,
       injectableDetails = adjustment.injectableDetails ?: sameDay.injectableDetails,
       scheduleDoses = sameDay.scheduleDoses.filter { old -> adjustment.scheduleDoses.none { it.scheduleId == old.scheduleId } } +
@@ -248,6 +283,7 @@ object Adjustments {
       scheduleLabel(dose.scheduleId)?.let { add("$it: ${formatNum(dose.amount)} ${dose.unit.symbol}") }
     }
     adjustment.strength?.let { add("Strength: $it") }
+    adjustment.ndc11?.let { add(if (it.isBlank()) "NDC cleared: look up the new one" else "NDC: $it") }
     adjustment.defaultDose?.let { add("Default dose: ${formatNum(it.amount)} ${it.unit.symbol}") }
     adjustment.injectableDetails?.let { details ->
       val parts = listOfNotNull(
