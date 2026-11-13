@@ -17,15 +17,17 @@
 - **Core details**: formula/generic name, brand, strength, dosage form (`Tablet`, `Capsule`, `Injectable (Vial)`, `Injectable (Pen)`, `Topical`, `Oral Liquid`, `Inhaler`, `Drops`, `Other`), and default dose amount/unit.
 - **Injectable & vial support**:
   - Administration route (`IM`, `SC`, `ID`, `IV`).
-  - Vial concentration (`mg/mL`) and volume (`mL`), with automatic draw volume. `U-100` syringe units are shown only on a U-100 syringe; prefilled devices show no volume.
-  - Separate draw and injection needle specs (`Gauge × Length`) plus syringe size.
+  - Vial volume (`mL`) with an automatic draw volume worked out from the strength (e.g. `200 mg/10 mL`, `200 units/mL`); there is no separate concentration field. Prefilled devices are dialed, so they show no volume.
+  - Syringes are picked by type (U-100 or U-500 insulin, tuberculin, Luer-lock, Luer-slip, other) and a usual size. Only insulin syringes show unit markings. Separate draw and injection needle specs (`Gauge × Length`) show the standard ISO hub color for the gauge.
+- **Dated changes (titration)**: record a dose, strength or equipment change from a date, such as an isotretinoin step-up or a new vial size, instead of overwriting history. Plan ahead from the medication page, or choose "From a date" or "Correction" when editing. Today, reminders and the alarm screen show each day's dose, and the first dose at a new amount is flagged. A change of strength or package clears the NDC until the FDA lookup supplies the new one.
 - **On-device label scanner (Gemini Nano / AICore)**: ML Kit text recognition reads one or more bottle/vial photos (a label that wraps around a small bottle can take a few), then the ML Kit GenAI Prompt API turns that text, or pasted text, into structured fields on-device. Only text reaches the model, because AICore's safety check refuses many label photos. The result includes fields (NDC, names, strength, form, manufacturer, lot, expiry, instructions). Decoy schema fields and token sanitization keep patient, pharmacy and prescriber names from being read as drug names. Scan buttons are disabled on devices without AICore; manual lookup works everywhere.
 - **OpenFDA cross-reference**: an NDC takes first priority in the [OpenFDA NDC API](https://open.fda.gov/apis/drug/ndc/). Otherwise name, strength, form and manufacturer are combined. A name that is not an exact match is never applied without asking, and ambiguous matches open a disambiguation dialog.
 - **Organized list**: chips group medications by schedule (short-term, ongoing, as needed), indication or form, alphabetical within each section. Finished medications collapse out of the way.
 - **Pacing guardrails**: minimum interval between doses, maximum daily dose count, and maximum daily amount (totaled in the default unit). Daily limits count a dose on the calendar day it was taken, with overnight-window exceptions. Warnings appear on Today, in notifications and on the alarm screen. Logging a dose over its limit happens in the app, which explains the limit first.
 
-### 2. Anatomical Site Rotation
-- Per-medication ordered site lists for injectables and topicals, with presets (e.g. *Ventrogluteal L/R*, *Deltoid L/R*, *Vastus Lateralis L/R*, *6-Site IM Rotation*, *Abdomen Quadrants*).
+### 2. Anatomical Sites
+- Every form with sites (injectables, topicals, inhalers/nasal, drops, other) has three modes: **Off**, **Record** (suggests the last site used) or **Rotate** (suggests the next in order). Only injectables default to Rotate.
+- Per-medication ordered site lists with presets (e.g. *Ventrogluteal L/R*, *Deltoid L/R*, *Vastus Lateralis L/R*, *6-Site IM Rotation*, *Abdomen Quadrants*).
 - **Actual-site continuation**: the next suggested site advances from the site actually used in the most recent taken dose, so an override shifts later doses cleanly.
 
 ### 3. Schedules & Dose Windows
@@ -37,7 +39,8 @@
 
 ### 4. Notifications & Alarms
 - **One notification per window occurrence** ("Morning dose" / "Morning medications") listing the drugs and doses, with Take / Skip (single) or Take all (several).
-- **Alarm engine**: exact, Doze-piercing alarms for window start, repeat nudges on a fixed grid, and end of window (only while unlogged doses remain). All of it is re-armed after any data, settings, clock or permission change, including after reboot.
+- **Alarm engine**: exact, Doze-piercing alarms for window start, repeat nudges on a fixed grid, and end of window (only while unlogged doses remain). All of it is re-armed after any data, settings, clock or permission change, including after reboot. After a reboot, doses still waiting in a window that opened or closed while the phone was off alert once.
+- **Blocked reminders are flagged**: Today shows a Fix notice when notifications are denied, a channel is blocked, exact alarms are denied or full-screen intents are blocked, and opens the right settings page.
 - **Snooze**: swiping a reminder away snoozes it; the alarm screen and the app also offer Snooze, and each snoozed dose gets its own alarm.
 - **End-of-window alarm screen** opens via a full-screen intent and rings; opening it from a tap is silent.
 - **Discreet mode** hides medication names on the lock screen.
@@ -83,7 +86,7 @@ app/src/main/kotlin/com/exaclast/regimen/
     └── theme/                           # Material 3 Expressive theme
 ```
 
-Unit tests live in `app/src/test/kotlin/` and cover the dose engine and timeline, window deletion, notifications text and timing, the bundle merger and crypto, label parsing and the FDA lookup.
+Unit tests live in `app/src/test/kotlin/` and cover the dose engine and timeline, dated adjustments, concentration parsing, database migrations, window deletion, notifications text and timing, the bundle merger and crypto, label parsing and the FDA lookup.
 
 ---
 
