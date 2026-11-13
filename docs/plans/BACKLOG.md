@@ -264,5 +264,5 @@ Shipped, but never confirmed on a device. Clear these opportunistically; if one 
 | Dark theme on tablet and foldable | Repeat the screen pass | No contrast problems | form factors |
 | Passphrase timing | Time the PBKDF2 step (600k iterations) | Well under 1 second | known gap |
 | Delete from a detail page | Delete a medication, a provider and an indication from their pages | Goes back once, to the list | T-045 |
-| Insulin syringe migration | Install over a build from before `9e44103` with a syringe description | Type is filled in, text gone | T-113 |
+| Insulin syringe migration | Install over a build from before `d617fdf` with a syringe description | Type is filled in, text gone | T-113 |
 
