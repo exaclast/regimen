@@ -176,6 +176,36 @@ object DoseNotificationManager {
     return hasNotificationPermission(context) && canScheduleExactAlarms(context)
   }
 
+  /** What stops reminders from working, most serious first. */
+  enum class ReminderProblem(val message: String) {
+    NOTIFICATIONS_DENIED("Notifications are turned off for Regimen, so doses won't remind you."),
+    CHANNEL_BLOCKED("A Regimen notification category is blocked, so some reminders won't show."),
+    EXACT_ALARMS_DENIED("Exact alarms aren't allowed, so reminders may arrive late or not at all."),
+    FULL_SCREEN_BLOCKED("The end-of-window alarm can't take over the screen, so it will only be a notification."),
+  }
+
+  fun reminderProblem(context: Context): ReminderProblem? {
+    val manager = context.getSystemService(NotificationManager::class.java)
+    return when {
+      !hasNotificationPermission(context) || manager?.areNotificationsEnabled() == false ->
+        ReminderProblem.NOTIFICATIONS_DENIED
+      manager?.notificationChannels?.any { it.importance == NotificationManager.IMPORTANCE_NONE } == true ->
+        ReminderProblem.CHANNEL_BLOCKED
+      !canScheduleExactAlarms(context) -> ReminderProblem.EXACT_ALARMS_DENIED
+      !canUseFullScreenIntent(context) -> ReminderProblem.FULL_SCREEN_BLOCKED
+      else -> null
+    }
+  }
+
+  /** Opens the settings page that fixes [problem]. */
+  fun openSettingsFor(context: Context, problem: ReminderProblem) {
+    when (problem) {
+      ReminderProblem.NOTIFICATIONS_DENIED, ReminderProblem.CHANNEL_BLOCKED -> openAppNotificationSettings(context)
+      ReminderProblem.EXACT_ALARMS_DENIED -> openExactAlarmSettings(context)
+      ReminderProblem.FULL_SCREEN_BLOCKED -> openFullScreenIntentSettings(context)
+    }
+  }
+
   // endregion
 
   // region Refresh (alarms + notification reconciliation)
@@ -195,6 +225,33 @@ object DoseNotificationManager {
     scheduleBucketAlarms(context, snapshot, boards, nowMillis, today)
     armPendingSnoozes(context, snapshot, nowMillis)
     reconcileNotifications(context, snapshot, boards, nowMillis, today, alertingBucketId)
+  }
+
+  /**
+   * After a boot: alarms that were due while the phone was off never fired, and reboots clear the
+   * shade. For each window, alerts once for its latest occurrence if doses there still need the user
+   * (open or already closed, including a snooze that ended while off). Call [refresh] first so the
+   * silent reconcile can't pre-empt these alerts.
+   */
+  fun alertOverdueAfterBoot(context: Context, snapshot: RegimenSnapshot) {
+    val settings = snapshot.settings
+    if (!settings.notificationsEnabled || !hasNotificationPermission(context)) return
+    val nowMillis = System.currentTimeMillis()
+    val today = LocalDate.now()
+    val boards = BoardCache(snapshot)
+    snapshot.buckets.filter { it.notificationsEnabled }.forEach { bucket ->
+      val dateIso = DoseAlarmTiming.currentOccurrenceDateIso(bucket, nowMillis, today)
+      val items = boards.items(dateIso, bucket.id).filter { isActionable(it, nowMillis) }
+      if (items.isEmpty()) return@forEach
+      val windowEnd = DoseAlarmTiming.windowEndMillis(bucket, dateIso)
+      val closed = windowEnd != null && nowMillis >= windowEnd
+      val stage = if (closed && settings.alarmsEnabled && bucket.alarmAtWindowEnd) {
+        DoseNotificationStage.WINDOW_END_ALARM
+      } else {
+        DoseNotificationStage.WINDOW_START_PERSISTENT
+      }
+      postWindowNotification(context, bucket, dateIso, items, stage, settings, alert = true)
+    }
   }
 
   private fun armPendingSnoozes(context: Context, snapshot: RegimenSnapshot, nowMillis: Long) {

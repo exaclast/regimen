@@ -147,6 +147,11 @@ object DrugBarcodeScanner {
     )
   }
 
+  /** Deletes every captured label photo: they show patient and prescriber names, so none outlives its use. */
+  fun clearLabelPhotos(context: Context) {
+    runCatching { File(context.cacheDir, "label_scans").deleteRecursively() }
+  }
+
   /**
    * Max characters of recognized text sent to the model. The Prompt API takes about 4000 tokens in
    * total and the extraction prompt itself uses several hundred.

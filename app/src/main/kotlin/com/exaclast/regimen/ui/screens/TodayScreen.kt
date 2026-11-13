@@ -72,6 +72,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -84,6 +85,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -107,7 +109,11 @@ import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.formatNum
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.exaclast.regimen.notifications.DoseAlarmTiming
+import com.exaclast.regimen.notifications.DoseNotificationManager
 import com.exaclast.regimen.ui.RegimenUiState
 import com.exaclast.regimen.ui.components.AppSnackbarHost
 import com.exaclast.regimen.ui.components.ConfirmDialog
@@ -148,6 +154,18 @@ fun TodayScreen(
   val selectedDate = runCatching { LocalDate.parse(uiState.selectedDateIso) }.getOrDefault(LocalDate.now())
   val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
+  // What the system blocks (permissions, channels), checked again each time the app comes back from Settings.
+  val context = LocalContext.current
+  val lifecycleOwner = LocalLifecycleOwner.current
+  var reminderProblem by remember { mutableStateOf(DoseNotificationManager.reminderProblem(context)) }
+  DisposableEffect(lifecycleOwner) {
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_RESUME) reminderProblem = DoseNotificationManager.reminderProblem(context)
+    }
+    lifecycleOwner.lifecycle.addObserver(observer)
+    onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+  }
+
   // A list keeps its place by item key, so a notice or card added above the current position would
   // stay out of sight. Go to the top when they change, but not when returning from another screen.
   val listState = rememberLazyListState()
@@ -157,6 +175,7 @@ fun TodayScreen(
     uiState.yesterdayMissedCount > 0,
     uiState.medicationsWithoutWindow.isNotEmpty(),
     settings.notificationsEnabled,
+    reminderProblem,
   ).toString()
   var scrolledForTop by rememberSaveable { mutableStateOf(topOfList) }
   LaunchedEffect(topOfList) {
@@ -318,6 +337,17 @@ fun TodayScreen(
             text = "Reminders are turned off. Doses won't notify you.",
             actionLabel = "Settings",
             onAction = onOpenSettings,
+          )
+        }
+      }
+
+      reminderProblem?.takeIf { settings.notificationsEnabled }?.let { problem ->
+        item(key = "reminders-blocked") {
+          NoticeCard(
+            icon = Icons.Default.Warning,
+            text = problem.message,
+            actionLabel = "Fix",
+            onAction = { DoseNotificationManager.openSettingsFor(context, problem) },
           )
         }
       }

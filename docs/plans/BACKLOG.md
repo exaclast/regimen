@@ -60,15 +60,10 @@ changes need real migrations, so anything that reshapes data belongs before it.
 
 Small, high-value and independent of each other. Suggested order (T-111 to T-113, which reshaped data, are done):
 
-1. **T-011** Dialogs clip on short windows
-2. **T-050** Delete label photos
-3. **T-001** Warn when reminders can't work
-4. **T-002** Don't lose alarms while the phone is off
-5. **T-038** Editors lose selections
-6. **T-003** / **T-004** Test notifications and demo data touch real alarms
-7. **T-026** Scans overwriting the dose
-8. **T-068** Invisible "Review" button
-9. **T-084** Lint in CI, so all of this stays fixed
+1. **T-003** / **T-004** Test notifications and demo data touch real alarms
+2. **T-026** Scans overwriting the dose
+3. **T-068** Invisible "Review" button
+4. **T-084** Lint in CI, so all of this stays fixed
 
 ---
 
@@ -78,8 +73,6 @@ Small, high-value and independent of each other. Suggested order (T-111 to T-113
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-001 | Today only warns about the in-app toggle. Also warn when notifications are denied, the channel is blocked, exact alarms are denied, or full-screen intents are blocked | P0 | S | M1 | B18, A16 |
-| T-002 | Alarms due while the phone is off are lost. On boot, post overdue doses and alert once; includes a snooze that ended while off | P0 | M | M1 | B17, B5 leftover |
 | T-003 | Test reminders use the real notification: Take logs a real dose, swiping snoozes real doses. Send a labelled test with no dose actions | P1 | S | M1 | B25 |
 | T-004 | Demo data arms real alarms, is available in release builds, and from Settings replaces real data. Limit it to debug or suppress its reminders | P1 | S | M1 | B26, A5 |
 | T-005 | (verify) Opening the alarm screen from the notification (`ACTION_SHOW`) may not silence the insistent sound | P1 | S | M1 | B35 |
@@ -93,7 +86,6 @@ Small, high-value and independent of each other. Suggested order (T-111 to T-113
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-011 | (partial) `LogTimeDialog` clips on short windows: Time squashed, Note gone. Make it scroll (`SiteSelectionDialog` already does, since T-111) | P1 | S | M1 | form factors |
 | T-012 | "Take early" has no friction hours ahead of a window, and on past days the main button is "Take now" | P1 | S | M1 | B29 |
 | T-013 | A new schedule can start out "Missed": it defaults to today, including windows already over | P1 | S | M1 | B31 |
 | T-014 | Adding a window to a schedule back-fills missed doses, because the schedule's start date covers the new window | P1 | M | M3 | B60 |
@@ -130,7 +122,6 @@ Small, high-value and independent of each other. Suggested order (T-111 to T-113
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-038 | Selections use `remember` and revert on rotation: schedule windows, weekdays and specific dates; label photo URI and captured photos (sites fixed in T-111). The user can save the wrong schedule without noticing | P1 | S | M1 | B19 |
 | T-039 | Closing an editor discards changes without asking | P2 | S | M4 | Low |
 | T-040 | Setting a resolved indication back to Active keeps its end date, so it stays under Past | P2 | S | M4 | B36 |
 | T-041 | Provider care dates aren't checked for end before start | P3 | S | — | Low |
@@ -146,7 +137,6 @@ Small, high-value and independent of each other. Suggested order (T-111 to T-113
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-050 | Label photos (patient name, prescriber, drug) are never deleted, and multi-photo scanning now creates more. Delete after analysis or cancel, and clear on launch | P0 | S | M1 | B23, A14 |
 | T-051 | The alarm screen draws medication details over the lock screen even in discreet mode | P1 | S | M1 | B15 |
 | T-052 | Privacy text is inaccurate: the name "stays on your device" but is in every backup and syncs. ML Kit sends telemetry. Auto Backup includes the plaintext database (see D-3) | P1 | S | M1 | B24 |
 | T-053 | Passphrases go into saved state via `rememberSaveable`; the recovery code screen has no `FLAG_SECURE` | P1 | S | M1 | B43 |
@@ -252,6 +242,7 @@ Shipped, but never confirmed on a device. Clear these opportunistically; if one 
 | What | Steps | Expected | From |
 |------|-------|----------|------|
 | Snooze with the app killed | While a window is open, snooze, leave the app, `adb shell am kill com.exaclast.regimen`, wait | The reminder alerts with sound | B6 |
+| Alert after boot | With a window open (or just closed) and a dose unlogged, reboot the phone | One alert for that window after boot; a snooze that ended while off alerts too | T-002 |
 | Snooze across reboot | Repeat reminders off, snooze, reboot, wait | The reminder comes back | B5 |
 | As-needed unit | Log an as-needed dose from its card | Log matches the amount and unit on the card | B10 |
 | Swipe to snooze | Swipe a reminder on an unlocked phone | Comes back after the snooze time | B16 |
@@ -260,6 +251,10 @@ Shipped, but never confirmed on a device. Clear these opportunistically; if one 
 | Extra-dose search | Have more than six medications | Search box appears and filters | 27ae543 |
 | Date picker label | TalkBack on a date field | Announces "Choose <label>" (F1; the label is in the code now) | F1 |
 | Indication editor | Open it on a phone | The three-way kind selector fits | F3 |
+| Reminder blocked notice | Deny notifications (or block a channel, exact alarms, full-screen) in system settings, open Today | A "Fix" notice names the problem and opens the right settings page; it goes away on return once fixed | T-001 |
+| Label photo cleanup | Take photos, read the label (or Discard), then check `cache/label_scans` | Folder is gone; also after killing the app mid-scan and relaunching | T-050 |
+| Selections survive rotation | In a schedule editor pick windows, weekdays, specific dates; rotate or fold/unfold. Also take a label photo, rotate before "Read label" | Selections and photos are still there | T-038 |
+| Log-time dialog, short window | Open "Log extra dose" > Other time in landscape or split screen | The dialog scrolls; Time and Note reachable | T-011 |
 | Split-screen and window resize | Resize through compact, medium, expanded; repeat after T-069 | Layout follows, selection survives | form factors |
 | Dark theme on tablet and foldable | Repeat the screen pass | No contrast problems | form factors |
 | Passphrase timing | Time the PBKDF2 step (600k iterations) | Well under 1 second | known gap |

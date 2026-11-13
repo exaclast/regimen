@@ -12,6 +12,8 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
     ClockPreferences.use24Hour = DateFormat.is24HourFormat(this)
+    // Label photos show names; any left by an earlier run (killed mid-scan) go on a fresh launch.
+    if (savedInstanceState == null) com.exaclast.regimen.data.DrugBarcodeScanner.clearLabelPhotos(applicationContext)
     setContent {
       RegimenApp()
     }

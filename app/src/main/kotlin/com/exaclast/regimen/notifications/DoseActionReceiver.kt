@@ -25,7 +25,12 @@ class DoseActionReceiver : BroadcastReceiver() {
     val action = intent.action ?: return
 
     when (action) {
-      Intent.ACTION_BOOT_COMPLETED,
+      Intent.ACTION_BOOT_COMPLETED -> {
+        val snapshot = repo.snapshot.value
+        DoseNotificationManager.refresh(context, snapshot)
+        DoseNotificationManager.alertOverdueAfterBoot(context, snapshot)
+      }
+
       Intent.ACTION_MY_PACKAGE_REPLACED,
       Intent.ACTION_TIME_CHANGED,
       Intent.ACTION_TIMEZONE_CHANGED,

@@ -3,6 +3,8 @@ package com.exaclast.regimen.ui.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -54,7 +56,10 @@ fun LogTimeDialog(
     onDismissRequest = onDismiss,
     title = { Text(title) },
     text = {
-      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+      Column(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
         Text(doseLabel, style = MaterialTheme.typography.bodyLarge)
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
           listOf("Now", "Other time").forEachIndexed { index, label ->

@@ -13,6 +13,12 @@ resolve.
 
 Newest first.
 
+- **T-002** (see this session's commit): after boot, `alertOverdueAfterBoot` alerts once per window whose latest occurrence still has doses needing the user, open or closed, including snoozes that ended while off. Leftover: an unlogged dose from an older occurrence (not the latest) isn't re-alerted. Proof: builds, unit tests pass; device check added.
+
+- **T-038** (uncommitted): schedule windows, weekdays, specific dates and the label photo URI, captured photos and their dialog now survive rotation (`rememberSavableList`, `rememberSaveable`). Proof: unit tests pass; device check added.
+
+- **T-001, T-011, T-050** (uncommitted): Today warns when notifications are denied, a channel is blocked, exact alarms are denied or full-screen intents are blocked (`DoseNotificationManager.reminderProblem`); `LogTimeDialog` scrolls; label photos are deleted after analysis, on Discard and on a fresh launch. Proof: unit tests pass; device checks added.
+
 | Item | Commit | Proof |
 |------|--------|-------|
 | T-113 follow-up: the NDC is part of a dated change. A change to the strength or the vial or device size clears it from that date (a different product has a different NDC); it stays blank until the FDA lookup fills it in, and filling in a blank NDC is a silent correction. "Plan a change" has an NDC field and says when it will clear; the change dialog explains it | "Clear the NDC when a change alters the strength or package" | `AdjustmentsTest` (7 more), 213 tests; Pixel: editing Lantus' strength showed the NDC note, the change listed "NDC cleared", and the Details NDC row went. The Plan screen's hint is still in Device checks |

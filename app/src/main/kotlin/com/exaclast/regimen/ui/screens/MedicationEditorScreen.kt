@@ -395,10 +395,10 @@ fun MedicationEditorScreen(
   var ndcMatched by remember { mutableStateOf(false) }
   var showLabelScanDialog by remember { mutableStateOf(false) }
   var manualLabelInput by remember { mutableStateOf("") }
-  var pendingLabelPhotoUri by remember { mutableStateOf<Uri?>(null) }
+  var pendingLabelPhotoUri by rememberSaveable { mutableStateOf<Uri?>(null) }
   // Photos taken so far of one container; a small bottle's label wraps around it, so it takes several.
-  val capturedLabelPhotos = remember { mutableStateListOf<Uri>() }
-  var showCapturedPhotosDialog by remember { mutableStateOf(false) }
+  val capturedLabelPhotos = rememberSavableList<Uri> { emptyList() }
+  var showCapturedPhotosDialog by rememberSaveable { mutableStateOf(false) }
   var disambiguationPrompt by remember {
     mutableStateOf<CrossReferenceOutcome.NeedsUserSelection?>(null)
   }
@@ -537,6 +537,7 @@ fun MedicationEditorScreen(
         userConfiguredPatientName = configuredPatientName.takeIf { it.isNotBlank() },
         onStatusUpdate = { status -> ndcStatusText = status },
       )
+      DrugBarcodeScanner.clearLabelPhotos(context)
       isLookingUpNdc = false
       res.fold(
         onSuccess = { parsed -> applyParsedMedicationLabel(parsed) },
@@ -1429,6 +1430,7 @@ fun MedicationEditorScreen(
           TextButton(
             onClick = {
               capturedLabelPhotos.clear()
+              DrugBarcodeScanner.clearLabelPhotos(context)
               showCapturedPhotosDialog = false
             },
           ) {
@@ -1825,6 +1827,13 @@ fun SpecificDatesPicker(
   }
 }
 
+/** A list of selections that survives rotation and process death (items must go in a Bundle). */
+@Composable
+private fun <T : Any> rememberSavableList(initial: () -> List<T>): SnapshotStateList<T> =
+  rememberSaveable(
+    saver = listSaver<SnapshotStateList<T>, T>(save = { it.toList() }, restore = { it.toMutableStateList() }),
+  ) { initial().toMutableStateList() }
+
 /**
  * Full-screen schedule editor (frequency, dose, windows, interval/start date, weekdays).
  */
@@ -1841,10 +1850,8 @@ fun ScheduleEditorScreen(
     mutableStateOf(initialSchedule?.frequencyType ?: ScheduleFrequencyType.DAILY)
   }
   val orderedBuckets = remember(buckets) { buckets.chronological() }
-  val selectedBucketIds = remember {
-    mutableStateListOf<String>().apply {
-      addAll(initialSchedule?.bucketIds ?: listOfNotNull(orderedBuckets.firstOrNull()?.id))
-    }
+  val selectedBucketIds = rememberSavableList {
+    initialSchedule?.bucketIds ?: listOfNotNull(orderedBuckets.firstOrNull()?.id)
   }
   var doseAmountText by rememberSaveable {
     mutableStateOf(formatExact(initialSchedule?.doseAmount ?: medication.defaultDoseAmount))
@@ -1866,12 +1873,8 @@ fun ScheduleEditorScreen(
   // Partial first/last day, e.g. a twice-daily course started with the evening dose.
   var startBucketId by rememberSaveable { mutableStateOf(initialSchedule?.startBucketId) }
   var endBucketId by rememberSaveable { mutableStateOf(initialSchedule?.endBucketId) }
-  val selectedDaysOfWeek = remember {
-    mutableStateListOf<Int>().apply { addAll(initialSchedule?.daysOfWeek ?: setOf(1, 2, 3, 4, 5, 6, 7)) }
-  }
-  val selectedSpecificDates = remember {
-    mutableStateListOf<String>().apply { addAll(initialSchedule?.specificDatesIso?.sorted().orEmpty()) }
-  }
+  val selectedDaysOfWeek = rememberSavableList { (initialSchedule?.daysOfWeek ?: setOf(1, 2, 3, 4, 5, 6, 7)).toList() }
+  val selectedSpecificDates = rememberSavableList { initialSchedule?.specificDatesIso?.sorted().orEmpty() }
 
   // Strict validation: invalid input blocks Save rather than silently becoming a default.
   // (An unparseable start date used to make an every-N-days schedule due every day.)
