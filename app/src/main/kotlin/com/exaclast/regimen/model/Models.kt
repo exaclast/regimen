@@ -23,20 +23,36 @@ object ClockPreferences {
 /** Windows in time-of-day order. */
 fun List<TimeOfDayBucket>.chronological(): List<TimeOfDayBucket> = sortedWith(TimeOfDayBucket.CHRONOLOGICAL)
 
+/**
+ * How a medication's sites are tracked. [RECORD] notes where each dose went (the same patch spot, the left
+ * eye) and suggests the last one; [ROTATE] suggests the next site in order.
+ */
 @Serializable
-enum class MedicationForm(val displayName: String, val supportsSiteRotation: Boolean) {
+enum class SiteMode(val displayName: String, val description: String) {
+  OFF("Off", "Doses don't record a site"),
+  RECORD("Record", "Records where each dose goes and suggests the last site used"),
+  ROTATE("Rotate", "Suggests the next site in order after the last one used"),
+}
+
+/** [hasSites]: a dose goes somewhere on the body worth recording. Oral forms don't. */
+@Serializable
+enum class MedicationForm(val displayName: String, val hasSites: Boolean) {
   TABLET("Tablet", false),
   CAPSULE("Capsule", false),
   INJECTABLE_VIAL("Injectable (Vial)", true),
   INJECTABLE_PEN("Injectable (Pen / Auto-injector / Prefilled syringe)", true),
   TOPICAL("Topical (Gel / Cream / Patch)", true),
   LIQUID("Oral Liquid / Solution", false),
-  INHALER("Inhaler / Nasal Spray", false),
-  DROPS("Drops (Ophthalmic / Otic)", false),
-  OTHER("Other", false);
+  INHALER("Inhaler / Nasal Spray", true),
+  DROPS("Drops (Ophthalmic / Otic)", true),
+  OTHER("Other", true);
 
   val isInjectable: Boolean
     get() = this == INJECTABLE_VIAL || this == INJECTABLE_PEN
+
+  /** Injection sites need rotating; anything else only records a site if the user asks. */
+  val defaultSiteMode: SiteMode
+    get() = if (isInjectable) SiteMode.ROTATE else SiteMode.OFF
 
   /** Prefilled devices (pens, auto-injectors, prefilled syringes) have nothing to draw up. */
   val isPrefilledInjector: Boolean
@@ -120,8 +136,9 @@ data class Medication(
   val defaultDoseAmount: Double = 1.0,
   val defaultDoseUnit: DoseUnit = DoseUnit.TABLET,
   val injectableDetails: InjectableDetails? = null,
-  val siteRotationEnabled: Boolean = false,
-  val rotationSites: List<String> = emptyList(),
+  val siteMode: SiteMode = SiteMode.OFF,
+  /** In rotation order when [siteMode] is [SiteMode.ROTATE]. Kept while sites are off, so turning them back on restores it. */
+  val sites: List<String> = emptyList(),
   // Pacing and safety constraints on the Medication object
   val minIntervalMinutes: Int? = null,
   val maxDailyDoses: Double? = null,
@@ -143,6 +160,17 @@ data class Medication(
 ) {
   val displayTitle: String
     get() = if (!brandName.isNullOrBlank()) "$formulaName ($brandName)" else formulaName
+
+  /** Doses record a site: the form has sites, they're on, and at least one is set up. */
+  val tracksSites: Boolean
+    get() = form.hasSites && siteMode != SiteMode.OFF && sites.isNotEmpty()
+
+  val rotatesSites: Boolean
+    get() = tracksSites && siteMode == SiteMode.ROTATE
+
+  /** The sites in use, or none when doses don't record a site. */
+  val activeSites: List<String>
+    get() = if (tracksSites) sites else emptyList()
 
   /** The name most people recognize: brand when known, otherwise the generic name. */
   val primaryName: String
@@ -195,6 +223,46 @@ data class Medication(
       "Left Inner Forearm",
       "Right Inner Forearm",
     )
+    val PRESET_EYE_SITES = listOf("Left Eye", "Right Eye", "Both Eyes")
+    val PRESET_EAR_SITES = listOf("Left Ear", "Right Ear", "Both Ears")
+    val PRESET_NOSTRIL_SITES = listOf("Left Nostril", "Right Nostril", "Both Nostrils")
+
+    /** Named presets offered in the editor, most specific first for [form]. */
+    fun sitePresets(form: MedicationForm): List<Pair<String, List<String>>> {
+      val injection = listOf(
+        "4-Quadrant Abdomen (SC)" to PRESET_SC_ABDOMEN_SITES,
+        "L/R Ventrogluteal (IM)" to PRESET_IM_GLUTE_SITES,
+        "L/R Deltoid (IM)" to PRESET_IM_DELT_SITES,
+        "L/R Thigh (IM)" to PRESET_IM_THIGH_SITES,
+        "6-Site Full Rotation (IM)" to PRESET_IM_FULL_ROTATION,
+      )
+      val topical = listOf("L/R Arms & Shoulders" to PRESET_TOPICAL_SITES)
+      val drops = listOf("Eyes" to PRESET_EYE_SITES, "Ears" to PRESET_EAR_SITES)
+      val nasal = listOf("Nostrils" to PRESET_NOSTRIL_SITES)
+      return when {
+        form.isInjectable -> injection + topical
+        form == MedicationForm.TOPICAL -> topical + injection
+        form == MedicationForm.DROPS -> drops
+        form == MedicationForm.INHALER -> nasal
+        else -> topical + injection + drops + nasal
+      }
+    }
+
+    /**
+     * Sites a new medication starts with: picked from the route and form, so a subcutaneous pen doesn't
+     * start on intramuscular sites. Empty when there's no sensible guess.
+     */
+    fun defaultSites(form: MedicationForm, route: InjectionRoute?): List<String> = when {
+      form.isInjectable -> when (route) {
+        InjectionRoute.SC -> PRESET_SC_ABDOMEN_SITES
+        InjectionRoute.IM -> PRESET_IM_GLUTE_SITES
+        // Intradermal and IV sites vary too much to guess.
+        else -> emptyList()
+      }
+      form == MedicationForm.TOPICAL -> PRESET_TOPICAL_SITES
+      form == MedicationForm.DROPS -> PRESET_EYE_SITES
+      else -> emptyList()
+    }
 
     fun normalizeNdc11(raw: String?): String? {
       if (raw.isNullOrBlank()) return null

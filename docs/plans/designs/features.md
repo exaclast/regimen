@@ -4,6 +4,34 @@ Notes for larger features. Tasks, priorities and dependencies are in `../BACKLOG
 
 ---
 
+## Dose steps (T-113)
+
+A schedule has one `doseAmount`, so a titration (isotretinoin 40 → 60 → 80 mg) or a taper means overwriting it, which
+rewrites past days, or ending the schedule and starting another, which loses the link between them.
+
+- **Data:** `MedicationSchedule.doseSteps: List<DoseStep(startDateIso, amount, unit, note)>`. The schedule's own amount
+  is the dose before the first step. `doseOn(date)` returns the latest step on or before the date. Logs already store the
+  amount taken, so past doses are right either way.
+- **Read through `doseOn(date)`** everywhere that reads `schedule.doseAmount` today: `DoseEngine` (board items, window
+  text, volume), both receivers, `RegimenViewModel`, `RegimenRepository.logDose`. Daily amount limits use the day's amount.
+- **Editing:** "Change dose" on the schedule asks for the new amount, an effective date (default today, future allowed)
+  and an optional note ("increased at 1-month visit"). Changing the amount in the schedule editor on a schedule that
+  already has logged doses offers the same, rather than silently rewriting.
+- **Showing it:** a step timeline on the medication page ("40 mg · 60 mg from Dec 1 · 80 mg from Jan 1"). Today and the
+  reminder mark the first dose at a new amount ("New dose: 60 mg").
+- **Sync:** steps live on the schedule record, so they merge with it. Keep the list sorted by date.
+- **Not covered:** a change in how often or which windows (40 mg once a day → twice a day). That's T-015.
+- **Tests:** `doseOn` at, before and between steps; overnight windows; a step on the schedule's start date.
+
+## Concentration from strength (T-112)
+
+- Parse the strength into an amount per mL: "200 mg/mL", "100 units/mL", "200 mg/10 mL" (= 20 mg/mL), "400 mg/5 mL",
+  "0.5 mg/0.5 mL". The unit is mg, mcg or units. Reuse and test `FdaNdcLookupService.parseConcentrationMgPerMl` logic.
+- Drop `InjectableDetails.concentrationMgPerMl`; a database migration moves nothing, since the strength is already there.
+- Volume = dose ÷ amount per mL when the dose unit matches (mg/mcg convert to each other; units only to units). Oral
+  liquids get volumes too. Prefilled devices still show none.
+- The editor shows "20 mg per mL (from strength)" under the strength, or a hint when it can't be read.
+
 ## Refill and supply tracking (T-095)
 
 There's no supply count, run-out date or refill info on a medication.

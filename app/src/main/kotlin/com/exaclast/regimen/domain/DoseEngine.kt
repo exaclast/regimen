@@ -8,6 +8,7 @@ import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.ScheduleFrequencyType
+import com.exaclast.regimen.model.SiteMode
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.model.formatNum
@@ -145,32 +146,19 @@ data class DailyDoseBoard(
 object DoseEngine {
 
   /**
-   * Computes the next anatomical site in the medication's ordered rotation list,
-   * continuing from the actual site used in the most recent TAKEN dose log.
+   * The site to suggest for the next dose, or null when doses don't record one. Rotating continues from the
+   * site actually used last; recording suggests that same site again. A last site that's no longer in the
+   * list falls back to the first.
    */
-  fun computeNextSite(medication: Medication, allLogs: List<DoseLog>): String? {
-    if (!medication.siteRotationEnabled || medication.rotationSites.isEmpty()) {
-      return null
-    }
-    val sites = medication.rotationSites
-    val lastTakenWithSite = allLogs
-      .asSequence()
-      .filter {
-        it.medicationId == medication.id &&
-          it.deletedAtEpochMillis == null &&
-          it.status == DoseStatus.TAKEN &&
-          !it.siteUsed.isNullOrBlank()
-      }
-      .maxByOrNull { it.actionTimestampMillis }
-
-    if (lastTakenWithSite == null) {
-      return sites.first()
-    }
-    val lastIndex = sites.indexOfFirst { it.equals(lastTakenWithSite.siteUsed, ignoreCase = true) }
-    return if (lastIndex >= 0) {
-      sites[(lastIndex + 1) % sites.size]
-    } else {
-      sites.first()
+  fun suggestSite(medication: Medication, allLogs: List<DoseLog>): String? {
+    val sites = medication.activeSites
+    if (sites.isEmpty()) return null
+    val last = getLastSiteUsed(medication.id, allLogs) ?: return sites.first()
+    val lastIndex = sites.indexOfFirst { it.equals(last, ignoreCase = true) }
+    return when {
+      lastIndex < 0 -> sites.first()
+      medication.siteMode == SiteMode.ROTATE -> sites[(lastIndex + 1) % sites.size]
+      else -> sites[lastIndex]
     }
   }
 
@@ -444,7 +432,7 @@ object DoseEngine {
           .filter { logMatchesItem(it, schedule, bucket, activeScheduleIdsForMed) }
           .maxByOrNull { it.actionTimestampMillis }
 
-        val suggestedSite = existingLog?.siteUsed ?: computeNextSite(med, logs)
+        val suggestedSite = existingLog?.siteUsed ?: suggestSite(med, logs)
         val lastSite = getLastSiteUsed(med.id, logs)
         val pacing = evaluatePacing(med, logs, nowMillis, dateIso, buckets)
 
@@ -483,7 +471,7 @@ object DoseEngine {
         PrnDoseItem(
           medication = med,
           schedule = prnSchedule,
-          suggestedSite = computeNextSite(med, logs),
+          suggestedSite = suggestSite(med, logs),
           pacing = evaluatePacing(med, logs, nowMillis, dateIso, buckets),
           indications = med.indicationIds.mapNotNull { indicationMap[it] },
         )

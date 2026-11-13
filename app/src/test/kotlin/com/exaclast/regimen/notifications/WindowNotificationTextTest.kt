@@ -4,7 +4,9 @@ import com.exaclast.regimen.domain.PacingEvaluation
 import com.exaclast.regimen.domain.ScheduledDoseItem
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.Medication
+import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationSchedule
+import com.exaclast.regimen.model.SiteMode
 import com.exaclast.regimen.model.TimeOfDayBucket
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -21,8 +23,9 @@ class WindowNotificationTextTest {
       formulaName = "Insulin Glargine (rDNA origin)",
       brandName = "Lantus",
       strength = "100 units/mL (U-100)",
-      siteRotationEnabled = site != null,
-      rotationSites = listOfNotNull(site),
+      form = MedicationForm.INJECTABLE_VIAL,
+      siteMode = if (site != null) SiteMode.ROTATE else SiteMode.OFF,
+      sites = listOfNotNull(site),
     ),
     schedule = MedicationSchedule(medicationId = "m", doseAmount = 20.0, doseUnit = DoseUnit.UNITS),
     bucket = bucket,

@@ -15,6 +15,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 
@@ -104,19 +105,20 @@ class RegimenDatabase(context: Context) :
     if (oldVersion < 2) db.execSQL("ALTER TABLE prescribers RENAME TO providers")
     if (oldVersion < 3) {
       db.execSQL("ALTER TABLE conditions RENAME TO indications")
-      migrateMedicationIndicationLinks(db)
+      migrateMedicationPayloads(db, ::migrateMedicationPayload)
     }
+    if (oldVersion < 4) migrateMedicationPayloads(db, ::migrateSitePayload)
   }
 
   /** Rewrites only the payload: `updated_at` stays, since a migration isn't an edit to sync. */
-  private fun migrateMedicationIndicationLinks(db: SQLiteDatabase) {
+  private fun migrateMedicationPayloads(db: SQLiteDatabase, migrate: (String) -> String) {
     val rows = buildList {
       db.rawQuery("SELECT id, payload_json FROM medications", null).use { cursor ->
         while (cursor.moveToNext()) add(cursor.getString(0) to cursor.getString(1))
       }
     }
     rows.forEach { (id, payload) ->
-      val migrated = migrateMedicationPayload(payload)
+      val migrated = migrate(payload)
       if (migrated != payload) {
         val values = ContentValues().apply { put("payload_json", migrated) }
         db.update("medications", values, "id = ?", arrayOf(id))
@@ -322,7 +324,26 @@ class RegimenDatabase(context: Context) :
 
   companion object {
     private const val DB_NAME = "regimen_store.db"
-    private const val DB_VERSION = 3
+    private const val DB_VERSION = 4
+
+    private const val LEGACY_ROTATION_FLAG = "siteRotationEnabled"
+    private const val LEGACY_ROTATION_SITES = "rotationSites"
+
+    /**
+     * v4: the rotation switch became a site mode, and `rotationSites` became `sites`. Rotation on becomes
+     * ROTATE; off becomes OFF, keeping any sites. Returns [payload] untouched if it has neither old key.
+     */
+    internal fun migrateSitePayload(payload: String): String {
+      val root = runCatching { Json.parseToJsonElement(payload).jsonObject }.getOrNull() ?: return payload
+      if (LEGACY_ROTATION_FLAG !in root && LEGACY_ROTATION_SITES !in root) return payload
+      val rotating = (root[LEGACY_ROTATION_FLAG] as? JsonPrimitive)?.booleanOrNull == true
+      val migrated = root.toMutableMap().apply {
+        remove(LEGACY_ROTATION_FLAG)
+        remove(LEGACY_ROTATION_SITES)?.let { put("sites", it) }
+        put("siteMode", JsonPrimitive(if (rotating) "ROTATE" else "OFF"))
+      }
+      return JsonObject(migrated).toString()
+    }
 
     private const val LEGACY_SINGLE_LINK = "indicationConditionId"
     private const val LEGACY_LINK_LIST = "indicationConditionIds"

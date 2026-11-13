@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -112,7 +113,7 @@ fun MedicationDetailScreen(
   val logs = snapshot.doseLogs
     .filter { it.medicationId == medication.id && it.status != DoseStatus.SNOOZED }
     .take(10)
-  val nextSite = DoseEngine.computeNextSite(medication, snapshot.doseLogs)
+  val nextSite = DoseEngine.suggestSite(medication, snapshot.doseLogs)
   val lastSite = DoseEngine.getLastSiteUsed(medication.id, snapshot.doseLogs)
   val pacing = DoseEngine.evaluatePacing(medication, snapshot.doseLogs, nowMillis, todayIso, snapshot.buckets)
 
@@ -122,7 +123,7 @@ fun MedicationDetailScreen(
   var choosingSite by remember { mutableStateOf(false) }
   var showSchedulePrompt by rememberSaveable { mutableStateOf(promptForSchedule) }
   val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-  val multiSite = medication.siteRotationEnabled && medication.rotationSites.size > 1
+  val multiSite = medication.activeSites.size > 1
 
   // An extra dose is logged on its own; otherwise logging completes the dose that's due.
   var loggingExtra by remember { mutableStateOf(false) }
@@ -215,8 +216,12 @@ fun MedicationDetailScreen(
                 pacing.maxDailyDoses?.let { "${pacing.dosesTakenToday} of ${formatNum(it)} today" },
               ).joinToString(" · "),
             )
-            if (medication.siteRotationEnabled && nextSite != null) {
-              HeroStatus(icon = Icons.Default.Autorenew, text = "Next site: $nextSite")
+            if (nextSite != null) {
+              if (medication.rotatesSites) {
+                HeroStatus(icon = Icons.Default.Autorenew, text = "Next site: $nextSite")
+              } else {
+                HeroStatus(icon = Icons.Default.Place, text = "Site: $nextSite")
+              }
             }
             Spacer(Modifier.height(8.dp))
             val logLabel = when {
@@ -303,20 +308,26 @@ fun MedicationDetailScreen(
         }
       }
 
-      if (medication.siteRotationEnabled && medication.rotationSites.isNotEmpty()) {
-        item(key = "rotation") {
-          SectionHeader("Site rotation")
-          val sites = medication.rotationSites
+      if (medication.tracksSites) {
+        item(key = "sites") {
+          val rotates = medication.rotatesSites
+          SectionHeader(if (rotates) "Site rotation" else "Sites")
+          val sites = medication.activeSites
           GroupedColumn {
             sites.forEachIndexed { i, site ->
+              // Recording has no "next": the suggestion is the last site, so only that is tagged.
               val tag = when {
-                site.equals(nextSite, ignoreCase = true) -> "Next"
+                rotates && site.equals(nextSite, ignoreCase = true) -> "Next"
                 site.equals(lastSite, ignoreCase = true) -> "Last used"
                 else -> null
               }
               GroupItem(index = i, count = sites.size) {
                 ListItem(
-                  leadingContent = { Text("${i + 1}", style = MaterialTheme.typography.titleMedium) },
+                  leadingContent = if (rotates) {
+                    { Text("${i + 1}", style = MaterialTheme.typography.titleMedium) }
+                  } else {
+                    null
+                  },
                   trailingContent = tag?.let { { SiteTag(it, highlighted = it == "Next") } },
                   colors = groupListItemColors(),
                 ) { Text(site) }

@@ -9,6 +9,7 @@ import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.ScheduleFrequencyType
+import com.exaclast.regimen.model.SiteMode
 import com.exaclast.regimen.model.TimeOfDayBucket
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -37,8 +38,8 @@ class DoseEngineTest {
       injectNeedleGauge = 25,
       injectNeedleLengthInches = 1.0,
     ),
-    siteRotationEnabled = true,
-    rotationSites = listOf(
+    siteMode = SiteMode.ROTATE,
+    sites = listOf(
       "Left Ventrogluteal",
       "Right Ventrogluteal",
       "Left Vastus Lateralis",
@@ -49,7 +50,7 @@ class DoseEngineTest {
   @Test
   fun siteRotation_continuesFromActualSiteUsedOnOverride() {
     // 1. With no prior logs, suggests the first site in rotation
-    assertEquals("Left Ventrogluteal", DoseEngine.computeNextSite(sampleInjectable, emptyList()))
+    assertEquals("Left Ventrogluteal", DoseEngine.suggestSite(sampleInjectable, emptyList()))
 
     // 2. Suppose user overrides and logs "Left Vastus Lateralis" (index 2)
     val logsAfterOverride = listOf(
@@ -68,7 +69,7 @@ class DoseEngineTest {
     // Next site must continue from "Left Vastus Lateralis" -> "Right Vastus Lateralis" (index 3)
     assertEquals(
       "Right Vastus Lateralis",
-      DoseEngine.computeNextSite(sampleInjectable, logsAfterOverride)
+      DoseEngine.suggestSite(sampleInjectable, logsAfterOverride)
     )
 
     // 3. After logging "Right Vastus Lateralis" (index 3), wraps around to index 0 ("Left Ventrogluteal")
@@ -84,8 +85,77 @@ class DoseEngineTest {
     )
     assertEquals(
       "Left Ventrogluteal",
-      DoseEngine.computeNextSite(sampleInjectable, logsAfterWrap)
+      DoseEngine.suggestSite(sampleInjectable, logsAfterWrap)
     )
+  }
+
+  private fun takenAt(site: String, at: Long, medicationId: String = sampleInjectable.id) = DoseLog(
+    id = "log_$at",
+    medicationId = medicationId,
+    scheduledDateIso = "2026-10-24",
+    actionTimestampMillis = at,
+    status = DoseStatus.TAKEN,
+    amountTaken = 1.0,
+    amountUnit = DoseUnit.APPLICATION,
+    siteUsed = site,
+  )
+
+  @Test
+  fun recordingSuggestsTheLastSiteInsteadOfTheNext() {
+    val patch = Medication(
+      id = "med_patch",
+      formulaName = "Estradiol",
+      strength = "0.1 mg/day",
+      form = MedicationForm.TOPICAL,
+      siteMode = SiteMode.RECORD,
+      sites = listOf("Left Hip", "Right Hip"),
+    )
+    assertEquals("Left Hip", DoseEngine.suggestSite(patch, emptyList()))
+    assertEquals(
+      "Right Hip",
+      DoseEngine.suggestSite(patch, listOf(takenAt("Left Hip", 1000L, patch.id), takenAt("Right Hip", 2000L, patch.id))),
+    )
+  }
+
+  @Test
+  fun noSiteWhenSitesAreOffOrTheFormHasNone() {
+    val log = listOf(takenAt("Left Ventrogluteal", 1000L))
+    assertEquals(null, DoseEngine.suggestSite(sampleInjectable.copy(siteMode = SiteMode.OFF), log))
+    // A tablet keeps no sites even if some were stored before its form changed.
+    assertEquals(null, DoseEngine.suggestSite(sampleInjectable.copy(form = MedicationForm.TABLET), log))
+    assertEquals(null, DoseEngine.suggestSite(sampleInjectable.copy(sites = emptyList()), log))
+  }
+
+  @Test
+  fun removedLastSiteFallsBackToTheFirst() {
+    val log = listOf(takenAt("Somewhere else", 1000L))
+    assertEquals("Left Ventrogluteal", DoseEngine.suggestSite(sampleInjectable, log))
+    assertEquals("Left Ventrogluteal", DoseEngine.suggestSite(sampleInjectable.copy(siteMode = SiteMode.RECORD), log))
+  }
+
+  @Test
+  fun onlyInjectablesDefaultToRotating() {
+    MedicationForm.entries.forEach { form ->
+      val expected = if (form.isInjectable) SiteMode.ROTATE else SiteMode.OFF
+      assertEquals(form.name, expected, form.defaultSiteMode)
+    }
+    assertFalse(MedicationForm.TABLET.hasSites)
+    assertTrue(MedicationForm.TOPICAL.hasSites)
+    assertTrue(MedicationForm.DROPS.hasSites)
+  }
+
+  @Test
+  fun defaultSitesFollowRouteAndForm() {
+    assertEquals(
+      Medication.PRESET_SC_ABDOMEN_SITES,
+      Medication.defaultSites(MedicationForm.INJECTABLE_PEN, InjectionRoute.SC),
+    )
+    assertEquals(
+      Medication.PRESET_IM_GLUTE_SITES,
+      Medication.defaultSites(MedicationForm.INJECTABLE_VIAL, InjectionRoute.IM),
+    )
+    assertEquals(Medication.PRESET_TOPICAL_SITES, Medication.defaultSites(MedicationForm.TOPICAL, null))
+    assertEquals(emptyList<String>(), Medication.defaultSites(MedicationForm.TABLET, null))
   }
 
   @Test

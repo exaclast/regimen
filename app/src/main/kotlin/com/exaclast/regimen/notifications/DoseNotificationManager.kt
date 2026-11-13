@@ -586,7 +586,7 @@ object DoseNotificationManager {
   internal fun windowBodyLines(items: List<ScheduledDoseItem>): List<String> = items.flatMap { item ->
     val med = item.medication
     val details = listOfNotNull(
-      item.suggestedSite?.takeIf { med.siteRotationEnabled && it.isNotBlank() },
+      item.suggestedSite?.takeIf { med.tracksSites && it.isNotBlank() },
       med.strength.takeIf { it.isNotBlank() },
     )
     val dose = (listOf(item.formattedDoseInstruction()) + details).joinToString(" · ")

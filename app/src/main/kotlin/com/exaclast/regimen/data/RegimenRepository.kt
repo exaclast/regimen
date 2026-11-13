@@ -19,6 +19,7 @@ import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.RegimenBackupBundle
 import com.exaclast.regimen.model.ScheduleFrequencyType
+import com.exaclast.regimen.model.SiteMode
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.notifications.DoseNotificationManager
 import com.exaclast.regimen.sync.DeviceIdentity
@@ -315,7 +316,7 @@ class RegimenRepository private constructor(context: Context) {
     val resolvedAmount = amountTaken ?: schedule?.doseAmount ?: med.defaultDoseAmount
     val resolvedUnit = amountUnit ?: schedule?.doseUnit ?: med.defaultDoseUnit
     val resolvedSite = if (status == DoseStatus.TAKEN) {
-      siteUsed ?: DoseEngine.computeNextSite(med, state.doseLogs)
+      siteUsed ?: DoseEngine.suggestSite(med, state.doseLogs)
     } else {
       siteUsed
     }
@@ -558,7 +559,6 @@ class RegimenRepository private constructor(context: Context) {
       form = MedicationForm.TABLET,
       defaultDoseAmount = 1.0,
       defaultDoseUnit = DoseUnit.TABLET,
-      siteRotationEnabled = false,
       minIntervalMinutes = 10 * 60, // 10 hours between twice-daily doses
       maxDailyDoses = 2.0,
       maxDailyAmount = 2.0,
@@ -580,7 +580,6 @@ class RegimenRepository private constructor(context: Context) {
       form = MedicationForm.TABLET,
       defaultDoseAmount = 1.0,
       defaultDoseUnit = DoseUnit.TABLET,
-      siteRotationEnabled = false,
       minIntervalMinutes = 360, // 6 hours minimum between doses
       maxDailyDoses = 6.0,
       maxDailyAmount = 6.0, // tablets: the limit is in the medication's default unit
@@ -613,8 +612,8 @@ class RegimenRepository private constructor(context: Context) {
         injectNeedleGauge = 31,
         injectNeedleLengthInches = 0.3125,
       ),
-      siteRotationEnabled = true,
-      rotationSites = listOf("Abdomen - Left", "Abdomen - Right", "Thigh - Left", "Thigh - Right"),
+      siteMode = SiteMode.ROTATE,
+      sites = listOf("Abdomen - Left", "Abdomen - Right", "Thigh - Left", "Thigh - Right"),
       minIntervalMinutes = 20 * 60, // 20 hours minimum between daily basal doses
       maxDailyDoses = 1.0,
       maxDailyAmount = 20.0,

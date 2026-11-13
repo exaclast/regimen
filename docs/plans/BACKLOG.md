@@ -14,7 +14,7 @@ The one list of everything still to do. Last reconciled 2026-11-10 against commi
 
 ## How to use this file
 
-**Adding something.** Add one row in the matching area, using the next free number (next: **T-111**). IDs never change
+**Adding something.** Add one row in the matching area, using the next free number (next: **T-114**). IDs never change
 or get reused. One sentence is enough; anything longer goes in `designs/`. An audit or device pass adds rows here, and its
 raw report goes in `archive/`.
 
@@ -50,25 +50,28 @@ changes need real migrations, so anything that reshapes data belongs before it.
 |-|-----------|-----|-------|
 | **M1** | **Trust** | Make reminders reliable, protect health data, fix wrong information | T-001–006, T-011–013, T-016, T-019, T-025–027, T-038, T-050–053, T-068, T-084 |
 | **M2** | **Adaptive** | Tablet, foldable and desktop. UI only, so it can overlap M1 | T-036, T-066, T-067, T-069–074 |
-| **M3** | **Foundations** | Data integrity, threading, a sync-ready model, tests | T-014, T-015, T-054, T-055, T-057–065, T-085 |
-| **M4** | **Everyday features** | The features that make it worth using daily | T-017, T-018, T-021, T-028–030, T-039, T-040, T-044, T-045, T-093–096, T-098 |
+| **M3** | **Foundations** | Data integrity, threading, a sync-ready model, tests | T-014, T-015, T-054, T-055, T-057–065, T-085, T-112, T-113 |
+| **M4** | **Everyday features** | The features that make it worth using daily | T-017, T-018, T-021, T-029, T-030, T-039, T-040, T-044, T-045, T-093–096, T-098 |
 | **M5** | **Stable release** | First non-prerelease tag | T-056, T-078, T-081, T-087, T-090, T-097, T-100 |
 | **M6** | **Sync** | Google Drive sync | T-102 |
 | **M7** | **Wear OS** | Doses from the wrist. Later, and D-9 (how the watch gets its data) has to be settled first | T-106–110 |
 
 ### Up next
 
-Small, high-value and independent of each other. Suggested order:
+Suggested order. The first two reshape medication and schedule data, so they come first while there are no users to
+migrate (user decision, 2026-11-12; T-111 sites, the first of the three, is done):
 
-1. **T-011** Dialogs clip on short windows
-2. **T-050** Delete label photos
-3. **T-001** Warn when reminders can't work
-4. **T-002** Don't lose alarms while the phone is off
-5. **T-038** Editors lose selections
-6. **T-003** / **T-004** Test notifications and demo data touch real alarms
-7. **T-025** / **T-026** Wrong insulin unit, and scans overwriting the dose
-8. **T-068** Invisible "Review" button
-9. **T-084** Lint in CI, so all of this stays fixed
+1. **T-112** Concentration worked out from the strength (with T-025)
+2. **T-113** Dose steps: dose changes on set dates
+3. **T-011** Dialogs clip on short windows
+4. **T-050** Delete label photos
+5. **T-001** Warn when reminders can't work
+6. **T-002** Don't lose alarms while the phone is off
+7. **T-038** Editors lose selections
+8. **T-003** / **T-004** Test notifications and demo data touch real alarms
+9. **T-026** Scans overwriting the dose
+10. **T-068** Invisible "Review" button
+11. **T-084** Lint in CI, so all of this stays fixed
 
 ---
 
@@ -93,11 +96,11 @@ Small, high-value and independent of each other. Suggested order:
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-011 | `LogTimeDialog` clips on short windows: Time squashed, Note gone. `SiteSelectionDialog` has the same non-scrolling content and will clip with many sites. Make both scroll | P1 | S | M1 | form factors |
+| T-011 | (partial) `LogTimeDialog` clips on short windows: Time squashed, Note gone. Make it scroll (`SiteSelectionDialog` already does, since T-111) | P1 | S | M1 | form factors |
 | T-012 | "Take early" has no friction hours ahead of a window, and on past days the main button is "Take now" | P1 | S | M1 | B29 |
 | T-013 | A new schedule can start out "Missed": it defaults to today, including windows already over | P1 | S | M1 | B31 |
 | T-014 | Adding a window to a schedule back-fills missed doses, because the schedule's start date covers the new window | P1 | M | M3 | B60 |
-| T-015 | Editing a schedule rewrites history. Version schedules: end the old one and start a new one on a meaningful edit. Needed before the calendar (T-101) | P1 | L | M3 | B30 |
+| T-015 | Editing a schedule rewrites history. Version schedules: end the old one and start a new one on a meaningful edit. Needed before the calendar (T-101). T-113 covers dose amounts first; this is what's left (windows, frequency) | P1 | L | M3 | B30 |
 | T-016 | (partial) "Other time" shipped, but choosing "Now" while viewing a past day still stamps the current time on that day. Default to "Other time" on past days | P2 | S | M1 | B32 |
 | T-017 | Add Pause for a schedule. "Paused" displays but nothing sets it, and a disabled schedule makes the medication appear as As needed. Update `MedicationGroups` too | P2 | M | M4 | B42 |
 | T-018 | An every-N-days-from-last-dose schedule stays due every day after its due date until taken | P2 | S | M4 | Low |
@@ -107,15 +110,15 @@ Small, high-value and independent of each other. Suggested order:
 | T-022 | "Take all on time" for a missed window | P3 | S | — | roadmap |
 | T-023 | "Other time" for a due scheduled dose accepts any past date, so today's dose can be recorded as taken weeks ago. Limit the range or warn | P3 | S | — | new |
 | T-024 | Choose the dose amount when logging an extra dose (always the default today) | P3 | S | — | new |
+| T-113 | Dose steps: a schedule's amount changes on set dates (titration such as isotretinoin, tapers) instead of being overwritten. Past steps are the history, future steps the plan. "Change dose" with an effective date and a note; a step timeline on the medication page; Today, reminders and the alarm screen use the day's amount and flag the first dose at a new one. See `designs/features.md` | P1 | M | M3 | new |
 
 ### Medication data and label scanning
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-025 | Insulin concentration reads "100 mg/mL". The detail page and editor hard-code mg/mL when the strength is units/mL | P1 | S | M1 | B59 |
+| T-025 | Insulin concentration reads "100 mg/mL". The detail page and editor hard-code mg/mL when the strength is units/mL. Done as part of T-112 | P1 | S | M1 | B59 |
 | T-026 | The scan prompt's example is `"defaultDoseAmount": 1.0`, so a scan tends to overwrite the dose with 1 | P1 | S | M1 | B38, A12 |
 | T-027 | A record with no package gets a made-up NDC (`<product>-01` or `00000-0000-00`) that can be saved. Use null | P1 | S | M1 | B41 |
-| T-028 | New medications default to intramuscular rotation sites, even a subcutaneous pen or topical. Pick the preset from route and form | P2 | S | M4 | B37 |
 | T-029 | Being offline reads as "no matching FDA record". Separate network errors from empty results | P2 | S | M4 | B40 |
 | T-030 | "Needs review" state for fields filled by AI or FDA data, since they directly affect dosing. T-104 reuses it | P2 | M | M4 | O10 |
 | T-031 | Sanitizer: patient names of 4+ letters still match inside longer words (Mann → Mannitol) | P3 | S | — | B39 leftover |
@@ -124,13 +127,14 @@ Small, high-value and independent of each other. Suggested order:
 | T-034 | "Match FDA" stays enabled during a lookup, so requests can stack | P3 | S | — | Low |
 | T-035 | FDA match dialog: collapse identical multi-salt strengths ("4 × 2.5 mg"). Don't sum them | P3 | S | — | roadmap |
 | T-036 | Scan buttons on desktop: untried. Decide what camera and AICore should do there; a file picker suits a label photo | P2 | S | M2 | form factors |
+| T-112 | Remove the stored concentration (`InjectableDetails.concentrationMgPerMl`): it duplicates the strength and the two can disagree. Work out the per-mL amount from the strength (mg, mcg or units per mL, including "200 mg/10 mL") and show it read-only; if the strength can't be read, say how to write it instead of offering a second field. Volumes for oral liquids too. Includes T-025 | P1 | M | M3 | new |
 | T-037 | OCR quality on wrapped labels: words split across photos still produce wrong names. Collect more cases before changing anything; no hard-coded parsing | P3 | M | — | new |
 
 ### Editors and forms
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-038 | Selections use `remember` and revert on rotation: schedule windows, weekdays and specific dates; rotation sites; label photo URI and captured photos. The user can save the wrong schedule without noticing | P1 | S | M1 | B19 |
+| T-038 | Selections use `remember` and revert on rotation: schedule windows, weekdays and specific dates; label photo URI and captured photos (sites fixed in T-111). The user can save the wrong schedule without noticing | P1 | S | M1 | B19 |
 | T-039 | Closing an editor discards changes without asking | P2 | S | M4 | Low |
 | T-040 | Setting a resolved indication back to Active keeps its end date, so it stays under Past | P2 | S | M4 | B36 |
 | T-041 | Provider care dates aren't checked for end before start | P3 | S | — | Low |

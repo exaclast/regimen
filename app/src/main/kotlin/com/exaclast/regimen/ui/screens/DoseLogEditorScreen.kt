@@ -66,7 +66,7 @@ fun DoseLogEditorScreen(
   }.getOrNull()
   val takenAt = if (timeChanged) newTime else log.actionTimestampMillis
   val inFuture = taken && timeChanged && newTime != null && newTime > System.currentTimeMillis()
-  val showSite = taken && (medication.siteRotationEnabled || log.siteUsed != null)
+  val showSite = taken && (medication.tracksSites || log.siteUsed != null)
 
   EditorScaffold(
     title = "Edit ${medication.primaryName} dose",
@@ -128,12 +128,12 @@ fun DoseLogEditorScreen(
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
       )
-      if (medication.rotationSites.isNotEmpty()) {
+      if (medication.activeSites.isNotEmpty()) {
         FlowRow(
           horizontalArrangement = Arrangement.spacedBy(8.dp),
           verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-          medication.rotationSites.forEach { option ->
+          medication.activeSites.forEach { option ->
             val selected = option.equals(site.trim(), ignoreCase = true)
             FilterChip(
               selected = selected,

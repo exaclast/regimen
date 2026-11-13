@@ -8,6 +8,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +35,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -180,7 +183,7 @@ fun TodayScreen(
 
   fun afterPacing(request: TakeRequest, alreadyConfirmed: Boolean) {
     val med = request.medication
-    val needsSite = med.siteRotationEnabled && med.rotationSites.size > 1
+    val needsSite = med.activeSites.size > 1
     when {
       request is TakeRequest.Scheduled && request.chooseSite -> sitePrompt = request
       request is TakeRequest.Prn && needsSite -> sitePrompt = request
@@ -201,7 +204,7 @@ fun TodayScreen(
     return PrnDoseItem(
       medication = medication,
       schedule = null,
-      suggestedSite = DoseEngine.computeNextSite(medication, snapshot.doseLogs),
+      suggestedSite = DoseEngine.suggestSite(medication, snapshot.doseLogs),
       pacing = DoseEngine.evaluatePacing(medication, snapshot.doseLogs, now, uiState.selectedDateIso, snapshot.buckets),
       indications = emptyList(),
     )
@@ -778,7 +781,7 @@ private fun DoseCard(
   val warning = if (!item.isCompleted) item.pacing.warningText() else null
   val canAct = !item.isCompleted && !isFutureDate
   val canSnooze = canAct && !missed && phase == WindowPhase.NOW
-  val rotation = med.siteRotationEnabled && med.rotationSites.isNotEmpty()
+  val tracksSites = med.tracksSites
   var menuOpen by remember { mutableStateOf(false) }
 
   val statusText = when {
@@ -831,7 +834,7 @@ private fun DoseCard(
     item.formattedDoseInstruction(),
     statusText,
     warning,
-    if (rotation && !item.isCompleted) item.suggestedSite?.let { "Site $it" } else null,
+    if (tracksSites && !item.isCompleted) item.suggestedSite?.let { "Site $it" } else null,
   ).joinToString(", ")
 
   Surface(
@@ -880,7 +883,7 @@ private fun DoseCard(
                 onClick = { menuOpen = false; onSkip() },
               )
             }
-            if (canAct && rotation && med.rotationSites.size > 1) {
+            if (canAct && med.activeSites.size > 1) {
               DropdownMenuItem(
                 text = { Text("Take at a different site…") },
                 leadingIcon = { Icon(Icons.Default.Autorenew, contentDescription = null) },
@@ -926,8 +929,11 @@ private fun DoseCard(
       }
 
       Column(modifier = Modifier.padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (rotation && !item.isCompleted && item.suggestedSite != null) {
-          StatusLine(icon = Icons.Default.Autorenew, text = "Site: ${item.suggestedSite}")
+        if (tracksSites && !item.isCompleted && item.suggestedSite != null) {
+          StatusLine(
+            icon = if (med.rotatesSites) Icons.Default.Autorenew else Icons.Default.Place,
+            text = "Site: ${item.suggestedSite}",
+          )
         }
         statusText?.let { text ->
           val icon = when {
@@ -1204,13 +1210,15 @@ fun SiteSelectionDialog(
   onConfirm: (String) -> Unit,
 ) {
   var selected by remember(suggestedSite, medication.id) {
-    mutableStateOf(suggestedSite ?: medication.rotationSites.firstOrNull().orEmpty())
+    mutableStateOf(suggestedSite ?: medication.activeSites.firstOrNull().orEmpty())
   }
+  val suggestionLabel = if (medication.rotatesSites) "Next in rotation" else "Same as last time"
   AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text("Choose a site") },
     text = {
-      Column {
+      // Scrolls: a long site list would otherwise push the buttons off a short window.
+      Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
         lastSiteUsed?.takeIf { it.isNotBlank() }?.let {
           Text(
             "Last used: $it",
@@ -1219,7 +1227,7 @@ fun SiteSelectionDialog(
             modifier = Modifier.padding(bottom = 8.dp),
           )
         }
-        medication.rotationSites.forEach { site ->
+        medication.activeSites.forEach { site ->
           Row(
             modifier = Modifier
               .fillMaxWidth()
@@ -1233,7 +1241,7 @@ fun SiteSelectionDialog(
               Text(site, style = MaterialTheme.typography.bodyLarge)
               if (site == suggestedSite) {
                 Text(
-                  "Next in rotation",
+                  suggestionLabel,
                   style = MaterialTheme.typography.bodySmall,
                   color = MaterialTheme.colorScheme.primary,
                 )

@@ -25,8 +25,9 @@ When a decision is made, add it here with the date. When one is reversed, say so
 
 - **No backup-format compatibility yet.** There are no users. The backup format is v1. Backups from before the Indications
   rename lose their indications.
-- **The database does migrate,** so dev installs keep their data (user decision, 2026-11-09). `RegimenDatabase` is at v3:
-  v2 renamed `prescribers`, v3 renamed `conditions` and moved medication link keys. Rows from before indication kinds
+- **The database does migrate,** so dev installs keep their data (user decision, 2026-11-09). `RegimenDatabase` is at v4:
+  v2 renamed `prescribers`, v3 renamed `conditions` and moved medication link keys, v4 turned the rotation switch into a
+  site mode. Rows from before indication kinds
   become Chronic.
 - **After the first stable release,** both the database and the backup format need real migrations. Anything that reshapes
   data should land before then (milestone M3).
@@ -62,6 +63,12 @@ When a decision is made, add it here with the date. When one is reversed, say so
 - **A complete NDC that resolves to an FDA record overrides the strength read from a label.** The name must still match
   exactly.
 - **FDA autofill never applies a non-exact name without asking.**
+- **No separate concentration field** (2026-11-12, T-112). It duplicated the strength. The amount per mL is worked out
+  from the strength, which stays the one thing typed.
+- **Sites have three modes: Off, Record, Rotate** (2026-11-12, T-111), on every form that has sites. Recording where a
+  dose went doesn't imply rotating. Only injectables default to Rotate.
+- **Dose changes are steps with an effective date, not edits** (2026-11-12, T-113), so a titration keeps its history and
+  can be planned ahead.
 
 ### Organization
 

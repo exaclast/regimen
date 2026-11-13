@@ -60,6 +60,9 @@ import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -71,7 +74,10 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,6 +107,7 @@ import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.ScheduleFrequencyType
+import com.exaclast.regimen.model.SiteMode
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.model.formatExact
@@ -284,16 +291,29 @@ fun MedicationEditorScreen(
     mutableStateOf(initInj?.injectNeedleLengthInches?.let { formatExact(it) }.orEmpty())
   }
 
-  // Site Rotation
-  var siteRotationEnabled by rememberSaveable {
-    mutableStateOf(initialMedication?.siteRotationEnabled ?: false)
+  // Sites. Until the user picks a mode or edits the list, both follow the form (and route), so a
+  // scanned topical starts with sites off and a subcutaneous pen on abdomen sites.
+  var siteMode by rememberSaveable {
+    mutableStateOf(initialMedication?.siteMode ?: (initialMedication?.form ?: MedicationForm.TABLET).defaultSiteMode)
   }
-  val rotationSites = remember {
-    mutableStateListOf<String>().apply {
-      addAll(initialMedication?.rotationSites ?: Medication.PRESET_IM_GLUTE_SITES)
+  // An existing medication's mode was chosen, unless its form had no sites to choose for.
+  var siteModeChosen by rememberSaveable { mutableStateOf(initialMedication?.form?.hasSites == true) }
+  val sites = rememberSaveable(
+    saver = listSaver<SnapshotStateList<String>, String>(save = { it.toList() }, restore = { it.toMutableStateList() }),
+  ) {
+    (initialMedication?.sites ?: emptyList()).toMutableStateList()
+  }
+  var sitesChosen by rememberSaveable { mutableStateOf(initialMedication?.sites?.isNotEmpty() == true) }
+  var newCustomSite by rememberSaveable { mutableStateOf("") }
+
+  fun applyFormDefaults() {
+    if (!siteModeChosen) siteMode = form.defaultSiteMode
+    if (!sitesChosen) {
+      sites.clear()
+      sites.addAll(Medication.defaultSites(form, route))
     }
   }
-  var newCustomSite by rememberSaveable { mutableStateOf("") }
+  LaunchedEffect(form, route) { applyFormDefaults() }
 
   // Pacing & Safety Limits (on Medication object)
   var minIntervalHoursText by rememberSaveable {
@@ -349,9 +369,6 @@ fun MedicationEditorScreen(
     fda.route?.let { route = it }
     fda.concentrationMgPerMl?.let { concentrationText = formatExact(it) }
     fda.vialVolumeMl?.let { vialVolumeText = formatExact(it) }
-    if (fda.form.supportsSiteRotation) {
-      siteRotationEnabled = true
-    }
     val metaParts = mutableListOf<String>()
     fda.lotNumber?.let { metaParts.add("Lot: $it") }
     fda.expirationDateIso?.let { metaParts.add("Exp: $it") }
@@ -408,12 +425,7 @@ fun MedicationEditorScreen(
     parsedLabel.brandName?.let { brandName = it }
     parsedLabel.formulaName?.let { formulaName = it }
     parsedLabel.strength?.let { strength = it }
-    parsedLabel.form?.let { detectedForm ->
-      form = detectedForm
-      if (detectedForm.supportsSiteRotation) {
-        siteRotationEnabled = true
-      }
-    }
+    parsedLabel.form?.let { form = it }
     parsedLabel.defaultDoseUnit?.let { defaultDoseUnit = it }
     parsedLabel.defaultDoseAmount?.let { defaultDoseAmountText = formatExact(it) }
     parsedLabel.manufacturer?.let { manufacturer = it }
@@ -591,6 +603,7 @@ fun MedicationEditorScreen(
       if (!injectGaugeCheck.isValid) add(if (pen) "Needle Gauge" else "Inject Gauge")
       if (!injectLengthCheck.isValid) add(if (pen) "Needle Length" else "Inject Length")
     }
+    if (form.hasSites && siteMode != SiteMode.OFF && sites.isEmpty()) add("Sites")
     if (!minIntervalCheck.isValid) add("Min Interval")
     if (!maxDailyDosesCheck.isValid) add("Max Daily Doses")
     if (!maxDailyAmountCheck.isValid) add("Max Daily Amount")
@@ -624,10 +637,8 @@ fun MedicationEditorScreen(
       defaultDoseAmount = doseAmt,
       defaultDoseUnit = defaultDoseUnit,
       injectableDetails = injDetails,
-      siteRotationEnabled = form.supportsSiteRotation && siteRotationEnabled,
-      rotationSites = if (form.supportsSiteRotation && siteRotationEnabled) {
-        rotationSites.toList()
-      } else emptyList(),
+      siteMode = if (form.hasSites) siteMode else SiteMode.OFF,
+      sites = if (form.hasSites) sites.toList() else emptyList(),
       minIntervalMinutes = minIntervalMins,
       maxDailyDoses = maxDailyDosesCheck.validOrNull(),
       maxDailyAmount = maxDailyAmountCheck.validOrNull(),
@@ -820,10 +831,8 @@ fun MedicationEditorScreen(
                 form = selectedForm
                 if (selectedForm.isInjectable && defaultDoseUnit == DoseUnit.TABLET) {
                   defaultDoseUnit = DoseUnit.MG
-                  siteRotationEnabled = true
                 } else if (selectedForm == MedicationForm.TOPICAL) {
                   defaultDoseUnit = DoseUnit.APPLICATION
-                  siteRotationEnabled = true
                 } else if (selectedForm == MedicationForm.CAPSULE && defaultDoseUnit == DoseUnit.TABLET) {
                   defaultDoseUnit = DoseUnit.CAPSULE
                 }
@@ -1018,8 +1027,9 @@ fun MedicationEditorScreen(
             }
           }
 
-          // 3. Site Rotation Card (only when Form is Injectable or Topical)
-          if (form.supportsSiteRotation) {
+          // 3. Sites (any form a dose goes somewhere on the body): off, record, or rotate.
+          if (form.hasSites) {
+            val rotating = siteMode == SiteMode.ROTATE
             Surface(
               shape = MaterialTheme.shapes.medium,
               color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1029,88 +1039,102 @@ fun MedicationEditorScreen(
                 modifier = Modifier.padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
               ) {
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  verticalAlignment = Alignment.CenterVertically,
-                  horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                  Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                      text = "Automated Site Rotation",
-                      style = MaterialTheme.typography.titleSmall,
-                      fontWeight = FontWeight.Bold,
-                      color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                      text = "Advances automatically from the actual site used",
-                      style = MaterialTheme.typography.labelSmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Text(
+                  text = "Sites",
+                  style = MaterialTheme.typography.titleSmall,
+                  fontWeight = FontWeight.Bold,
+                  color = MaterialTheme.colorScheme.primary,
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                  SiteMode.entries.forEachIndexed { i, mode ->
+                    SegmentedButton(
+                      selected = siteMode == mode,
+                      onClick = {
+                        siteMode = mode
+                        siteModeChosen = true
+                      },
+                      shape = SegmentedButtonDefaults.itemShape(index = i, count = SiteMode.entries.size),
+                      icon = {},
+                      label = { Text(mode.displayName, maxLines = 1) },
                     )
                   }
-                  Switch(
-                    checked = siteRotationEnabled,
-                    onCheckedChange = { siteRotationEnabled = it },
-                  )
                 }
+                Text(
+                  text = siteMode.description,
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
-                if (siteRotationEnabled) {
-                  val presets = listOf(
-                    "L/R Ventrogluteal (IM)" to Medication.PRESET_IM_GLUTE_SITES,
-                    "L/R Deltoid (IM)" to Medication.PRESET_IM_DELT_SITES,
-                    "L/R Thigh (IM)" to Medication.PRESET_IM_THIGH_SITES,
-                    "6-Site Full Rotation (IM)" to Medication.PRESET_IM_FULL_ROTATION,
-                    "4-Quadrant Abdomen (SC)" to Medication.PRESET_SC_ABDOMEN_SITES,
-                    "L/R Arms & Shoulders (Topical)" to Medication.PRESET_TOPICAL_SITES,
-                  )
+                if (siteMode != SiteMode.OFF) {
+                  if (sites.isEmpty()) {
+                    Text(
+                      text = "Add at least one site, or turn sites off.",
+                      style = MaterialTheme.typography.bodySmall,
+                      color = MaterialTheme.colorScheme.error,
+                    )
+                  }
                   DropdownSelectorField(
                     label = "Load Site Preset",
-                    selectedText = "${rotationSites.size} sites configured",
-                    options = presets,
+                    selectedText = when (sites.size) {
+                      0 -> "No sites yet"
+                      1 -> "1 site"
+                      else -> "${sites.size} sites"
+                    },
+                    options = Medication.sitePresets(form),
                     optionLabel = { it.first },
                     onOptionSelected = { (_, siteList) ->
-                      rotationSites.clear()
-                      rotationSites.addAll(siteList)
+                      sites.clear()
+                      sites.addAll(siteList)
+                      sitesChosen = true
                     },
                     modifier = Modifier.fillMaxWidth(),
                   )
 
                   Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    rotationSites.forEachIndexed { idx, site ->
+                    sites.forEachIndexed { idx, site ->
                       Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                       ) {
+                        // Order only matters when rotating.
                         Text(
-                          text = "${idx + 1}. $site",
+                          text = if (rotating) "${idx + 1}. $site" else site,
                           style = MaterialTheme.typography.bodyMedium,
                           modifier = Modifier.weight(1f),
                         )
-                        IconButton(
-                          onClick = {
-                            if (idx > 0) {
-                              val item = rotationSites.removeAt(idx)
-                              rotationSites.add(idx - 1, item)
-                            }
-                          },
-                          enabled = idx > 0,
-                          modifier = Modifier.size(32.dp),
-                        ) {
-                          Icon(Icons.Default.ArrowUpward, contentDescription = "Move up", modifier = Modifier.size(16.dp))
+                        if (rotating) {
+                          IconButton(
+                            onClick = {
+                              if (idx > 0) {
+                                val item = sites.removeAt(idx)
+                                sites.add(idx - 1, item)
+                                sitesChosen = true
+                              }
+                            },
+                            enabled = idx > 0,
+                            modifier = Modifier.size(32.dp),
+                          ) {
+                            Icon(Icons.Default.ArrowUpward, contentDescription = "Move up", modifier = Modifier.size(16.dp))
+                          }
+                          IconButton(
+                            onClick = {
+                              if (idx < sites.lastIndex) {
+                                val item = sites.removeAt(idx)
+                                sites.add(idx + 1, item)
+                                sitesChosen = true
+                              }
+                            },
+                            enabled = idx < sites.lastIndex,
+                            modifier = Modifier.size(32.dp),
+                          ) {
+                            Icon(Icons.Default.ArrowDownward, contentDescription = "Move down", modifier = Modifier.size(16.dp))
+                          }
                         }
                         IconButton(
                           onClick = {
-                            if (idx < rotationSites.lastIndex) {
-                              val item = rotationSites.removeAt(idx)
-                              rotationSites.add(idx + 1, item)
-                            }
+                            sites.removeAt(idx)
+                            sitesChosen = true
                           },
-                          enabled = idx < rotationSites.lastIndex,
-                          modifier = Modifier.size(32.dp),
-                        ) {
-                          Icon(Icons.Default.ArrowDownward, contentDescription = "Move down", modifier = Modifier.size(16.dp))
-                        }
-                        IconButton(
-                          onClick = { rotationSites.removeAt(idx) },
                           modifier = Modifier.size(32.dp),
                         ) {
                           Icon(Icons.Default.Close, contentDescription = "Remove site", modifier = Modifier.size(16.dp))
@@ -1133,7 +1157,8 @@ fun MedicationEditorScreen(
                     OutlinedButton(
                       onClick = {
                         if (newCustomSite.isNotBlank()) {
-                          rotationSites.add(newCustomSite.trim())
+                          sites.add(newCustomSite.trim())
+                          sitesChosen = true
                           newCustomSite = ""
                         }
                       },

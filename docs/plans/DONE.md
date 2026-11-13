@@ -15,6 +15,7 @@ Newest first.
 
 | Item | Commit | Proof |
 |------|--------|-------|
+| T-111 Sites are Off / Record / Rotate on every form with sites; topicals default to Off. With T-028 (default sites from route and form), the rotation-sites part of T-038, and a scrolling site picker (part of T-011). Database v4 migrates the old switch | "Record sites without rotating them" | `SiteModeMigrationTest`, 5 new `DoseEngineTest` cases, 187 tests; editor checked on the Pixel (Tablet: no card; Topical: Off, then Record and Rotate) |
 | T-086 Debug builds use their own application id (`com.exaclast.regimen.debug`, labelled "Regimen Debug") | "Add debug application id and track plans" | APK checked with `aapt2`; 179 tests; not yet installed on a device |
 | Dose editing (time, amount, site, note), notes when logging, time choice on the medication page | `2d089d9` | `DoseLogEditsTest`, back-dated pacing test; phone; laptop |
 | Medication grouping chips, provider sections, "Log extra dose", "Now / Other time" (most of B32) | `27ae543` | `MedicationGroupsTest`; phone |
