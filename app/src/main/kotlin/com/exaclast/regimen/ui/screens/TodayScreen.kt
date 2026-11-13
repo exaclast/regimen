@@ -35,6 +35,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Autorenew
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -832,6 +833,7 @@ private fun DoseCard(
     med.primaryName,
     med.secondaryName,
     item.formattedDoseInstruction(),
+    if (item.isNewDose && !item.isCompleted) "New dose from today" else null,
     statusText,
     warning,
     if (tracksSites && !item.isCompleted) item.suggestedSite?.let { "Site $it" } else null,
@@ -929,6 +931,10 @@ private fun DoseCard(
       }
 
       Column(modifier = Modifier.padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // A titration step starts today: worth a second look before taking the usual amount.
+        if (item.isNewDose && !item.isCompleted) {
+          StatusLine(icon = Icons.Default.Info, text = "New dose from today", color = MaterialTheme.colorScheme.primary)
+        }
         if (tracksSites && !item.isCompleted && item.suggestedSite != null) {
           StatusLine(
             icon = if (med.rotatesSites) Icons.Default.Autorenew else Icons.Default.Place,

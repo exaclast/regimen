@@ -9,6 +9,7 @@ import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Provider
+import com.exaclast.regimen.model.SyringeType
 import com.exaclast.regimen.model.TimeOfDayBucket
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -108,6 +109,7 @@ class RegimenDatabase(context: Context) :
       migrateMedicationPayloads(db, ::migrateMedicationPayload)
     }
     if (oldVersion < 4) migrateMedicationPayloads(db, ::migrateSitePayload)
+    if (oldVersion < 5) migrateMedicationPayloads(db, ::migrateSyringePayload)
   }
 
   /** Rewrites only the payload: `updated_at` stays, since a migration isn't an edit to sync. */
@@ -324,7 +326,24 @@ class RegimenDatabase(context: Context) :
 
   companion object {
     private const val DB_NAME = "regimen_store.db"
-    private const val DB_VERSION = 4
+    private const val DB_VERSION = 5
+
+    /**
+     * v5: the free-text syringe description becomes a [SyringeType]. A recognised type drops the text, which
+     * only repeated the type and volume; an unrecognised one keeps it as an "Other" description.
+     */
+    internal fun migrateSyringePayload(payload: String): String {
+      val root = runCatching { Json.parseToJsonElement(payload).jsonObject }.getOrNull() ?: return payload
+      val details = root["injectableDetails"] as? JsonObject ?: return payload
+      if ("syringeType" in details) return payload
+      val description = (details["syringeDescription"] as? JsonPrimitive)?.contentOrNull ?: return payload
+      val type = SyringeType.infer(description) ?: return payload
+      val migrated = details.toMutableMap().apply {
+        put("syringeType", JsonPrimitive(type.name))
+        if (type != SyringeType.OTHER) remove("syringeDescription")
+      }
+      return JsonObject(root.toMutableMap().apply { put("injectableDetails", JsonObject(migrated)) }).toString()
+    }
 
     private const val LEGACY_ROTATION_FLAG = "siteRotationEnabled"
     private const val LEGACY_ROTATION_SITES = "rotationSites"

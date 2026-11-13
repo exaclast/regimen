@@ -27,6 +27,9 @@ sealed interface Route : NavKey {
 
   @Serializable data class ScheduleEditor(val medicationId: String, val scheduleId: String? = null) : Route
 
+  /** Plans or edits a dated change (titration step, taper); a null [adjustmentId] plans a new one. */
+  @Serializable data class AdjustmentEditor(val medicationId: String, val adjustmentId: String? = null) : Route
+
   @Serializable data class ProviderDetail(val id: String) : Route
 
   @Serializable data class ProviderEditor(val id: String? = null) : Route
@@ -62,6 +65,7 @@ enum class TopLevel(val route: Route, val label: String, val icon: ImageVector) 
 val Route.isFullScreenTask: Boolean
   get() = this is Route.MedicationEditor ||
     this is Route.ScheduleEditor ||
+    this is Route.AdjustmentEditor ||
     this is Route.ProviderEditor ||
     this is Route.IndicationEditor ||
     this is Route.DoseLogEditor ||
@@ -106,6 +110,15 @@ class Navigator(private val backStack: NavBackStack<NavKey>) {
 
   fun back() {
     if (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
+  }
+
+  /**
+   * Goes back only if [route] is still on top. A screen whose record was just deleted leaves itself this
+   * way: while it animates out it's still composed, and an unconditional back would pop the screen
+   * under it too (going back twice).
+   */
+  fun backFrom(route: Route) {
+    if (current == route) back()
   }
 }
 

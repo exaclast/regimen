@@ -10,6 +10,7 @@ import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.SiteMode
+import com.exaclast.regimen.model.SyringeType
 import com.exaclast.regimen.model.TimeOfDayBucket
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -328,7 +329,13 @@ class DoseEngineTest {
   @Test
   fun vial_stillShowsSyringeVolume() {
     // 200 units/mL: 20 units is 0.1 mL (10 marks on a U-100 syringe), not the 0.2 mL a U-100 guess gave.
-    assertEquals("20 units (0.1 mL / 10 U)", injectable(MedicationForm.INJECTABLE_VIAL).formattedDefaultDose())
+    val vial = injectable(MedicationForm.INJECTABLE_VIAL)
+    val onInsulinSyringe = vial.copy(
+      injectableDetails = vial.injectableDetails!!.copy(syringeType = SyringeType.INSULIN_U100),
+    )
+    assertEquals("20 units (0.1 mL / 10 U)", onInsulinSyringe.formattedDefaultDose())
+    // Unit markings only make sense on an insulin syringe.
+    assertEquals("20 units (0.1 mL)", vial.formattedDefaultDose())
   }
 
   @Test

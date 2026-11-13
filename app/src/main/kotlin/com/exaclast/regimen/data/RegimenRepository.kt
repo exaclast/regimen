@@ -1,6 +1,7 @@
 package com.exaclast.regimen.data
 
 import android.content.Context
+import com.exaclast.regimen.domain.Adjustments
 import com.exaclast.regimen.domain.IndicationTimeline
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.WindowDeletion
@@ -18,7 +19,10 @@ import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.RegimenBackupBundle
+import com.exaclast.regimen.model.MedicationAdjustment
+import com.exaclast.regimen.model.ScheduleDose
 import com.exaclast.regimen.model.ScheduleFrequencyType
+import com.exaclast.regimen.model.SyringeType
 import com.exaclast.regimen.model.SiteMode
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.notifications.DoseNotificationManager
@@ -311,8 +315,11 @@ class RegimenRepository private constructor(context: Context) {
     actionTimestampMillis: Long? = null,
   ): DoseLog? {
     val state = _snapshot.value
-    val med = state.medications.find { it.id == medicationId } ?: return null
-    val schedule = scheduleId?.let { id -> state.schedules.find { it.id == id } }
+    val stored = state.medications.find { it.id == medicationId } ?: return null
+    // Without an explicit amount, use what applied on the dose's own day (titration steps).
+    val day = runCatching { LocalDate.parse(scheduledDateIso) }.getOrDefault(LocalDate.now())
+    val med = Adjustments.asOf(stored, day)
+    val schedule = scheduleId?.let { id -> state.schedules.find { it.id == id } }?.let { Adjustments.scheduleOn(stored, it, day) }
     val resolvedAmount = amountTaken ?: schedule?.doseAmount ?: med.defaultDoseAmount
     val resolvedUnit = amountUnit ?: schedule?.doseUnit ?: med.defaultDoseUnit
     val resolvedSite = if (status == DoseStatus.TAKEN) {
@@ -604,10 +611,9 @@ class RegimenRepository private constructor(context: Context) {
       injectableDetails = InjectableDetails(
         route = InjectionRoute.SC,
         vialVolumeMl = 10.0,
+        syringeType = SyringeType.INSULIN_U100,
         syringeVolumeMl = 0.5,
-        syringeDescription = "0.5 mL U-100 Insulin Syringe (31G 5/16\")",
-        drawNeedleGauge = 31,
-        drawNeedleLengthInches = 0.3125,
+        // Insulin syringes have the needle attached: no separate draw needle.
         injectNeedleGauge = 31,
         injectNeedleLengthInches = 0.3125,
       ),
@@ -623,9 +629,38 @@ class RegimenRepository private constructor(context: Context) {
       notes = "Inject subcutaneously once daily at bedtime. Rotate injection sites across abdomen and thighs. Store unopened vials in refrigerator.",
     )
 
+    // 3d. Isotretinoin: a titration. One capsule to start, two from a check-up, three planned.
+    val schedIsotretinoinId = "sched_isotretinoin_evening"
+    val medIsotretinoin = Medication(
+      id = "med_isotretinoin",
+      formulaName = "Isotretinoin",
+      strength = "20 mg",
+      form = MedicationForm.CAPSULE,
+      defaultDoseAmount = 1.0,
+      defaultDoseUnit = DoseUnit.CAPSULE,
+      prescriberId = pcp.id,
+      prescribedDateIso = today.minusDays(20).toString(),
+      notes = "Take with a meal that contains fat.",
+      adjustments = listOf(
+        MedicationAdjustment(
+          id = "adj_isotretinoin_increase",
+          effectiveDateIso = today.minusDays(6).toString(),
+          note = "Increased at 2-week check",
+          scheduleDoses = listOf(ScheduleDose(schedIsotretinoinId, 2.0, DoseUnit.CAPSULE)),
+        ),
+        MedicationAdjustment(
+          id = "adj_isotretinoin_planned",
+          effectiveDateIso = today.plusDays(10).toString(),
+          note = "Planned increase if tolerated",
+          scheduleDoses = listOf(ScheduleDose(schedIsotretinoinId, 3.0, DoseUnit.CAPSULE)),
+        ),
+      ),
+    )
+
     db.upsertMedication(medAmoxClav)
     db.upsertMedication(medTylenol)
     db.upsertMedication(medInsulin)
+    db.upsertMedication(medIsotretinoin)
 
     // 4. Sample Schedules
     val schedAmoxClavDaily = MedicationSchedule(
@@ -663,9 +698,21 @@ class RegimenRepository private constructor(context: Context) {
       enabled = true,
     )
 
+    val schedIsotretinoin = MedicationSchedule(
+      id = schedIsotretinoinId,
+      startDateIso = today.minusDays(20).toString(),
+      medicationId = medIsotretinoin.id,
+      frequencyType = ScheduleFrequencyType.DAILY,
+      bucketIds = listOf(TimeOfDayBucket.BUCKET_EVENING),
+      doseAmount = 1.0,
+      doseUnit = DoseUnit.CAPSULE,
+      enabled = true,
+    )
+
     db.upsertSchedule(schedAmoxClavDaily)
     db.upsertSchedule(schedTylenolPrn)
     db.upsertSchedule(schedInsulinDaily)
+    db.upsertSchedule(schedIsotretinoin)
 
     // 5. Prior Dose Log: Yesterday evening's insulin dose logged on "Abdomen - Left" so today suggests "Abdomen - Right"!
     val yesterdayLog = DoseLog(

@@ -85,7 +85,9 @@ enum class DoseUnit(val symbol: String, val displayName: String) {
 data class InjectableDetails(
   val route: InjectionRoute = InjectionRoute.IM,
   val vialVolumeMl: Double? = null,
+  val syringeType: SyringeType? = null,
   val syringeVolumeMl: Double? = null,
+  /** Only for [SyringeType.OTHER]: what it is. Other types are described by type and volume. */
   val syringeDescription: String? = null,
   val drawNeedleGauge: Int? = null,
   val drawNeedleLengthInches: Double? = null,
@@ -104,6 +106,21 @@ data class InjectableDetails(
     val g = injectNeedleGauge?.let { "${it}G" } ?: ""
     val l = injectNeedleLengthInches?.let { "${formatNum(it)}\"" } ?: ""
     return listOf(g, l).filter { it.isNotEmpty() }.joinToString(" × ")
+  }
+
+  /** A syringe with its needle attached has no separate draw needle. */
+  val needleAttached: Boolean
+    get() = syringeType?.needleAttached == true
+
+  /** "0.5 mL U-100 insulin", or the description for an unlisted type. */
+  fun formattedSyringe(): String? {
+    val volume = syringeVolumeMl?.let { "${formatNum(it)} mL" }
+    val kind = when (syringeType) {
+      null -> syringeDescription
+      SyringeType.OTHER -> syringeDescription ?: "Other"
+      else -> syringeType.displayName
+    }
+    return listOfNotNull(volume, kind).joinToString(" ").ifBlank { null }
   }
 }
 
@@ -133,6 +150,8 @@ data class Medication(
   val brandName: String? = null,
   val manufacturer: String? = null,
   val notes: String? = null,
+  /** Dated changes to dose, strength or equipment (titration, tapers). See `domain/Adjustments.kt`. */
+  val adjustments: List<MedicationAdjustment> = emptyList(),
   // Sync-ready metadata
   val createdAtEpochMillis: Long = System.currentTimeMillis(),
   val updatedAtEpochMillis: Long = System.currentTimeMillis(),
@@ -182,10 +201,11 @@ data class Medication(
   fun formattedDefaultDose(): String {
     val base = "${formatNum(defaultDoseAmount)} ${defaultDoseUnit.symbol}"
     val volMl = doseVolumeMl(defaultDoseAmount, defaultDoseUnit)
+    // An insulin syringe is marked in units, so say where to draw to on it.
+    val marks = injectableDetails?.syringeType?.unitsPerMl
     return when {
       volMl == null || defaultDoseUnit == DoseUnit.ML -> base
-      // On a U-100 syringe, the markings are hundredths of a mL.
-      form.isInjectable -> "$base (${formatNum(volMl)} mL / ${formatNum(volMl * 100.0)} U)"
+      marks != null -> "$base (${formatNum(volMl)} mL / ${formatNum(volMl * marks)} U)"
       else -> "$base (${formatNum(volMl)} mL)"
     }
   }

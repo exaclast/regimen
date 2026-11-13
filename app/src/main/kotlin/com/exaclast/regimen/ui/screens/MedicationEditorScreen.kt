@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -108,7 +109,9 @@ import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.ScheduleFrequencyType
+import com.exaclast.regimen.model.NeedleHub
 import com.exaclast.regimen.model.SiteMode
+import com.exaclast.regimen.model.SyringeType
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.model.formatExact
@@ -145,6 +148,25 @@ internal fun volumeHint(strength: String, dose: Double?, doseUnit: DoseUnit): Pa
     doseUnit in listOf(DoseUnit.MG, DoseUnit.MCG, DoseUnit.UNITS, DoseUnit.IU) ->
       "$perMl A dose in ${doseUnit.symbol} can't be converted to mL from ${concentration.unit.symbol}." to true
     else -> perMl to false
+  }
+}
+
+/** The standard hub color for a needle gauge, so the right needle is easy to pick out. */
+@Composable
+internal fun HubColorHint(gauge: Int?) {
+  val hub = NeedleHub.colorFor(gauge) ?: return
+  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Box(
+      modifier = Modifier
+        .size(14.dp)
+        .background(Color(hub.argb), CircleShape)
+        .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
+    )
+    Text(
+      text = "${gauge}G: ${hub.name.lowercase()} hub (standard color; some brands differ)",
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
   }
 }
 
@@ -298,7 +320,16 @@ fun MedicationEditorScreen(
   var syringeVolumeText by rememberSaveable {
     mutableStateOf(initInj?.syringeVolumeMl?.let { formatExact(it) }.orEmpty())
   }
+  var syringeType by rememberSaveable {
+    // A size saved without a type shows as Other, so saving doesn't drop it.
+    mutableStateOf(
+      initInj?.syringeType
+        ?: SyringeType.infer(initInj?.syringeDescription)
+        ?: SyringeType.OTHER.takeIf { initInj?.syringeVolumeMl != null },
+    )
+  }
   var syringeDesc by rememberSaveable { mutableStateOf(initInj?.syringeDescription.orEmpty()) }
+  val needleAttached = syringeType?.needleAttached == true && !form.isPrefilledInjector
   var drawGaugeText by rememberSaveable { mutableStateOf(initInj?.drawNeedleGauge?.toString().orEmpty()) }
   var drawLengthText by rememberSaveable {
     mutableStateOf(initInj?.drawNeedleLengthInches?.let { formatExact(it) }.orEmpty())
@@ -611,8 +642,8 @@ fun MedicationEditorScreen(
       // Syringe and draw-needle fields are hidden for prefilled devices, so they can't block Save.
       if (!pen) {
         if (!syringeVolumeCheck.isValid) add("Syringe")
-        if (!drawGaugeCheck.isValid) add("Draw Gauge")
-        if (!drawLengthCheck.isValid) add("Draw Length")
+        if (!needleAttached && !drawGaugeCheck.isValid) add("Draw Gauge")
+        if (!needleAttached && !drawLengthCheck.isValid) add("Draw Length")
       }
       if (!injectGaugeCheck.isValid) add(if (pen) "Needle Gauge" else "Inject Gauge")
       if (!injectLengthCheck.isValid) add(if (pen) "Needle Length" else "Inject Length")
@@ -628,14 +659,17 @@ fun MedicationEditorScreen(
     val doseAmt = doseCheck.validOrNull() ?: return
     val minIntervalMins = minIntervalCheck.validOrNull()
       ?.let { (it * 60.0).roundToInt().coerceAtLeast(1) }
+    val pen = form.isPrefilledInjector
     val injDetails = if (form.isInjectable) {
       InjectableDetails(
         route = route,
         vialVolumeMl = vialVolumeCheck.validOrNull(),
-        syringeVolumeMl = syringeVolumeCheck.validOrNull(),
-        syringeDescription = syringeDesc.takeIf { it.isNotBlank() },
-        drawNeedleGauge = drawGaugeCheck.validOrNull(),
-        drawNeedleLengthInches = drawLengthCheck.validOrNull(),
+        // Hidden fields keep nothing: a pen has no syringe, an attached needle no draw needle.
+        syringeType = syringeType.takeUnless { pen },
+        syringeVolumeMl = syringeVolumeCheck.validOrNull().takeUnless { pen || syringeType == null },
+        syringeDescription = syringeDesc.trim().takeIf { it.isNotEmpty() && !pen && syringeType == SyringeType.OTHER },
+        drawNeedleGauge = drawGaugeCheck.validOrNull().takeUnless { pen || needleAttached },
+        drawNeedleLengthInches = drawLengthCheck.validOrNull().takeUnless { pen || needleAttached },
         injectNeedleGauge = injectGaugeCheck.validOrNull(),
         injectNeedleLengthInches = injectLengthCheck.validOrNull(),
       )
@@ -961,28 +995,61 @@ fun MedicationEditorScreen(
                   modifier = Modifier.fillMaxWidth(),
                 )
 
-                if (!pen) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                  ValidatedNumberField(
-                    check = syringeVolumeCheck,
-                    keyboardType = KeyboardType.Decimal,
-                    value = syringeVolumeText,
-                    onValueChange = { syringeVolumeText = it },
-                    label = { Text("Syringe (mL)") },
-                    placeholder = { Text("1.0") },
-                    singleLine = true,
-                    modifier = Modifier.weight(0.45f),
+                // Syringe: a type, then one of its usual sizes. Only an unlisted type takes free text.
+                if (!pen) {
+                  DropdownSelectorField(
+                    label = "Syringe",
+                    selectedText = syringeType?.displayName ?: "Not set",
+                    options = listOf<SyringeType?>(null) + SyringeType.entries,
+                    optionLabel = { it?.displayName ?: "Not set" },
+                    onOptionSelected = { type ->
+                      syringeType = type
+                      val sizes = type?.volumesMl.orEmpty()
+                      val current = syringeVolumeCheck.validOrNull()
+                      if (sizes.isNotEmpty() && current !in sizes) {
+                        syringeVolumeText = if (sizes.size == 1) formatExact(sizes.single()) else ""
+                      }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
                   )
-                  OutlinedTextField(
-                    value = syringeDesc,
-                    onValueChange = { syringeDesc = it },
-                    label = { Text("Syringe Type") },
-                    placeholder = { Text("1 mL Luer-Lok") },
-                    singleLine = true,
-                    modifier = Modifier.weight(0.55f),
-                  )
+                  val sizes = syringeType?.volumesMl.orEmpty()
+                  if (sizes.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                      sizes.forEach { size ->
+                        val selected = syringeVolumeCheck.validOrNull() == size
+                        FilterChip(
+                          selected = selected,
+                          onClick = { syringeVolumeText = if (selected) "" else formatExact(size) },
+                          label = { Text("${formatNum(size)} mL") },
+                        )
+                      }
+                    }
+                  } else if (syringeType != null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                      ValidatedNumberField(
+                        check = syringeVolumeCheck,
+                        keyboardType = KeyboardType.Decimal,
+                        value = syringeVolumeText,
+                        onValueChange = { syringeVolumeText = it },
+                        label = { Text("Size (mL)") },
+                        placeholder = { Text("1.0") },
+                        singleLine = true,
+                        modifier = Modifier.weight(0.4f),
+                      )
+                      OutlinedTextField(
+                        value = syringeDesc,
+                        onValueChange = { syringeDesc = it },
+                        label = { Text("What kind") },
+                        placeholder = { Text("Glass syringe") },
+                        singleLine = true,
+                        modifier = Modifier.weight(0.6f),
+                      )
+                    }
+                  }
                 }
 
-                if (!pen) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Insulin syringes have the needle attached, so there's nothing separate to draw with.
+                if (!pen && !needleAttached) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                   ValidatedNumberField(
                     check = drawGaugeCheck,
                     keyboardType = KeyboardType.Number,
@@ -1005,10 +1072,18 @@ fun MedicationEditorScreen(
                   )
                 }
 
+                if (!pen && !needleAttached) HubColorHint(drawGaugeCheck.validOrNull())
+
                 if (pen) {
                   Text(
                     text = "Pen needle — only for multi-dose pens with screw-on needles (e.g. insulin). " +
                       "Leave blank for auto-injectors.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                } else if (needleAttached) {
+                  Text(
+                    text = "The needle is attached to this syringe.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                   )
@@ -1019,7 +1094,7 @@ fun MedicationEditorScreen(
                     keyboardType = KeyboardType.Number,
                     value = injectGaugeText,
                     onValueChange = { injectGaugeText = it },
-                    label = { Text(if (pen) "Needle Gauge (G)" else "Inject Gauge (G)") },
+                    label = { Text(if (pen || needleAttached) "Needle Gauge (G)" else "Inject Gauge (G)") },
                     placeholder = { Text(if (pen) "32" else "25") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
@@ -1029,12 +1104,13 @@ fun MedicationEditorScreen(
                     keyboardType = KeyboardType.Decimal,
                     value = injectLengthText,
                     onValueChange = { injectLengthText = it },
-                    label = { Text(if (pen) "Needle Length (in)" else "Inject Length (in)") },
+                    label = { Text(if (pen || needleAttached) "Needle Length (in)" else "Inject Length (in)") },
                     placeholder = { Text(if (pen) "0.16" else "1.0") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                   )
                 }
+                HubColorHint(injectGaugeCheck.validOrNull())
               }
             }
           }

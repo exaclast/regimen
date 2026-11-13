@@ -25,9 +25,9 @@ When a decision is made, add it here with the date. When one is reversed, say so
 
 - **No backup-format compatibility yet.** There are no users. The backup format is v1. Backups from before the Indications
   rename lose their indications.
-- **The database does migrate,** so dev installs keep their data (user decision, 2026-11-09). `RegimenDatabase` is at v4:
+- **The database does migrate,** so dev installs keep their data (user decision, 2026-11-09). `RegimenDatabase` is at v5:
   v2 renamed `prescribers`, v3 renamed `conditions` and moved medication link keys, v4 turned the rotation switch into a
-  site mode. Rows from before indication kinds
+  site mode, v5 turned the free-text syringe description into a syringe type. Rows from before indication kinds
   become Chronic.
 - **After the first stable release,** both the database and the backup format need real migrations. Anything that reshapes
   data should land before then (milestone M3).
@@ -68,7 +68,13 @@ When a decision is made, add it here with the date. When one is reversed, say so
 - **Sites have three modes: Off, Record, Rotate** (2026-11-12, T-111), on every form that has sites. Recording where a
   dose went doesn't imply rotating. Only injectables default to Rotate.
 - **Dose changes are steps with an effective date, not edits** (2026-11-12, T-113), so a titration keeps its history and
-  can be planned ahead.
+  can be planned ahead. The record is a `MedicationAdjustment` on the medication (user's name, 2026-11-13). It covers dose
+  per schedule, default dose, strength and injection details, not frequency or windows (T-015).
+- **Editors show today's values and ask "From a date" or "Correction"** when a tracked value changes and doses were
+  logged (2026-11-13). A correction rewrites whichever value is in effect today; a change of form is always a correction.
+- **Syringes are a type plus a size, not free text** (2026-11-13). Free text repeated the size and needle. Insulin
+  syringes have the needle attached, so there's no draw needle, and only they show unit markings.
+- **Needle hub colors follow ISO 6009** and say so, since some brands differ (user request, 2026-11-13).
 
 ### Organization
 

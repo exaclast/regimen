@@ -56,9 +56,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.data.RegimenSnapshot
+import com.exaclast.regimen.domain.Adjustments
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.ScheduledDoseItem
+import com.exaclast.regimen.model.DoseAmount
 import com.exaclast.regimen.model.DoseLog
+import com.exaclast.regimen.model.NeedleHub
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
@@ -100,13 +103,18 @@ fun MedicationDetailScreen(
   onEditLog: (DoseLog) -> Unit,
   onOpenProvider: (String) -> Unit,
   onOpenIndication: (String) -> Unit,
+  onPlanChange: () -> Unit,
+  onOpenChange: (adjustmentId: String) -> Unit,
 ) {
-  val medication = snapshot.medications.find { it.id == medicationId }
-  if (medication == null) {
+  val stored = snapshot.medications.find { it.id == medicationId }
+  if (stored == null) {
     // Deleted (or never existed): leave the screen.
     LaunchedEffect(medicationId) { onBack() }
     return
   }
+  val today = runCatching { LocalDate.parse(todayIso) }.getOrDefault(LocalDate.now())
+  // Everything shown is as of today; the stored record keeps the starting values and the changes.
+  val medication = Adjustments.asOf(stored, today)
   val indications = snapshot.indications.filter { it.id in medication.indicationIds }
   val prescriber = snapshot.providers.find { it.id == medication.prescriberId }
   val schedules = snapshot.schedules.filter { it.medicationId == medication.id && it.deletedAtEpochMillis == null }
@@ -273,8 +281,61 @@ fun MedicationDetailScreen(
             }
           }
           schedules.forEachIndexed { i, sched ->
+            // Today's dose, and the next step if one is planned.
+            val next = Adjustments.sorted(stored).firstOrNull { a ->
+              a.effectiveDateOrNull()!!.isAfter(today) && a.scheduleDoses.any { it.scheduleId == sched.id }
+            }
+            val upcoming = next?.let { a ->
+              val dose = Adjustments.doseOn(stored, sched, a.effectiveDateOrNull()!!)
+              "${formatNum(dose.amount)} ${dose.unit.symbol} from ${UiFormat.date(a.effectiveDateOrNull()!!, withWeekday = false)}"
+            }
             GroupItem(index = i, count = schedules.size, onClick = { onEditSchedule(sched) }) {
-              ScheduleRow(sched, snapshot, onEdit = { onEditSchedule(sched) }, onDelete = { onDeleteSchedule(sched) })
+              ScheduleRow(
+                schedule = sched,
+                dose = Adjustments.doseOn(stored, sched, today),
+                upcoming = upcoming,
+                snapshot = snapshot,
+                onEdit = { onEditSchedule(sched) },
+                onDelete = { onDeleteSchedule(sched) },
+              )
+            }
+          }
+        }
+      }
+
+      item(key = "changes") {
+        SectionHeader("Changes") {
+          TextButton(onClick = onPlanChange) {
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Plan")
+          }
+        }
+        val changes = Adjustments.sorted(stored)
+        GroupedColumn {
+          if (changes.isEmpty()) {
+            GroupItem(index = 0, count = 1) {
+              ListItem(
+                supportingContent = {
+                  Text("Dose steps, tapers and new equipment, by date. Editing a dose after logging asks whether it's a change.")
+                },
+                colors = groupListItemColors(),
+              ) { Text("No changes") }
+            }
+          }
+          changes.forEachIndexed { i, change ->
+            val date = change.effectiveDateOrNull()!!
+            val lines = Adjustments.describe(change) { id ->
+              schedules.find { it.id == id }?.let { ScheduleText.describe(it, snapshot.buckets) }
+            }
+            GroupItem(index = i, count = changes.size, onClick = { onOpenChange(change.id) }) {
+              ListItem(
+                overlineContent = if (date.isAfter(today)) ({ Text("Planned") }) else null,
+                supportingContent = {
+                  Text((lines + listOfNotNull(change.note)).joinToString("\n"))
+                },
+                colors = groupListItemColors(),
+              ) { Text(UiFormat.date(date)) }
             }
           }
         }
@@ -291,16 +352,26 @@ fun MedicationDetailScreen(
               ?.takeUnless { medication.strength.contains(it, ignoreCase = true) }
               ?.let { add("Per mL" to it) }
             inj.vialVolumeMl?.let { add((if (pen) "Device volume" else "Vial size") to "${formatNum(it)} mL") }
+            // A needle with its standard hub color, which is how it's picked out of a box.
+            fun needle(text: String?, gauge: Int?) = text?.let { t ->
+              NeedleHub.colorFor(gauge)?.let { "$t · ${it.name.lowercase()} hub" } ?: t
+            }
             if (pen) {
-              inj.formattedInjectNeedle()?.let { add("Pen needle" to it) }
+              needle(inj.formattedInjectNeedle(), inj.injectNeedleGauge)?.let { add("Pen needle" to it) }
             } else {
-              medication.doseVolumeMl(medication.defaultDoseAmount, medication.defaultDoseUnit)?.let {
-                add("Draw volume" to "${formatNum(it)} mL (${formatNum(it * 100.0)} units on a U-100 syringe)")
+              medication.doseVolumeMl(medication.defaultDoseAmount, medication.defaultDoseUnit)?.let { ml ->
+                // Insulin syringes are marked in units; say where to draw to on one.
+                val marks = inj.syringeType?.unitsPerMl
+                  ?.let { " (${formatNum(ml * it)} units on a ${inj.syringeType.displayName} syringe)" }
+                add("Draw volume" to "${formatNum(ml)} mL${marks.orEmpty()}")
               }
-              val syringe = listOfNotNull(inj.syringeVolumeMl?.let { "${formatNum(it)} mL" }, inj.syringeDescription)
-              if (syringe.isNotEmpty()) add("Syringe" to syringe.joinToString(" · "))
-              inj.formattedDrawNeedle()?.let { add("Draw needle" to it) }
-              inj.formattedInjectNeedle()?.let { add("Injection needle" to it) }
+              inj.formattedSyringe()?.let { add("Syringe" to it) }
+              if (inj.needleAttached) {
+                needle(inj.formattedInjectNeedle(), inj.injectNeedleGauge)?.let { add("Needle (attached)" to it) }
+              } else {
+                needle(inj.formattedDrawNeedle(), inj.drawNeedleGauge)?.let { add("Draw needle" to it) }
+                needle(inj.formattedInjectNeedle(), inj.injectNeedleGauge)?.let { add("Injection needle" to it) }
+              }
             }
           }
           GroupedColumn {
@@ -535,6 +606,10 @@ private fun SiteTag(text: String, highlighted: Boolean) {
 @Composable
 private fun ScheduleRow(
   schedule: MedicationSchedule,
+  /** The dose today, which a titration step may have changed. */
+  dose: DoseAmount,
+  /** The next planned dose, e.g. "3 cap from Dec 1". */
+  upcoming: String?,
   snapshot: RegimenSnapshot,
   onEdit: () -> Unit,
   onDelete: () -> Unit,
@@ -570,6 +645,7 @@ private fun ScheduleRow(
         UiFormat.dateIso(nextUpcoming)?.let { add("Next: $it") }
       }
     }
+    upcoming?.let { add("Then $it") }
     if (!schedule.enabled) add("Paused")
     if (schedule.hasNoValidWindow(snapshot.buckets)) add("No dose window: no doses or reminders until you pick one")
   }.joinToString(" · ")
@@ -596,6 +672,6 @@ private fun ScheduleRow(
     },
     colors = groupListItemColors(),
   ) {
-      Text("${formatNum(schedule.doseAmount)} ${schedule.doseUnit.symbol} · ${ScheduleText.frequency(schedule)}")
+      Text("${formatNum(dose.amount)} ${dose.unit.symbol} · ${ScheduleText.frequency(schedule)}")
     }
 }

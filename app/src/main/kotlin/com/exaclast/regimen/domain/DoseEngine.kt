@@ -79,6 +79,8 @@ data class ScheduledDoseItem(
   val pacing: PacingEvaluation,
   val indications: List<Indication>,
   val prescriber: Provider?,
+  /** The first dose at a new amount (an adjustment starts today for this schedule). */
+  val isNewDose: Boolean = false,
 ) {
   val isCompleted: Boolean
     get() = existingLog?.status == DoseStatus.TAKEN || existingLog?.status == DoseStatus.SKIPPED
@@ -419,7 +421,9 @@ object DoseEngine {
       }
 
       val items = matchingSchedules.mapNotNull { schedule ->
-        val med = activeMedMap[schedule.medicationId] ?: return@mapNotNull null
+        val stored = activeMedMap[schedule.medicationId] ?: return@mapNotNull null
+        // The day's own values: a titration step or new equipment applies from its date.
+        val med = Adjustments.asOf(stored, targetDate)
         val activeScheduleIdsForMed = activeScheduleIdsByMed[med.id].orEmpty()
         val existingLog = logsForDate
           .filter { logMatchesItem(it, schedule, bucket, activeScheduleIdsForMed) }
@@ -432,10 +436,11 @@ object DoseEngine {
         ScheduledDoseItem(
           key = "${schedule.id}_${bucket.id}_$dateIso",
           medication = med,
-          schedule = schedule,
+          schedule = Adjustments.scheduleOn(stored, schedule, targetDate),
           bucket = bucket,
           dateIso = dateIso,
           existingLog = existingLog,
+          isNewDose = Adjustments.doseChangesOn(stored, schedule, targetDate),
           suggestedSite = suggestedSite,
           lastSiteUsed = lastSite,
           pacing = pacing,
@@ -459,7 +464,8 @@ object DoseEngine {
 
     val prnItems = activeMedMap.values
       .filter { med -> prnSchedulesByMed.containsKey(med.id) || !scheduledMedIds.contains(med.id) }
-      .map { med ->
+      .map { stored ->
+        val med = Adjustments.asOf(stored, targetDate)
         val prnSchedule = prnSchedulesByMed[med.id]
         PrnDoseItem(
           medication = med,

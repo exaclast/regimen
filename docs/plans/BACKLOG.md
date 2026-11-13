@@ -14,7 +14,7 @@ The one list of everything still to do. Last reconciled 2026-11-10 against commi
 
 ## How to use this file
 
-**Adding something.** Add one row in the matching area, using the next free number (next: **T-114**). IDs never change
+**Adding something.** Add one row in the matching area, using the next free number (next: **T-116**). IDs never change
 or get reused. One sentence is enough; anything longer goes in `designs/`. An audit or device pass adds rows here, and its
 raw report goes in `archive/`.
 
@@ -50,27 +50,25 @@ changes need real migrations, so anything that reshapes data belongs before it.
 |-|-----------|-----|-------|
 | **M1** | **Trust** | Make reminders reliable, protect health data, fix wrong information | T-001–006, T-011–013, T-016, T-019, T-026, T-027, T-038, T-050–053, T-068, T-084 |
 | **M2** | **Adaptive** | Tablet, foldable and desktop. UI only, so it can overlap M1 | T-036, T-066, T-067, T-069–074 |
-| **M3** | **Foundations** | Data integrity, threading, a sync-ready model, tests | T-014, T-015, T-054, T-055, T-057–065, T-085, T-113 |
-| **M4** | **Everyday features** | The features that make it worth using daily | T-017, T-018, T-021, T-029, T-030, T-039, T-040, T-044, T-045, T-093–096, T-098 |
+| **M3** | **Foundations** | Data integrity, threading, a sync-ready model, tests | T-014, T-015, T-054, T-055, T-057–065, T-085 |
+| **M4** | **Everyday features** | The features that make it worth using daily | T-017, T-018, T-021, T-029, T-030, T-039, T-040, T-044, T-093–096, T-098 |
 | **M5** | **Stable release** | First non-prerelease tag | T-056, T-078, T-081, T-087, T-090, T-097, T-100 |
 | **M6** | **Sync** | Google Drive sync | T-102 |
 | **M7** | **Wear OS** | Doses from the wrist. Later, and D-9 (how the watch gets its data) has to be settled first | T-106–110 |
 
 ### Up next
 
-Suggested order. T-113 reshapes schedule data, so it comes first while there are no users to migrate (user decision,
-2026-11-12; T-111 and T-112, which also reshaped data, are done):
+Small, high-value and independent of each other. Suggested order (T-111 to T-113, which reshaped data, are done):
 
-1. **T-113** Dose steps: dose changes on set dates
-2. **T-011** Dialogs clip on short windows
-3. **T-050** Delete label photos
-4. **T-001** Warn when reminders can't work
-5. **T-002** Don't lose alarms while the phone is off
-6. **T-038** Editors lose selections
-7. **T-003** / **T-004** Test notifications and demo data touch real alarms
-8. **T-026** Scans overwriting the dose
-9. **T-068** Invisible "Review" button
-10. **T-084** Lint in CI, so all of this stays fixed
+1. **T-011** Dialogs clip on short windows
+2. **T-050** Delete label photos
+3. **T-001** Warn when reminders can't work
+4. **T-002** Don't lose alarms while the phone is off
+5. **T-038** Editors lose selections
+6. **T-003** / **T-004** Test notifications and demo data touch real alarms
+7. **T-026** Scans overwriting the dose
+8. **T-068** Invisible "Review" button
+9. **T-084** Lint in CI, so all of this stays fixed
 
 ---
 
@@ -99,7 +97,7 @@ Suggested order. T-113 reshapes schedule data, so it comes first while there are
 | T-012 | "Take early" has no friction hours ahead of a window, and on past days the main button is "Take now" | P1 | S | M1 | B29 |
 | T-013 | A new schedule can start out "Missed": it defaults to today, including windows already over | P1 | S | M1 | B31 |
 | T-014 | Adding a window to a schedule back-fills missed doses, because the schedule's start date covers the new window | P1 | M | M3 | B60 |
-| T-015 | Editing a schedule rewrites history. Version schedules: end the old one and start a new one on a meaningful edit. Needed before the calendar (T-101). T-113 covers dose amounts first; this is what's left (windows, frequency) | P1 | L | M3 | B30 |
+| T-015 | Editing a schedule rewrites history. Version schedules: end the old one and start a new one on a meaningful edit. Needed before the calendar (T-101). Dose amount, strength and injection details already change by date (`MedicationAdjustment`, T-113); this is what's left (windows, frequency, date range) | P1 | L | M3 | B30 |
 | T-016 | (partial) "Other time" shipped, but choosing "Now" while viewing a past day still stamps the current time on that day. Default to "Other time" on past days | P2 | S | M1 | B32 |
 | T-017 | Add Pause for a schedule. "Paused" displays but nothing sets it, and a disabled schedule makes the medication appear as As needed. Update `MedicationGroups` too | P2 | M | M4 | B42 |
 | T-018 | An every-N-days-from-last-dose schedule stays due every day after its due date until taken | P2 | S | M4 | Low |
@@ -109,7 +107,8 @@ Suggested order. T-113 reshapes schedule data, so it comes first while there are
 | T-022 | "Take all on time" for a missed window | P3 | S | — | roadmap |
 | T-023 | "Other time" for a due scheduled dose accepts any past date, so today's dose can be recorded as taken weeks ago. Limit the range or warn | P3 | S | — | new |
 | T-024 | Choose the dose amount when logging an extra dose (always the default today) | P3 | S | — | new |
-| T-113 | Dose steps: a schedule's amount changes on set dates (titration such as isotretinoin, tapers) instead of being overwritten. Past steps are the history, future steps the plan. "Change dose" with an effective date and a note; a step timeline on the medication page; Today, reminders and the alarm screen use the day's amount and flag the first dose at a new one. See `designs/features.md` | P1 | M | M3 | new |
+| T-114 | Reminders and the alarm screen don't say a dose is new; only Today flags the first dose after a titration step | P3 | S | — | T-113 |
+| T-115 | "Plan a change" can't set injection details: they change from a date only through the medication editor's "From a date". Fine for now; revisit if planning equipment changes ahead is common | P3 | M | — | T-113 |
 
 ### Medication data and label scanning
 
@@ -138,7 +137,6 @@ Suggested order. T-113 reshapes schedule data, so it comes first while there are
 | T-042 | A number of 309+ digits parses as `Infinity` | P3 | S | — | Low |
 | T-043 | Editing a medication resets its created date; rewriting a dose log resets its created date | P3 | S | — | Low |
 | T-044 | Window name chips don't set times, so Lunch and Dinner both default to 08:00 and sort wrongly | P2 | S | M4 | B61 |
-| T-045 | (verify) Deleting from a detail screen may go back twice | P2 | S | M4 | B34 |
 | T-046 | Specific-date schedules show a raw ISO date | P3 | S | — | Low |
 | T-047 | Guided add-medication flow (identify → dose → schedule → limits → details): generic name before brand, short dropdown values, unit suffixes, explain disabled scan buttons | P2 | L | — | U18, F2, P2 |
 | T-048 | Validation messages wrap in half-width fields; "Every N Days (Fixed Cycle)" is jargon | P3 | S | — | U19, U20 |
@@ -265,4 +263,6 @@ Shipped, but never confirmed on a device. Clear these opportunistically; if one 
 | Split-screen and window resize | Resize through compact, medium, expanded; repeat after T-069 | Layout follows, selection survives | form factors |
 | Dark theme on tablet and foldable | Repeat the screen pass | No contrast problems | form factors |
 | Passphrase timing | Time the PBKDF2 step (600k iterations) | Well under 1 second | known gap |
+| Delete from a detail page | Delete a medication, a provider and an indication from their pages | Goes back once, to the list | T-045 |
+| Insulin syringe migration | Install over a build from before `9e44103` with a syringe description | Type is filled in, text gone | T-113 |
 

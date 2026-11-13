@@ -7,6 +7,7 @@ import android.net.Uri
 import com.exaclast.regimen.data.BackupManager
 import com.exaclast.regimen.data.RegimenRepository
 import com.exaclast.regimen.data.RegimenSnapshot
+import com.exaclast.regimen.domain.Adjustments
 import com.exaclast.regimen.domain.DailyDoseBoard
 import com.exaclast.regimen.domain.BucketDoseGroup
 import com.exaclast.regimen.domain.DoseEngine
@@ -18,6 +19,7 @@ import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.Medication
+import com.exaclast.regimen.model.MedicationAdjustment
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.RegimenBackupBundle
@@ -75,6 +77,9 @@ sealed interface UndoAction {
   data class RestoreDeletedLog(val log: DoseLog) : UndoAction
 
   data class RestoreSchedule(val schedule: MedicationSchedule) : UndoAction
+
+  /** Puts a medication back as it was, e.g. after deleting one of its changes. */
+  data class RestoreMedication(val medication: Medication) : UndoAction
 
   /** Puts back everything that was on the device before a backup restore. */
   data class RestoreBackup(val previous: RegimenBackupBundle) : UndoAction
@@ -298,6 +303,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
       }
       is UndoAction.RestoreDeletedLog -> repository.restoreDoseLog(action.log)
       is UndoAction.RestoreSchedule -> repository.restoreSchedule(action.schedule)
+      is UndoAction.RestoreMedication -> repository.saveMedication(action.medication)
       is UndoAction.RestoreBackup -> viewModelScope.launch {
         withContext(Dispatchers.IO) { backup.undoRestore(action.previous) }
         post("Restore undone")
@@ -338,6 +344,18 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
   fun saveMedication(medication: Medication) = repository.saveMedication(medication)
 
   fun deleteMedication(medicationId: String) = repository.deleteMedication(medicationId)
+
+  /** Saves a planned or edited change; one on the same date as another merges into it. */
+  fun saveAdjustment(medicationId: String, adjustment: MedicationAdjustment) {
+    val medication = repository.snapshot.value.medications.find { it.id == medicationId } ?: return
+    repository.saveMedication(Adjustments.upsert(medication, adjustment))
+  }
+
+  fun deleteAdjustment(medicationId: String, adjustmentId: String) {
+    val medication = repository.snapshot.value.medications.find { it.id == medicationId } ?: return
+    repository.saveMedication(Adjustments.remove(medication, adjustmentId))
+    post("Change deleted", UndoAction.RestoreMedication(medication))
+  }
 
   fun saveSchedule(schedule: MedicationSchedule) = repository.saveSchedule(schedule)
 
