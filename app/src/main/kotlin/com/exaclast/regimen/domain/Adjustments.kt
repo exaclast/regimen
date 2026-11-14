@@ -1,12 +1,15 @@
 package com.exaclast.regimen.domain
 
+import com.exaclast.regimen.R
 import com.exaclast.regimen.model.DoseAmount
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.InjectableDetails
+import com.exaclast.regimen.model.Labeled
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationAdjustment
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.ScheduleDose
+import com.exaclast.regimen.model.Texts
 import com.exaclast.regimen.model.formatNum
 import java.time.LocalDate
 
@@ -21,12 +24,12 @@ import java.time.LocalDate
 object Adjustments {
 
   /** The kinds of value an adjustment can carry. */
-  enum class Part(val label: String) {
-    STRENGTH("strength"),
-    NDC("NDC"),
-    DEFAULT_DOSE("default dose"),
-    EQUIPMENT("injection details"),
-    DOSE("dose"),
+  enum class Part(override val labelRes: Int) : Labeled {
+    STRENGTH(R.string.adjust_part_strength),
+    NDC(R.string.adjust_part_ndc),
+    DEFAULT_DOSE(R.string.adjust_part_default_dose),
+    EQUIPMENT(R.string.adjust_part_injection),
+    DOSE(R.string.adjust_part_dose),
   }
 
   sealed interface EditMode {
@@ -278,20 +281,24 @@ object Adjustments {
     medication.copy(adjustments = medication.adjustments.filter { it.id != adjustmentId })
 
   /** One line per value an adjustment sets, for lists. [scheduleLabel] names a schedule, or null if it's gone. */
-  fun describe(adjustment: MedicationAdjustment, scheduleLabel: (String) -> String?): List<String> = buildList {
+  fun describe(texts: Texts, adjustment: MedicationAdjustment, scheduleLabel: (String) -> String?): List<String> = buildList {
     adjustment.scheduleDoses.forEach { dose ->
-      scheduleLabel(dose.scheduleId)?.let { add("$it: ${formatNum(dose.amount)} ${dose.unit.symbol}") }
+      scheduleLabel(dose.scheduleId)?.let {
+        add(texts.get(R.string.adjust_line_schedule_dose, it, formatNum(dose.amount), dose.unit.symbol))
+      }
     }
-    adjustment.strength?.let { add("Strength: $it") }
-    adjustment.ndc11?.let { add(if (it.isBlank()) "NDC cleared: look up the new one" else "NDC: $it") }
-    adjustment.defaultDose?.let { add("Default dose: ${formatNum(it.amount)} ${it.unit.symbol}") }
+    adjustment.strength?.let { add(texts.get(R.string.adjust_line_strength, it)) }
+    adjustment.ndc11?.let {
+      add(if (it.isBlank()) texts.get(R.string.adjust_line_ndc_cleared) else texts.get(R.string.adjust_line_ndc, it))
+    }
+    adjustment.defaultDose?.let { add(texts.get(R.string.adjust_line_default_dose, formatNum(it.amount), it.unit.symbol)) }
     adjustment.injectableDetails?.let { details ->
       val parts = listOfNotNull(
         details.route.code,
-        details.formattedSyringe(),
-        details.formattedInjectNeedle()?.let { "needle $it" },
+        details.formattedSyringe(texts),
+        details.formattedInjectNeedle()?.let { texts.get(R.string.adjust_line_needle, it) },
       )
-      add("Injection: ${parts.joinToString(", ")}")
+      add(texts.get(R.string.adjust_line_injection, parts.joinToString(", ")))
     }
   }
 }

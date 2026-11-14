@@ -50,7 +50,7 @@
 
     <!-- Change or correction dialog -->
     <string name="change_or_fix_title">Change or correction?</string>
-    <string name="change_or_fix_you_changed">You changed %1$s.</string>
+    <string name="change_or_fix_you_changed">You changed the %1$s.</string>
     <string name="change_or_fix_from_date">From a date</string>
     <string name="change_or_fix_correction">Correction</string>
     <string name="change_or_fix_from_date_help">Doses before the date keep the old value. Pick a future date to plan a step.</string>
@@ -788,4 +788,362 @@
     <string name="alarm_site_last">(Last: %1$s)</string>
     <string name="alarm_draw">Draw: %1$s</string>
     <string name="alarm_inject">Inject: %1$s</string>
+
+    <!-- Names of enum values (model/*, domain/MedicationGroups) -->
+    <string name="enum_site_mode_off">Off</string>
+    <string name="enum_site_mode_off_help">Doses don\'t record a site</string>
+    <string name="enum_site_mode_record">Record</string>
+    <string name="enum_site_mode_record_help">Records where each dose goes and suggests the last site used</string>
+    <string name="enum_site_mode_rotate">Rotate</string>
+    <string name="enum_site_mode_rotate_help">Suggests the next site in order after the last one used</string>
+
+    <string name="enum_form_tablet">Tablet</string>
+    <string name="enum_form_capsule">Capsule</string>
+    <string name="enum_form_vial">Injectable (Vial)</string>
+    <string name="enum_form_pen">Injectable (Pen / Auto-injector / Prefilled syringe)</string>
+    <string name="enum_form_topical">Topical (Gel / Cream / Patch)</string>
+    <string name="enum_form_liquid">Oral Liquid / Solution</string>
+    <string name="enum_form_inhaler">Inhaler / Nasal Spray</string>
+    <string name="enum_form_drops">Drops (Ophthalmic / Otic)</string>
+    <string name="enum_form_other">Other</string>
+
+    <string name="enum_route_im">Intramuscular (IM)</string>
+    <string name="enum_route_sc">Subcutaneous (SC)</string>
+    <string name="enum_route_id">Intradermal (ID)</string>
+    <string name="enum_route_iv">Intravenous (IV)</string>
+
+    <string name="enum_unit_mg">Milligrams (mg)</string>
+    <string name="enum_unit_mcg">Micrograms (mcg)</string>
+    <string name="enum_unit_ml">Milliliters (mL)</string>
+    <string name="enum_unit_units">Units (syringe or pen)</string>
+    <string name="enum_unit_iu">International Units (IU)</string>
+    <string name="enum_unit_tablet">Tablet(s)</string>
+    <string name="enum_unit_capsule">Capsule(s)</string>
+    <string name="enum_unit_application">Application / Pump(s)</string>
+    <string name="enum_unit_puff">Puff(s) / Spray(s)</string>
+    <string name="enum_unit_drop">Drop(s)</string>
+
+    <string name="enum_syringe_u100">U-100 insulin</string>
+    <string name="enum_syringe_u500">U-500 insulin</string>
+    <string name="enum_syringe_tuberculin">Tuberculin</string>
+    <string name="enum_syringe_luer_lock">Luer-lock</string>
+    <string name="enum_syringe_luer_slip">Luer-slip</string>
+    <string name="enum_syringe_other">Other</string>
+    <string name="syringe_volume_ml">%1$s mL</string>
+
+    <string name="enum_status_active">Active</string>
+    <string name="enum_status_managed">Managed / Stable</string>
+    <string name="enum_status_remission">In Remission</string>
+    <string name="enum_status_resolved">Resolved</string>
+    <string name="enum_status_completed">Completed</string>
+
+    <string name="enum_kind_acute">Acute</string>
+    <string name="enum_kind_chronic">Chronic</string>
+    <string name="enum_kind_preventive">Preventive</string>
+    <string name="enum_kind_allergy">Allergy</string>
+    <string name="enum_kind_intolerance">Intolerance</string>
+
+    <string name="enum_allergen_drug">Drug</string>
+    <string name="enum_allergen_food">Food</string>
+    <string name="enum_allergen_environmental">Environmental</string>
+    <string name="enum_allergen_drug_section">Drug allergies and intolerances</string>
+    <string name="enum_allergen_food_section">Food allergies</string>
+    <string name="enum_allergen_environmental_section">Environmental allergies</string>
+
+    <string name="enum_severity_mild">Mild</string>
+    <string name="enum_severity_mild_moderate">Mild to moderate</string>
+    <string name="enum_severity_moderate">Moderate</string>
+    <string name="enum_severity_moderate_severe">Moderate to severe</string>
+    <string name="enum_severity_severe">Severe</string>
+    <string name="enum_severity_life_threatening">Life-threatening</string>
+    <string name="enum_severity_unsure">Unsure</string>
+
+    <string name="enum_freq_daily">Every Day</string>
+    <string name="enum_freq_every_n_days">Every N Days (Fixed Cycle)</string>
+    <string name="enum_freq_days_of_week">Specific Days of Week</string>
+    <string name="enum_freq_relative">Every N Days From Last Taken Dose</string>
+    <string name="enum_freq_specific_dates">Specific Dates</string>
+    <string name="enum_freq_as_needed">As Needed (PRN)</string>
+
+    <string name="enum_dose_taken">Taken</string>
+    <string name="enum_dose_skipped">Skipped</string>
+    <string name="enum_dose_snoozed">Snoozed</string>
+
+    <string name="enum_theme_system">System Default</string>
+    <string name="enum_theme_light">Light</string>
+    <string name="enum_theme_dark">Dark</string>
+
+    <string name="enum_grouping_schedule">Schedule</string>
+    <string name="enum_grouping_indication">Indication</string>
+    <string name="enum_grouping_form">Form</string>
+
+    <string name="enum_course_short_term">Short-term</string>
+    <string name="enum_course_ongoing">Ongoing</string>
+    <string name="enum_course_as_needed">As needed</string>
+    <string name="enum_course_finished">Finished</string>
+
+    <string name="med_section_past_indication">%1$s (past)</string>
+    <string name="med_section_no_indication">No indication</string>
+
+    <!-- Adjustments (domain/Adjustments) -->
+    <string name="adjust_part_strength">strength</string>
+    <string name="adjust_part_ndc">NDC</string>
+    <string name="adjust_part_default_dose">default dose</string>
+    <string name="adjust_part_injection">injection details</string>
+    <string name="adjust_part_dose">dose</string>
+    <string name="adjust_line_schedule_dose">%1$s: %2$s %3$s</string>
+    <string name="adjust_line_strength">Strength: %1$s</string>
+    <string name="adjust_line_ndc">NDC: %1$s</string>
+    <string name="adjust_line_ndc_cleared">NDC cleared: look up the new one</string>
+    <string name="adjust_line_default_dose">Default dose: %1$s %2$s</string>
+    <string name="adjust_line_needle">needle %1$s</string>
+    <string name="adjust_line_injection">Injection: %1$s</string>
+
+    <!-- Health summary content (domain/CareSummary) -->
+    <string name="summary_section_other_allergies">Other allergies</string>
+    <string name="summary_section_current">Current medications</string>
+    <plurals name="summary_section_finished">
+        <item quantity="one">Finished or as-needed, taken in the past %1$d day</item>
+        <item quantity="other">Finished or as-needed, taken in the past %1$d days</item>
+    </plurals>
+    <string name="summary_section_indications">Indications</string>
+    <string name="summary_section_suspected">Suspected, not diagnosed</string>
+    <plurals name="summary_section_ended">
+        <item quantity="one">Indications ended in the past %1$d day</item>
+        <item quantity="other">Indications ended in the past %1$d days</item>
+    </plurals>
+    <string name="summary_section_providers">Providers</string>
+    <string name="summary_ended">ended %1$s</string>
+    <string name="summary_reaction">%1$s (%2$s, %3$s)</string>
+    <string name="summary_severity">%1$s severity</string>
+    <string name="summary_secondary_to">secondary to %1$s</string>
+    <string name="summary_pcp">PCP</string>
+    <plurals name="summary_none_taken">
+        <item quantity="one">%1$s %2$s, none taken in the past %3$d day</item>
+        <item quantity="other">%1$s %2$s, none taken in the past %3$d days</item>
+    </plurals>
+    <string name="summary_last_taken">%1$s %2$s, last taken %3$s</string>
+    <string name="summary_with_course">%1$s: %2$s</string>
+    <string name="summary_text_title_for">Health summary for %1$s</string>
+    <string name="summary_text_as_of">As of %1$s</string>
+    <string name="summary_text_footer">From Regimen</string>
+
+    <!-- FDA lookup results and errors (data/FdaNdcLookupService) -->
+    <string name="fda_hint_short_code">Scanned code \'%1$s\' is an internal packaging/lot code (%2$d digits), not an FDA NDC. Tap \'Scan Label\' to read the printed drug text instead.</string>
+    <string name="fda_hint_pharmacy">Pharmacy vial barcode (\'%1$s\') encodes a store prescription refill number rather than an FDA NDC. Tap \'Scan Label\' to read the printed medication text.</string>
+    <string name="fda_invalid_ndc">Please enter a valid 10- or 11-digit NDC (or tap \'Scan Label\' to read printed bottle text).</string>
+    <string name="fda_no_ndc_record">No matching FDA NDC record found for %1$s. Tap \'Scan Label\' to read the printed drug name &amp; strength.</string>
+    <string name="fda_no_record_for_ndc_no_name">No matching FDA record found for NDC \'%1$s\', and no drug name was provided to cross-reference.</string>
+    <string name="fda_enter_name">Scan a medication label or enter a Brand / Formula Name (or NDC-11) to cross-reference against OpenFDA.</string>
+    <string name="fda_no_records_for_name">No OpenFDA records matched \'%1$s\'.</string>
+    <string name="fda_no_records_for_name_strength">No OpenFDA records matched \'%1$s\' (%2$s).</string>
+    <string name="fda_no_records">No matching FDA records found.</string>
+    <string name="fda_reason_name_differs">This is the closest FDA record, but its name differs from what you entered. Check it\'s the same medication:</string>
+    <string name="fda_reason_many_manufacturers">Multiple manufacturers/packages match %1$s (%2$s). Select your exact package or apply without a specific manufacturer NDC:</string>
+    <string name="fda_reason_many_strengths">Multiple strengths exist for this medication (%1$s). Select the exact strength &amp; package:</string>
+    <string name="fda_reason_many_packages">Multiple packages from %1$s matched. Select the exact match:</string>
+    <plurals name="fda_reason_found">
+        <item quantity="one">Found %1$d matching FDA record. Select the exact match:</item>
+        <item quantity="other">Found %1$d matching FDA records across different manufacturers/strengths. Select the exact match:</item>
+    </plurals>
+    <string name="fda_generic">Generic</string>
+    <string name="fda_unknown">Unknown</string>
+    <string name="fda_sig_ndc">NDC (%1$s)</string>
+    <string name="fda_sig_formula">Formula (%1$s)</string>
+    <string name="fda_sig_formula_fuzzy">Formula (%1$s, fuzzy match)</string>
+    <string name="fda_sig_brand">Brand (%1$s)</string>
+    <string name="fda_sig_brand_differs">Brand differs (%1$s)</string>
+    <string name="fda_sig_name_differs">Name differs from what you entered (%1$s)</string>
+    <string name="fda_sig_strength">Strength (%1$s)</string>
+    <string name="fda_sig_strength_is">Strength is %1$s (wanted %2$s)</string>
+    <string name="fda_sig_strength_unspecified">Strength not specified (%1$s)</string>
+    <string name="fda_sig_form">Form (%1$s)</string>
+    <string name="fda_sig_form_is">Form is %1$s</string>
+    <string name="fda_sig_mfg">Mfg (%1$s)</string>
+    <string name="fda_sig_mfg_other">Mfg: %1$s</string>
+
+    <!-- On-device label scanning (data/DrugBarcodeScanner, DrugLabelParser) -->
+    <string name="scan_policy_blocked">The on-device AI declined to read this label. This sometimes happens even with a clear photo; you can try again with a different photo, or enter the details manually.</string>
+    <string name="nano_not_downloadable">Gemini Nano is not downloadable on this device (%1$d).</string>
+    <string name="nano_downloading_aicore">Downloading Gemini Nano via AICore…</string>
+    <string name="nano_download_started">Download started…</string>
+    <string name="nano_downloading_mb">Downloading (%1$d MB)…</string>
+    <string name="nano_msg_ready">Gemini Nano ready!</string>
+    <string name="nano_msg_download_failed">Download failed: %1$s</string>
+    <string name="nano_unknown_error">Unknown error</string>
+    <string name="nano_empty_response">Gemini Nano returned an empty response.</string>
+    <string name="nano_unavailable">On-device Gemini Nano (AICore) is not available on this device.</string>
+    <plurals name="scan_reading">
+        <item quantity="one">Reading label text…</item>
+        <item quantity="other">Reading label text from %1$d photos…</item>
+    </plurals>
+    <string name="scan_no_text">Couldn\'t read any text from the photo. Try better light, and hold the label flat and closer.</string>
+    <string name="scan_analyzing">Analyzing label text with on-device Gemini Nano…</string>
+    <string name="scan_model_downloading_aicore">Downloading on-device Gemini Nano model via AICore…</string>
+    <string name="scan_model_downloading">Downloading on-device Gemini Nano model…</string>
+    <string name="scan_model_downloading_mb">Downloading Gemini Nano (%1$d MB)…</string>
+    <string name="scan_model_ready">Gemini Nano ready — analyzing label…</string>
+    <string name="scan_model_download_failed">Gemini Nano model download failed: %1$s</string>
+    <string name="scan_bad_json">Model did not return a valid JSON object.</string>
+
+    <!-- Backup files and errors (sync/) -->
+    <string name="backup_kind_medications">Medications</string>
+    <string name="backup_kind_schedules">Schedules</string>
+    <string name="backup_kind_dose_history">Dose history</string>
+    <string name="backup_kind_dose_windows">Dose windows</string>
+    <string name="backup_kind_providers">Providers</string>
+    <string name="backup_kind_indications">Indications</string>
+    <string name="backup_err_not_backup">This file isn\'t a Regimen backup</string>
+    <string name="backup_err_newer_format">Backup format %1$d needs a newer version of Regimen</string>
+    <string name="backup_err_wrong_passphrase">Incorrect passphrase</string>
+    <string name="backup_err_wrong_key">This recovery code is for a different backup</string>
+    <string name="backup_err_corrupted">The backup is damaged and can\'t be read</string>
+    <string name="backup_err_bad_recovery_code">That recovery code isn\'t valid; check for typos</string>
+
+    <!-- Snackbar messages from the view model -->
+    <string name="vm_logged">Logged %1$s</string>
+    <string name="vm_logged_taken_at">Logged %1$s as taken at %2$s</string>
+    <string name="vm_logged_dose">Logged %1$s %2$s %3$s</string>
+    <string name="vm_skipped">Skipped %1$s</string>
+    <string name="vm_snoozed_until">Snoozed until %1$s</string>
+    <string name="vm_marked_not_taken">Marked %1$s as not taken</string>
+    <plurals name="vm_logged_doses">
+        <item quantity="one">Logged %1$d dose</item>
+        <item quantity="other">Logged %1$d doses</item>
+    </plurals>
+    <string name="vm_log_deleted">Log entry deleted</string>
+    <string name="vm_log_updated">Dose log updated</string>
+    <string name="vm_restore_undone">Restore undone</string>
+    <string name="vm_change_deleted">Change deleted</string>
+    <string name="vm_schedule_deleted">Schedule deleted</string>
+    <string name="vm_backup_saved_encrypted">Encrypted backup saved</string>
+    <string name="vm_backup_saved_plain">Unencrypted backup saved</string>
+    <string name="vm_backup_save_failed">Couldn\'t save the backup: %1$s</string>
+    <string name="vm_backup_open_failed">Couldn\'t open the backup: %1$s</string>
+    <string name="vm_backup_unlock_failed">Couldn\'t unlock the backup</string>
+    <string name="vm_restore_failed">Couldn\'t restore: %1$s</string>
+    <string name="vm_restore_replaced">Replaced with backup</string>
+    <string name="vm_restore_merged">Backup merged</string>
+    <plurals name="vm_restore_replaced_conflicts">
+        <item quantity="one">Replaced with backup · %1$d conflict resolved</item>
+        <item quantity="other">Replaced with backup · %1$d conflicts resolved</item>
+    </plurals>
+    <plurals name="vm_restore_merged_conflicts">
+        <item quantity="one">Backup merged · %1$d conflict resolved</item>
+        <item quantity="other">Backup merged · %1$d conflicts resolved</item>
+    </plurals>
+
+    <!-- Schedule descriptions (ui/ScheduleText) -->
+    <string name="sched_daily">Daily</string>
+    <string name="sched_weekly">Weekly</string>
+    <string name="sched_every_2_weeks">Every 2 weeks</string>
+    <plurals name="sched_every_n_days">
+        <item quantity="one">Every %1$d day</item>
+        <item quantity="other">Every %1$d days</item>
+    </plurals>
+    <string name="sched_weekdays">Weekdays</string>
+    <string name="sched_weekends">Weekends</string>
+    <string name="sched_daily_after_last">Daily after last dose</string>
+    <plurals name="sched_every_n_days_after_last">
+        <item quantity="one">Every %1$d day after last dose</item>
+        <item quantity="other">Every %1$d days after last dose</item>
+    </plurals>
+    <string name="sched_specific_dates_none">Specific dates</string>
+    <string name="sched_on_date">On %1$s</string>
+    <plurals name="sched_n_specific_dates">
+        <item quantity="one">%1$d specific date</item>
+        <item quantity="other">%1$d specific dates</item>
+    </plurals>
+    <string name="sched_as_needed">As needed</string>
+    <string name="sched_with_windows">%1$s · %2$s</string>
+    <string name="sched_ended">Schedule ended</string>
+
+    <!-- Field validation (ui/NumberInput) -->
+    <string name="check_required">Required</string>
+    <string name="check_number_example">Enter a number, e.g. 0.5 or 1/2</string>
+    <string name="check_number_example_short">Enter a number, e.g. 4 or 0.5</string>
+    <string name="check_greater_than_zero">Must be greater than 0</string>
+    <string name="check_whole_number">Enter a whole number</string>
+    <string name="check_whole_number_one_plus">Enter a whole number of 1 or more</string>
+
+    <!-- Dose pacing (domain/DoseEngine) -->
+    <string name="pacing_amount_limit_reached">Daily amount limit reached</string>
+    <string name="pacing_limit_reached">Daily limit reached (%1$d of %2$s)</string>
+    <string name="pacing_warn_at">Next dose allowed at %1$s</string>
+    <string name="pacing_warn_tomorrow">Next dose allowed tomorrow at %1$s</string>
+    <string name="pacing_warn_date">Next dose allowed %1$s at %2$s</string>
+    <string name="pacing_when_tomorrow">tomorrow at %1$s</string>
+    <string name="pacing_when_date">%1$s at %2$s</string>
+
+    <!-- Notifications and dose text (notifications/, domain/DoseEngine) -->
+    <string name="channel_window_name">Active Dose Window (Persistent)</string>
+    <string name="channel_window_description">Ongoing notification pinned at the exact start of a dose window with 1-tap Take, Snooze, and Skip actions</string>
+    <string name="channel_alarm_name">End-of-Window Dose Alarm</string>
+    <string name="channel_alarm_description">Ringing alarm triggered at the exact end of a dose window if no action was taken</string>
+    <string name="problem_notifications_denied">Notifications are turned off for Regimen, so doses won\'t remind you.</string>
+    <string name="problem_channel_blocked">A Regimen notification category is blocked, so some reminders won\'t show.</string>
+    <string name="problem_exact_alarms_denied">Exact alarms aren\'t allowed, so reminders may arrive late or not at all.</string>
+    <string name="problem_full_screen_blocked">The end-of-window alarm can\'t take over the screen, so it will only be a notification.</string>
+    <string name="notif_title_dose">%1$s dose</string>
+    <string name="notif_title_medications">%1$s medications</string>
+    <string name="notif_title_dose_overdue">%1$s dose overdue</string>
+    <string name="notif_title_medications_overdue">%1$s medications overdue</string>
+    <plurals name="notif_doses_due">
+        <item quantity="one">%1$d dose due</item>
+        <item quantity="other">%1$d doses due</item>
+    </plurals>
+    <string name="notif_take_ready">Take %1$d ready</string>
+    <string name="notif_take">Take</string>
+    <string name="notif_take_all">Take all</string>
+    <string name="notif_open">Open</string>
+    <string name="notif_skip">Skip</string>
+    <string name="notif_line">%1$s — %2$s</string>
+    <string name="notif_limit_line">%1$s: %2$s</string>
+    <string name="dose_amount">%1$s %2$s</string>
+    <string name="dose_amount_volume">%1$s %2$s (%3$s mL)</string>
+    <string name="dose_with_route">%1$s • %2$s</string>
+
+    <string name="backup_err_not_set_up">Encryption isn\'t set up</string>
+    <string name="backup_err_set_passphrase_first">Set a backup passphrase first</string>
+    <string name="backup_err_open_file">Couldn\'t open the file</string>
+    <string name="backup_err_read_file">Couldn\'t read the file</string>
+
+    <!-- Notification action confirmations (notifications/DoseActionReceiver) -->
+    <string name="receiver_taken_site">Logged dose taken (%1$s)</string>
+    <plurals name="receiver_taken">
+        <item quantity="one">Logged dose taken</item>
+        <item quantity="other">Logged %1$d doses taken</item>
+    </plurals>
+    <plurals name="receiver_snoozed">
+        <item quantity="one">Snoozed for %1$d minute</item>
+        <item quantity="other">Snoozed for %1$d minutes</item>
+    </plurals>
+    <plurals name="receiver_skipped">
+        <item quantity="one">Marked dose skipped</item>
+        <item quantity="other">Marked %1$d doses skipped</item>
+    </plurals>
+    <plurals name="receiver_blocked">
+        <item quantity="one">Not logged: %1$s is over its pacing limit. Open Regimen to log it anyway.</item>
+        <item quantity="other">Not logged: %1$s are over their pacing limit. Open Regimen to log them anyway.</item>
+    </plurals>
+
+    <!-- Medication editor hints -->
+    <string name="volume_hint_write_strength">To show volumes, write the strength per mL, like 200 mg/mL or 400 mg/5 mL.</string>
+    <string name="volume_hint_per_ml">%1$s.</string>
+    <string name="volume_hint_dose_is">%1$s. %2$s %3$s is %4$s mL.</string>
+    <string name="volume_hint_cant_convert">%1$s. A dose in %2$s can\'t be converted to mL from %3$s.</string>
+    <string name="hub_hint">%1$dG: %2$s hub (standard color; some brands differ)</string>
+    <string name="hub_white">White</string>
+    <string name="hub_pink">Pink</string>
+    <string name="hub_cream">Cream</string>
+    <string name="hub_yellow">Yellow</string>
+    <string name="hub_green">Green</string>
+    <string name="hub_black">Black</string>
+    <string name="hub_blue">Blue</string>
+    <string name="hub_purple">Purple</string>
+    <string name="hub_orange">Orange</string>
+    <string name="hub_brown">Brown</string>
+    <string name="hub_grey">Grey</string>
+    <string name="hub_blue_green">Blue-green</string>
+    <string name="hub_red">Red</string>
 </resources>

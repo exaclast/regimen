@@ -1,5 +1,6 @@
 package com.exaclast.regimen.domain
 
+import com.exaclast.regimen.TestTexts
 import com.exaclast.regimen.domain.Adjustments.EditMode
 import com.exaclast.regimen.model.DoseAmount
 import com.exaclast.regimen.model.DoseLog
@@ -202,7 +203,7 @@ class AdjustmentsTest {
 
   @Test
   fun describeListsWhatChanges() {
-    val lines = Adjustments.describe(isotretinoin.adjustments.first { it.id == "a1" }) { if (it == "s1") "Evening" else null }
+    val lines = Adjustments.describe(TestTexts, isotretinoin.adjustments.first { it.id == "a1" }) { if (it == "s1") "Evening" else null }
     assertEquals(listOf("Evening: 2 cap"), lines)
   }
 }

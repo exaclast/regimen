@@ -1,5 +1,6 @@
 package com.exaclast.regimen.domain
 
+import com.exaclast.regimen.R
 import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
@@ -9,6 +10,7 @@ import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.SiteMode
+import com.exaclast.regimen.model.Texts
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.model.formatNum
@@ -29,23 +31,26 @@ data class PacingEvaluation(
   val amountTakenToday: Double = 0.0,
   val lastTakenTimestampMillis: Long? = null,
   val lastSiteUsed: String? = null,
-  val statusSummary: String,
   /** When the minimum interval elapses (epoch millis), if it hasn't yet. */
   val nextAllowedAtMillis: Long? = null,
   val maxDailyDoses: Double? = null,
 ) {
   /** One line saying why a dose can't be taken yet, or null when it can. */
   fun warningText(
+    texts: Texts,
     nowMillis: Long = System.currentTimeMillis(),
     zoneId: ZoneId = ZoneId.systemDefault(),
   ): String? {
     if (isDailyLimitReached) {
-      val limit = maxDailyDoses?.let { formatNum(it) } ?: return "Daily amount limit reached"
-      return "Daily limit reached ($dosesTakenToday of $limit)"
+      val limit = maxDailyDoses?.let { formatNum(it) } ?: return texts.get(R.string.pacing_amount_limit_reached)
+      return texts.get(R.string.pacing_limit_reached, dosesTakenToday, limit)
     }
-    val whenAllowed = nextAllowedText(nowMillis, zoneId) ?: return null
-    val sameDay = whenAllowed.first().isDigit()
-    return if (sameDay) "Next dose allowed at $whenAllowed" else "Next dose allowed $whenAllowed"
+    val next = nextAllowed(nowMillis, zoneId) ?: return null
+    return when (next.day) {
+      NextDay.TODAY -> texts.get(R.string.pacing_warn_at, next.time)
+      NextDay.TOMORROW -> texts.get(R.string.pacing_warn_tomorrow, next.time)
+      NextDay.LATER -> texts.get(R.string.pacing_warn_date, next.date(texts.locale), next.time)
+    }
   }
 
   /**
@@ -53,17 +58,33 @@ data class PacingEvaluation(
    * alone would read as today, and a long minimum interval often runs into the next day.
    */
   fun nextAllowedText(
+    texts: Texts,
     nowMillis: Long = System.currentTimeMillis(),
     zoneId: ZoneId = ZoneId.systemDefault(),
   ): String? {
+    val next = nextAllowed(nowMillis, zoneId) ?: return null
+    return when (next.day) {
+      NextDay.TODAY -> next.time
+      NextDay.TOMORROW -> texts.get(R.string.pacing_when_tomorrow, next.time)
+      NextDay.LATER -> texts.get(R.string.pacing_when_date, next.date(texts.locale), next.time)
+    }
+  }
+
+  private enum class NextDay { TODAY, TOMORROW, LATER }
+
+  private class NextAllowed(val day: NextDay, val time: String, private val at: java.time.ZonedDateTime) {
+    fun date(locale: Locale): String = at.format(DateTimeFormatter.ofPattern("MMM d", locale))
+  }
+
+  private fun nextAllowed(nowMillis: Long, zoneId: ZoneId): NextAllowed? {
     val next = Instant.ofEpochMilli(nextAllowedAtMillis ?: return null).atZone(zoneId)
     val today = Instant.ofEpochMilli(nowMillis).atZone(zoneId).toLocalDate()
-    val time = TimeOfDayBucket.formatClockTime(next.hour, next.minute)
-    return when (next.toLocalDate()) {
-      today -> time
-      today.plusDays(1) -> "tomorrow at $time"
-      else -> "${next.format(DateTimeFormatter.ofPattern("MMM d", Locale.getDefault()))} at $time"
+    val day = when (next.toLocalDate()) {
+      today -> NextDay.TODAY
+      today.plusDays(1) -> NextDay.TOMORROW
+      else -> NextDay.LATER
     }
+    return NextAllowed(day, TimeOfDayBucket.formatClockTime(next.hour, next.minute), next)
   }
 }
 
@@ -94,13 +115,17 @@ data class ScheduledDoseItem(
   val isSnoozed: Boolean
     get() = existingLog?.status == DoseStatus.SNOOZED
 
-  fun formattedDoseInstruction(): String {
+  fun formattedDoseInstruction(texts: Texts): String {
     val amt = formatNum(schedule.doseAmount)
     val unit = schedule.doseUnit.symbol
     val volMl = medication.doseVolumeMl(schedule.doseAmount, schedule.doseUnit)
-    val volStr = if (volMl != null && schedule.doseUnit != DoseUnit.ML) " (${formatNum(volMl)} mL)" else ""
-    val route = medication.injectableDetails?.takeIf { medication.form.isInjectable }?.let { " • ${it.route.code}" }
-    return "$amt $unit$volStr${route.orEmpty()}"
+    val dose = if (volMl != null && schedule.doseUnit != DoseUnit.ML) {
+      texts.get(R.string.dose_amount_volume, amt, unit, formatNum(volMl))
+    } else {
+      texts.get(R.string.dose_amount, amt, unit)
+    }
+    val route = medication.injectableDetails?.takeIf { medication.form.isInjectable }?.route?.code
+    return if (route == null) dose else texts.get(R.string.dose_with_route, dose, route)
   }
 }
 
@@ -217,34 +242,6 @@ object DoseEngine {
     val isDailyLimitReached = doseLimitReached || amountLimitReached
     val isIntervalWarning = remainingWaitMinutes > 0L
 
-    val statusParts = mutableListOf<String>()
-    if (isDailyLimitReached) {
-      if (doseLimitReached) {
-        statusParts.add("Daily limit reached ($dosesTakenToday/${formatNum(maxDoses)} doses)")
-      } else if (amountLimitReached) {
-        statusParts.add(
-          "Daily limit reached (${formatNum(amountTakenToday)}/${formatNum(maxAmount)} ${medication.defaultDoseUnit.symbol})"
-        )
-      }
-    } else if (isIntervalWarning) {
-      val hrs = remainingWaitMinutes / 60
-      val mins = remainingWaitMinutes % 60
-      val waitFormatted = if (hrs > 0) "${hrs}h ${mins}m" else "${mins}m"
-      statusParts.add("Wait $waitFormatted (min interval ${formatDurationMinutes(minInterval ?: 0)})")
-    } else {
-      statusParts.add("Ready")
-    }
-
-    if (!isDailyLimitReached) {
-      if (maxDoses != null && maxDoses > 0) {
-        statusParts.add("$dosesTakenToday/${formatNum(maxDoses)} daily doses")
-      } else if (maxAmount != null && maxAmount > 0) {
-        statusParts.add(
-          "${formatNum(amountTakenToday)}/${formatNum(maxAmount)} ${medication.defaultDoseUnit.symbol} today"
-        )
-      }
-    }
-
     return PacingEvaluation(
       canTakeNow = !isDailyLimitReached && !isIntervalWarning,
       isIntervalWarning = isIntervalWarning,
@@ -254,7 +251,6 @@ object DoseEngine {
       amountTakenToday = amountTakenToday,
       lastTakenTimestampMillis = lastTaken?.actionTimestampMillis,
       lastSiteUsed = lastTaken?.siteUsed,
-      statusSummary = statusParts.joinToString(" • "),
       nextAllowedAtMillis = if (isIntervalWarning && lastTaken != null && minInterval != null) {
         lastTaken.actionTimestampMillis + minInterval * 60_000L
       } else {

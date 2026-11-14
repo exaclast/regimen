@@ -378,18 +378,17 @@ private fun ProviderIndicationsDialog(
   onDismiss: () -> Unit,
 ) {
   var selection by remember { mutableStateOf(initialSelection) }
-  val pastLabel = stringResource(R.string.label_past)
   val resources = LocalResources.current
   val (past, current) = snapshot.indications.partition { snapshot.isArchived(it) }
   val sections = IndicationTimeline.sections(current) +
-    listOfNotNull(past.sortedBy { it.name.lowercase() }.takeIf { it.isNotEmpty() }?.let { pastLabel to it })
+    listOfNotNull(past.sortedBy { it.name.lowercase() }.takeIf { it.isNotEmpty() }?.let { R.string.label_past to it })
   AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text(stringResource(R.string.provider_indications)) },
     text = {
       Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
         sections.forEach { (title, group) ->
-          Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+          Text(stringResource(title), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
           group.forEach { indication ->
             val checked = indication.id in selection
             Row(

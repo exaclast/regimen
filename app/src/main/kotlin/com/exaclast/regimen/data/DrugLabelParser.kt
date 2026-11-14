@@ -1,7 +1,10 @@
 package com.exaclast.regimen.data
 
+import com.exaclast.regimen.R
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.MedicationForm
+import com.exaclast.regimen.model.Message
+import com.exaclast.regimen.model.MessageException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -130,7 +133,7 @@ object DrugLabelParser {
     val startIdx = trimmed.indexOf('{')
     val endIdx = trimmed.lastIndexOf('}')
     if (startIdx < 0 || endIdx <= startIdx) {
-      throw IllegalArgumentException("Model did not return a valid JSON object.")
+      throw MessageException(Message(R.string.scan_bad_json))
     }
     val jsonBlock = trimmed.substring(startIdx, endIdx + 1)
     val extracted = json.decodeFromString<GeminiLabelExtraction>(jsonBlock)

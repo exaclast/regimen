@@ -51,6 +51,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import com.exaclast.regimen.ui.components.doseText
+import com.exaclast.regimen.ui.components.warning
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -501,35 +503,31 @@ private fun AlarmItemCard(item: ScheduledDoseItem) {
         .fillMaxWidth()
         .padding(16.dp),
     ) {
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+      // Name and strength stack: a long strength beside the name would squeeze the name into a sliver.
+      Text(
+        text = med.displayTitle,
+        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+        color = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier.fillMaxWidth(),
-      ) {
+      )
+      if (med.strength.isNotBlank()) {
         Text(
-          text = med.displayTitle,
-          style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-          color = MaterialTheme.colorScheme.onSurface,
-          modifier = Modifier.weight(1f),
+          text = med.strength,
+          style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+          color = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.fillMaxWidth(),
         )
-        if (med.strength.isNotBlank()) {
-          Text(
-            text = med.strength,
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.primary,
-          )
-        }
       }
 
       Spacer(Modifier.height(6.dp))
 
       Text(
-        text = stringResource(R.string.alarm_dose, item.formattedDoseInstruction()),
+        text = stringResource(R.string.alarm_dose, item.doseText()),
         style = MaterialTheme.typography.bodyLarge,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
 
-      item.pacing.warningText()?.let { warning ->
+      item.pacing.warning()?.let { warning ->
         Spacer(Modifier.height(6.dp))
         Text(
           text = warning,

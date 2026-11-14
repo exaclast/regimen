@@ -71,6 +71,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import com.exaclast.regimen.model.texts
+import com.exaclast.regimen.model.userMessage
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
@@ -395,6 +397,7 @@ fun SettingsScreen(
         SectionHeader(stringResource(R.string.settings_scanning))
         val initiatingMessage = stringResource(R.string.nano_initiating)
         val downloadFailedMessage = stringResource(R.string.nano_download_failed)
+  val nanoTexts = LocalResources.current.texts()
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
           if (nanoStatus == FeatureStatus.UNAVAILABLE) {
             Surface(
@@ -430,14 +433,14 @@ fun SettingsScreen(
                 coroutineScope.launch {
                   nanoProgressMessage = initiatingMessage
                   DrugBarcodeScanner.startNanoDownload(
-                    onProgress = { msg -> nanoProgressMessage = msg }
+                    onProgress = { msg -> nanoProgressMessage = msg.resolve(nanoTexts) }
                   ).fold(
                     onSuccess = {
                       nanoStatus = DrugBarcodeScanner.checkNanoStatus()
                       onPermissionsChanged()
                     },
                     onFailure = { err ->
-                      nanoProgressMessage = err.localizedMessage ?: downloadFailedMessage
+                      nanoProgressMessage = err.userMessage(nanoTexts) ?: downloadFailedMessage
                       DrugBarcodeScanner.openAiCoreSettings(context)
                     }
                   )
@@ -907,6 +910,7 @@ fun StartupPermissionsDialog(
   var nanoProgressMessage by remember { mutableStateOf<String?>(null) }
   val initiatingMessage = stringResource(R.string.nano_initiating)
   val downloadFailedMessage = stringResource(R.string.nano_download_failed)
+  val nanoTexts = LocalResources.current.texts()
 
   DisposableEffect(lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event ->
@@ -1023,7 +1027,7 @@ fun StartupPermissionsDialog(
                 coroutineScope.launch {
                   nanoProgressMessage = initiatingMessage
                   DrugBarcodeScanner.startNanoDownload(
-                    onProgress = { msg -> nanoProgressMessage = msg }
+                    onProgress = { msg -> nanoProgressMessage = msg.resolve(nanoTexts) }
                   ).fold(
                     onSuccess = {
                       nanoStatus = DrugBarcodeScanner.checkNanoStatus()
@@ -1031,7 +1035,7 @@ fun StartupPermissionsDialog(
                       onPermissionsChanged()
                     },
                     onFailure = { err ->
-                      nanoProgressMessage = err.localizedMessage ?: downloadFailedMessage
+                      nanoProgressMessage = err.userMessage(nanoTexts) ?: downloadFailedMessage
                       DrugBarcodeScanner.openAiCoreSettings(context)
                     }
                   )

@@ -1,6 +1,8 @@
 package com.exaclast.regimen.ui
 
 import android.app.Application
+import androidx.annotation.PluralsRes
+import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import android.net.Uri
@@ -13,6 +15,7 @@ import com.exaclast.regimen.domain.BucketDoseGroup
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.DoseTimeline
 import com.exaclast.regimen.domain.ScheduledDoseItem
+import com.exaclast.regimen.R
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.DoseLog
@@ -25,6 +28,8 @@ import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.RegimenBackupBundle
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.formatNum
+import com.exaclast.regimen.model.texts
+import com.exaclast.regimen.model.userMessage
 import com.exaclast.regimen.notifications.DoseNotificationManager
 import com.exaclast.regimen.notifications.DoseNotificationStage
 import com.exaclast.regimen.ui.components.UiFormat
@@ -207,17 +212,17 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     note: String? = null,
   ) {
     val log = writeScheduledLog(item, DoseStatus.TAKEN, site, takenAtMillis = takenAtMillis, notes = note) ?: return
-    val siteNote = log.siteUsed?.let { " · $it" } ?: ""
-    val timeNote = takenAtMillis?.let { " as taken at ${UiFormat.time(it)}" } ?: ""
+    val name = item.medication.primaryName
+    val logged = takenAtMillis?.let { str(R.string.vm_logged_taken_at, name, UiFormat.time(it)) } ?: str(R.string.vm_logged, name)
     post(
-      "Logged ${item.medication.primaryName}$timeNote$siteNote",
+      listOfNotNull(logged, log.siteUsed).joinToString(" · "),
       UndoAction.RestoreLogs(listOf(item.existingLog to log.id)),
     )
   }
 
   fun skipScheduledDose(item: ScheduledDoseItem) {
     val log = writeScheduledLog(item, DoseStatus.SKIPPED, site = null) ?: return
-    post("Skipped ${item.medication.primaryName}", UndoAction.RestoreLogs(listOf(item.existingLog to log.id)))
+    post(str(R.string.vm_skipped, item.medication.primaryName), UndoAction.RestoreLogs(listOf(item.existingLog to log.id)))
   }
 
   fun snoozeScheduledDose(
@@ -228,7 +233,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     val log = writeScheduledLog(item, DoseStatus.SNOOZED, item.suggestedSite, snoozedUntil = until) ?: return
     val time = Instant.ofEpochMilli(until).atZone(ZoneId.systemDefault()).toLocalTime()
     post(
-      "Snoozed until ${TimeOfDayBucket.formatClockTime(time.hour, time.minute)}",
+      str(R.string.vm_snoozed_until, TimeOfDayBucket.formatClockTime(time.hour, time.minute)),
       UndoAction.RestoreLogs(listOf(item.existingLog to log.id)),
     )
   }
@@ -237,7 +242,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
   fun clearScheduledDoseLog(item: ScheduledDoseItem) {
     val existing = item.existingLog ?: return
     repository.deleteDoseLog(existing.id)
-    post("Marked ${item.medication.primaryName} as not taken", UndoAction.RestoreDeletedLog(existing))
+    post(str(R.string.vm_marked_not_taken, item.medication.primaryName), UndoAction.RestoreDeletedLog(existing))
   }
 
   fun takeAllPending(items: List<ScheduledDoseItem>) {
@@ -245,8 +250,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
       writeScheduledLog(item, DoseStatus.TAKEN, item.suggestedSite)?.let { item.existingLog to it.id }
     }
     if (entries.isEmpty()) return
-    val noun = if (entries.size == 1) "dose" else "doses"
-    post("Logged ${entries.size} $noun", UndoAction.RestoreLogs(entries))
+    post(plural(R.plurals.vm_logged_doses, entries.size, entries.size), UndoAction.RestoreLogs(entries))
   }
 
   /**
@@ -275,17 +279,16 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
       notes = note,
       actionTimestampMillis = takenAtMillis,
     ) ?: return
-    val timeNote = takenAtMillis?.let { " · ${UiFormat.dateTime(it)}" } ?: ""
-    val siteNote = log.siteUsed?.let { " · $it" } ?: ""
+    val logged = str(R.string.vm_logged_dose, medication.primaryName, formatNum(log.amountTaken), log.amountUnit.symbol)
     post(
-      "Logged ${medication.primaryName} ${formatNum(log.amountTaken)} ${log.amountUnit.symbol}$timeNote$siteNote",
+      listOfNotNull(logged, takenAtMillis?.let { UiFormat.dateTime(it) }, log.siteUsed).joinToString(" · "),
       UndoAction.RestoreLogs(listOf(null to log.id)),
     )
   }
 
   fun deleteDoseLog(log: DoseLog) {
     repository.deleteDoseLog(log.id)
-    post("Log entry deleted", UndoAction.RestoreDeletedLog(log))
+    post(str(R.string.vm_log_deleted), UndoAction.RestoreDeletedLog(log))
   }
 
   /** Saves an edited log; Undo puts the previous version back. */
@@ -293,7 +296,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     val previous = repository.snapshot.value.doseLogs.find { it.id == updated.id } ?: return
     if (previous == updated) return
     repository.updateDoseLog(updated)
-    post("Dose log updated", UndoAction.RestoreLogs(listOf(previous to updated.id)))
+    post(str(R.string.vm_log_updated), UndoAction.RestoreLogs(listOf(previous to updated.id)))
   }
 
   fun undo(action: UndoAction) {
@@ -306,7 +309,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
       is UndoAction.RestoreMedication -> repository.saveMedication(action.medication)
       is UndoAction.RestoreBackup -> viewModelScope.launch {
         withContext(Dispatchers.IO) { backup.undoRestore(action.previous) }
-        post("Restore undone")
+        post(str(R.string.vm_restore_undone))
       }
     }
   }
@@ -333,6 +336,14 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     actionTimestampMillis = takenAtMillis,
   )
 
+  private fun str(@StringRes id: Int, vararg args: Any): String = getApplication<Application>().getString(id, *args)
+
+  private fun plural(@PluralsRes id: Int, count: Int, vararg args: Any): String =
+    getApplication<Application>().resources.getQuantityString(id, count, *args)
+
+  private fun errorText(error: Throwable): String? =
+    error.userMessage(getApplication<Application>().resources.texts())
+
   private fun post(text: String, undo: UndoAction? = null) {
     _messages.tryEmit(UiMessage(text, undo))
   }
@@ -354,14 +365,14 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
   fun deleteAdjustment(medicationId: String, adjustmentId: String) {
     val medication = repository.snapshot.value.medications.find { it.id == medicationId } ?: return
     repository.saveMedication(Adjustments.remove(medication, adjustmentId))
-    post("Change deleted", UndoAction.RestoreMedication(medication))
+    post(str(R.string.vm_change_deleted), UndoAction.RestoreMedication(medication))
   }
 
   fun saveSchedule(schedule: MedicationSchedule) = repository.saveSchedule(schedule)
 
   fun deleteSchedule(schedule: MedicationSchedule) {
     repository.deleteSchedule(schedule.id)
-    post("Schedule deleted", UndoAction.RestoreSchedule(schedule))
+    post(str(R.string.vm_schedule_deleted), UndoAction.RestoreSchedule(schedule))
   }
 
   fun saveProvider(provider: Provider) = repository.saveProvider(provider)
@@ -467,8 +478,8 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
       }
       post(
         result.fold(
-          onSuccess = { if (encrypted) "Encrypted backup saved" else "Unencrypted backup saved" },
-          onFailure = { "Couldn't save the backup: ${it.message}" },
+          onSuccess = { str(if (encrypted) R.string.vm_backup_saved_encrypted else R.string.vm_backup_saved_plain) },
+          onFailure = { str(R.string.vm_backup_save_failed, errorText(it).orEmpty()) },
         ),
       )
     }
@@ -486,7 +497,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
           }
         },
         onFailure = {
-          post("Couldn't open the backup: ${it.message}")
+          post(str(R.string.vm_backup_open_failed, errorText(it).orEmpty()))
           RestoreUiState.Finished
         },
       )
@@ -503,7 +514,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
       _backupEncryptionConfigured.value = backup.isEncryptionConfigured
       _restoreState.value = result.fold(
         onSuccess = { RestoreUiState.Preview(it) },
-        onFailure = { locked.copy(busy = false, error = it.message ?: "Couldn't unlock the backup") },
+        onFailure = { locked.copy(busy = false, error = errorText(it) ?: str(R.string.vm_backup_unlock_failed)) },
       )
     }
   }
@@ -515,19 +526,19 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
       val result = withContext(Dispatchers.IO) { runCatching { backup.restore(preview.ready.bundle, replace) } }
       result.fold(
         onSuccess = { outcome ->
-          val conflictNote = when (val n = outcome.conflicts.size) {
-            0 -> ""
-            1 -> " · 1 conflict resolved"
-            else -> " · $n conflicts resolved"
-          }
+          val conflicts = outcome.conflicts.size
           post(
-            (if (replace) "Replaced with backup" else "Backup merged") + conflictNote,
+            when {
+              conflicts == 0 -> str(if (replace) R.string.vm_restore_replaced else R.string.vm_restore_merged)
+              replace -> plural(R.plurals.vm_restore_replaced_conflicts, conflicts, conflicts)
+              else -> plural(R.plurals.vm_restore_merged_conflicts, conflicts, conflicts)
+            },
             UndoAction.RestoreBackup(outcome.previous),
           )
           _restoreState.value = RestoreUiState.Finished
         },
         onFailure = {
-          post("Couldn't restore: ${it.message}")
+          post(str(R.string.vm_restore_failed, errorText(it).orEmpty()))
           _restoreState.value = preview.copy(busy = false)
         },
       )

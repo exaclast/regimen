@@ -1,5 +1,8 @@
 package com.exaclast.regimen.sync
 
+import com.exaclast.regimen.R
+import com.exaclast.regimen.model.Message
+import com.exaclast.regimen.model.MessageException
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
@@ -32,12 +35,12 @@ import kotlinx.serialization.json.Json
  */
 object BundleCrypto {
 
-  class NotABackupException : Exception("This file isn't a Regimen backup")
-  class UnsupportedFormatException(format: Int) : Exception("Backup format $format needs a newer version of Regimen")
-  class WrongPassphraseException : Exception("Incorrect passphrase")
-  class WrongKeyException : Exception("This recovery code is for a different backup")
-  class CorruptedException : Exception("The backup is damaged and can't be read")
-  class InvalidRecoveryCodeException : Exception("That recovery code isn't valid; check for typos")
+  class NotABackupException : MessageException(Message(R.string.backup_err_not_backup))
+  class UnsupportedFormatException(format: Int) : MessageException(Message(R.string.backup_err_newer_format, format))
+  class WrongPassphraseException : MessageException(Message(R.string.backup_err_wrong_passphrase))
+  class WrongKeyException : MessageException(Message(R.string.backup_err_wrong_key))
+  class CorruptedException : MessageException(Message(R.string.backup_err_corrupted))
+  class InvalidRecoveryCodeException : MessageException(Message(R.string.backup_err_bad_recovery_code))
 
   const val FORMAT_VERSION = 1
   /** OWASP's 2023 recommendation for PBKDF2-HMAC-SHA256. */

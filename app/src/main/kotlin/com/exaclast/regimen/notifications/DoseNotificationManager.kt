@@ -1,6 +1,9 @@
 package com.exaclast.regimen.notifications
 
 import android.Manifest
+import androidx.annotation.StringRes
+import com.exaclast.regimen.model.Texts
+import com.exaclast.regimen.model.texts
 import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
@@ -85,10 +88,10 @@ object DoseNotificationManager {
 
     val persistentChannel = NotificationChannel(
       CHANNEL_WINDOW_PERSISTENT,
-      "Active Dose Window (Persistent)",
+      context.getString(R.string.channel_window_name),
       NotificationManager.IMPORTANCE_HIGH,
     ).apply {
-      description = "Ongoing notification pinned at the exact start of a dose window with 1-tap Take, Snooze, and Skip actions"
+      description = context.getString(R.string.channel_window_description)
       setShowBadge(true)
       enableVibration(true)
     }
@@ -104,10 +107,10 @@ object DoseNotificationManager {
     // NotificationChannel.setBypassDnd is ignored for third-party apps.
     val alarmChannel = NotificationChannel(
       CHANNEL_WINDOW_ALARM,
-      "End-of-Window Dose Alarm",
+      context.getString(R.string.channel_alarm_name),
       NotificationManager.IMPORTANCE_HIGH,
     ).apply {
-      description = "Ringing alarm triggered at the exact end of a dose window if no action was taken"
+      description = context.getString(R.string.channel_alarm_description)
       enableVibration(true)
       setSound(alarmSoundUri, alarmAudioAttrs)
     }
@@ -177,11 +180,11 @@ object DoseNotificationManager {
   }
 
   /** What stops reminders from working, most serious first. */
-  enum class ReminderProblem(val message: String) {
-    NOTIFICATIONS_DENIED("Notifications are turned off for Regimen, so doses won't remind you."),
-    CHANNEL_BLOCKED("A Regimen notification category is blocked, so some reminders won't show."),
-    EXACT_ALARMS_DENIED("Exact alarms aren't allowed, so reminders may arrive late or not at all."),
-    FULL_SCREEN_BLOCKED("The end-of-window alarm can't take over the screen, so it will only be a notification."),
+  enum class ReminderProblem(@param:StringRes val messageRes: Int) {
+    NOTIFICATIONS_DENIED(R.string.problem_notifications_denied),
+    CHANNEL_BLOCKED(R.string.problem_channel_blocked),
+    EXACT_ALARMS_DENIED(R.string.problem_exact_alarms_denied),
+    FULL_SCREEN_BLOCKED(R.string.problem_full_screen_blocked),
   }
 
   fun reminderProblem(context: Context): ReminderProblem? {
@@ -520,11 +523,18 @@ object DoseNotificationManager {
     ClockPreferences.use24Hour = DateFormat.is24HourFormat(context)
 
     val single = items.size == 1
-    val baseTitle = if (single) "${bucket.name} dose" else "${bucket.name} medications"
-    val title = if (isAlarm) "$baseTitle overdue" else baseTitle
-    val countText = if (single) "1 dose due" else "${items.size} doses due"
+    val title = context.getString(
+      when {
+        isAlarm && single -> R.string.notif_title_dose_overdue
+        isAlarm -> R.string.notif_title_medications_overdue
+        single -> R.string.notif_title_dose
+        else -> R.string.notif_title_medications
+      },
+      bucket.name,
+    )
+    val countText = context.resources.getQuantityString(R.plurals.notif_doses_due, items.size, items.size)
 
-    val lines = windowBodyLines(items)
+    val lines = windowBodyLines(context.resources.texts(), items)
     // A single limited dose leads with the limit: it's why there's no Take button.
     val collapsedText = if (single) lines.last() else items.joinToString(", ") { it.medication.primaryName }
 
@@ -597,9 +607,9 @@ object DoseNotificationManager {
       .setDeleteIntent(action(DoseActionReceiver.ACTION_DISMISSED, 4))
     if (readyKeys.isNotEmpty()) {
       val takeLabel = when {
-        readyKeys.size < keys.size -> "Take ${readyKeys.size} ready"
-        single -> "Take"
-        else -> "Take all"
+        readyKeys.size < keys.size -> context.getString(R.string.notif_take_ready, readyKeys.size)
+        single -> context.getString(R.string.notif_take)
+        else -> context.getString(R.string.notif_take_all)
       }
       builder.addAction(
         android.R.drawable.checkbox_on_background,
@@ -608,13 +618,13 @@ object DoseNotificationManager {
       )
     }
     if (readyKeys.size < keys.size) {
-      builder.addAction(android.R.drawable.ic_menu_view, "Open", contentPendingIntent)
+      builder.addAction(android.R.drawable.ic_menu_view, context.getString(R.string.notif_open), contentPendingIntent)
     }
     // Skipping several doses from the shade (no undo there) is too easy to do by accident.
     if (single) {
       builder.addAction(
         android.R.drawable.ic_menu_close_clear_cancel,
-        "Skip",
+        context.getString(R.string.notif_skip),
         action(DoseActionReceiver.ACTION_SKIP, 3),
       )
     }
@@ -640,14 +650,17 @@ object DoseNotificationManager {
    * A window notification's body. Each row is one line that gets cut off when it's long, so the dose
    * comes before the strength, and a pacing limit gets its own row.
    */
-  internal fun windowBodyLines(items: List<ScheduledDoseItem>): List<String> = items.flatMap { item ->
+  internal fun windowBodyLines(texts: Texts, items: List<ScheduledDoseItem>): List<String> = items.flatMap { item ->
     val med = item.medication
     val details = listOfNotNull(
       item.suggestedSite?.takeIf { med.tracksSites && it.isNotBlank() },
       med.strength.takeIf { it.isNotBlank() },
     )
-    val dose = (listOf(item.formattedDoseInstruction()) + details).joinToString(" · ")
-    listOfNotNull("${med.primaryName} — $dose", item.pacing.warningText()?.let { "${med.primaryName}: $it" })
+    val dose = (listOf(item.formattedDoseInstruction(texts)) + details).joinToString(" · ")
+    listOfNotNull(
+      texts.get(R.string.notif_line, med.primaryName, dose),
+      item.pacing.warningText(texts)?.let { texts.get(R.string.notif_limit_line, med.primaryName, it) },
+    )
   }
 
   /**

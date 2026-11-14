@@ -93,9 +93,9 @@ object IndicationTimeline {
    * Titled sections for lists and pickers: the kinds (acute, chronic, preventive), then allergies and
    * intolerances by what they're to.
    */
-  fun sections(indications: List<Indication>): List<Pair<String, List<Indication>>> =
-    groupedByKind(indications).map { (kind, group) -> kind.displayName to group } +
-      groupedByAllergen(indications).map { (type, group) -> type.sectionTitle to group }
+  fun sections(indications: List<Indication>): List<Pair<Int, List<Indication>>> =
+    groupedByKind(indications).map { (kind, group) -> kind.labelRes to group } +
+      groupedByAllergen(indications).map { (type, group) -> type.sectionTitleRes to group }
 
   /** A new episode of a past indication ("had this again"): same name, notes and providers, starting [today]. */
   fun recurrence(previous: Indication, today: LocalDate): Indication = Indication(

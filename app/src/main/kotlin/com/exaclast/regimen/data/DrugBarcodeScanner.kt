@@ -5,6 +5,9 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import com.exaclast.regimen.R
+import com.exaclast.regimen.model.Message
+import com.exaclast.regimen.model.MessageException
 import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.common.GenAiException
@@ -28,13 +31,9 @@ object DrugBarcodeScanner {
    */
   private const val ERROR_CODE_POLICY_BLOCKED = 4
 
-  const val POLICY_BLOCKED_MESSAGE =
-    "The on-device AI declined to read this label. This sometimes happens even with a clear photo; " +
-      "you can try again with a different photo, or enter the details manually."
-
   private fun Throwable.toUserFacing(): Throwable =
     if (this is GenAiException && errorCode == ERROR_CODE_POLICY_BLOCKED) {
-      IllegalStateException(POLICY_BLOCKED_MESSAGE, this)
+      MessageException(Message(R.string.scan_policy_blocked)).apply { initCause(this@toUserFacing) }
     } else {
       this
     }
@@ -78,7 +77,7 @@ object DrugBarcodeScanner {
    * Initiates the background model download for Gemini Nano via AICore.
    */
   suspend fun startNanoDownload(
-    onProgress: (String) -> Unit = {},
+    onProgress: (Message) -> Unit = {},
   ): Result<Unit> = withContext(Dispatchers.IO) {
     runCatching {
       val model = newClient()
@@ -86,19 +85,19 @@ object DrugBarcodeScanner {
         val status = model.checkStatus()
         if (status == FeatureStatus.AVAILABLE) return@runCatching
         if (status != FeatureStatus.DOWNLOADABLE && status != FeatureStatus.DOWNLOADING) {
-          throw IllegalStateException("Gemini Nano is not downloadable on this device ($status).")
+          throw MessageException(Message(R.string.nano_not_downloadable, status))
         }
-        onProgress("Downloading Gemini Nano via AICore...")
+        onProgress(Message(R.string.nano_downloading_aicore))
         model.download().collect { dl ->
           when (dl) {
-            is DownloadStatus.DownloadStarted -> onProgress("Download started...")
+            is DownloadStatus.DownloadStarted -> onProgress(Message(R.string.nano_download_started))
             is DownloadStatus.DownloadProgress -> {
               val mb = dl.totalBytesDownloaded / (1024 * 1024)
-              onProgress("Downloading ($mb MB)...")
+              onProgress(Message(R.string.nano_downloading_mb, mb))
             }
-            is DownloadStatus.DownloadCompleted -> onProgress("Gemini Nano ready!")
-            is DownloadStatus.DownloadFailed -> throw IllegalStateException(
-              "Download failed: ${dl.e.localizedMessage ?: "Unknown error"}"
+            is DownloadStatus.DownloadCompleted -> onProgress(Message(R.string.nano_msg_ready))
+            is DownloadStatus.DownloadFailed -> throw MessageException(
+              Message(R.string.nano_msg_download_failed, dl.e.localizedMessage ?: Message(R.string.nano_unknown_error)),
             )
           }
         }
@@ -168,15 +167,13 @@ object DrugBarcodeScanner {
     context: Context,
     imageUris: List<Uri>,
     userConfiguredPatientName: String? = null,
-    onStatusUpdate: (String) -> Unit = {},
+    onStatusUpdate: (Message) -> Unit = {},
   ): Result<ParsedMedicationLabel> = withContext(Dispatchers.IO) {
     runCatching {
-      onStatusUpdate(if (imageUris.size == 1) "Reading label text..." else "Reading label text from ${imageUris.size} photos...")
+      onStatusUpdate(Message(R.plurals.scan_reading, listOf(imageUris.size), quantity = imageUris.size))
       val texts = LabelTextRecognizer.recognize(context, imageUris).map { it.trim() }.filter { it.isNotEmpty() }
       if (texts.isEmpty()) {
-        throw IllegalStateException(
-          "Couldn't read any text from the photo. Try better light, and hold the label flat and closer."
-        )
+        throw MessageException(Message(R.string.scan_no_text))
       }
       val combined = if (texts.size == 1) {
         texts.single()
@@ -201,13 +198,13 @@ object DrugBarcodeScanner {
   suspend fun analyzeLabelFromText(
     rawLabelText: String,
     userConfiguredPatientName: String? = null,
-    onStatusUpdate: (String) -> Unit = {},
+    onStatusUpdate: (Message) -> Unit = {},
   ): Result<ParsedMedicationLabel> = withContext(Dispatchers.IO) {
     runCatching {
       val model = newClient()
       try {
         ensureModelReady(model, onStatusUpdate)
-        onStatusUpdate("Analyzing label text with on-device Gemini Nano...")
+        onStatusUpdate(Message(R.string.scan_analyzing))
         val request = generateContentRequest(
           TextPart(
             DrugLabelParser.buildLabelExtractionPrompt(
@@ -221,7 +218,7 @@ object DrugBarcodeScanner {
         }
         val response = model.generateContent(request)
         val outputText = response.candidates.firstOrNull()?.text
-          ?: throw IllegalStateException("Gemini Nano returned an empty response.")
+          ?: throw MessageException(Message(R.string.nano_empty_response))
         DrugLabelParser.parseGeminiJsonResponse(
           rawOutput = outputText,
           userConfiguredPatientName = userConfiguredPatientName,
@@ -234,29 +231,29 @@ object DrugBarcodeScanner {
 
   private suspend fun ensureModelReady(
     model: GenerativeModel,
-    onStatusUpdate: (String) -> Unit,
+    onStatusUpdate: (Message) -> Unit,
   ) {
     when (model.checkStatus()) {
       FeatureStatus.AVAILABLE -> return
       FeatureStatus.DOWNLOADABLE, FeatureStatus.DOWNLOADING -> {
-        onStatusUpdate("Downloading on-device Gemini Nano model via AICore...")
+        onStatusUpdate(Message(R.string.scan_model_downloading_aicore))
         model.download().collect { status ->
           when (status) {
             is DownloadStatus.DownloadStarted ->
-              onStatusUpdate("Downloading on-device Gemini Nano model...")
+              onStatusUpdate(Message(R.string.scan_model_downloading))
             is DownloadStatus.DownloadProgress ->
-              onStatusUpdate("Downloading Gemini Nano (${status.totalBytesDownloaded / (1024 * 1024)} MB)...")
+              onStatusUpdate(Message(R.string.scan_model_downloading_mb, status.totalBytesDownloaded / (1024 * 1024)))
             is DownloadStatus.DownloadCompleted ->
-              onStatusUpdate("Gemini Nano ready — analyzing label...")
+              onStatusUpdate(Message(R.string.scan_model_ready))
             is DownloadStatus.DownloadFailed ->
-              throw IllegalStateException(
-                "Gemini Nano model download failed: ${status.e.localizedMessage ?: "Unknown error"}"
+              throw MessageException(
+                Message(R.string.scan_model_download_failed, status.e.localizedMessage ?: Message(R.string.nano_unknown_error)),
               )
           }
         }
       }
       else -> {
-        throw IllegalStateException("On-device Gemini Nano (AICore) is not available on this device.")
+        throw MessageException(Message(R.string.nano_unavailable))
       }
     }
   }

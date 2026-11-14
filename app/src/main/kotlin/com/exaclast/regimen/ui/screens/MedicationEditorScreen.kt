@@ -125,7 +125,12 @@ import com.exaclast.regimen.model.formatNum
 import com.exaclast.regimen.ui.components.DatePickerField
 import com.exaclast.regimen.ui.components.DateRangePickerDialog
 import com.exaclast.regimen.ui.components.EditorScaffold
+import com.exaclast.regimen.model.MessageException
+import com.exaclast.regimen.model.Texts
+import com.exaclast.regimen.model.texts
+import com.exaclast.regimen.model.userMessage
 import com.exaclast.regimen.ui.components.UiFormat
+import com.exaclast.regimen.ui.components.label
 import com.exaclast.regimen.ui.NumberInput
 import com.exaclast.regimen.ui.checkOptionalPositiveDecimal
 import com.exaclast.regimen.ui.checkOptionalPositiveInt
@@ -144,17 +149,19 @@ import kotlinx.coroutines.launch
  * The line under the strength for forms measured by volume: what one mL holds and how much the default
  * dose is, or how to write the strength so volumes can be worked out. The flag marks a problem.
  */
-internal fun volumeHint(strength: String, dose: Double?, doseUnit: DoseUnit): Pair<String, Boolean>? {
+internal fun volumeHint(texts: Texts, strength: String, dose: Double?, doseUnit: DoseUnit): Pair<String, Boolean>? {
   if (strength.isBlank()) return null
   val concentration = Concentration.parse(strength)
-    ?: return "To show volumes, write the strength per mL, like 200 mg/mL or 400 mg/5 mL." to false
-  val perMl = "${concentration.formatted()}."
+    ?: return texts.get(R.string.volume_hint_write_strength) to false
+  val formatted = concentration.formatted()
+  val perMl = texts.get(R.string.volume_hint_per_ml, formatted)
   if (dose == null || doseUnit == DoseUnit.ML) return perMl to false
   val volume = concentration.volumeMl(dose, doseUnit)
   return when {
-    volume != null -> "$perMl ${formatNum(dose)} ${doseUnit.symbol} is ${formatNum(volume)} mL." to false
+    volume != null ->
+      texts.get(R.string.volume_hint_dose_is, formatted, formatNum(dose), doseUnit.symbol, formatNum(volume)) to false
     doseUnit in listOf(DoseUnit.MG, DoseUnit.MCG, DoseUnit.UNITS, DoseUnit.IU) ->
-      "$perMl A dose in ${doseUnit.symbol} can't be converted to mL from ${concentration.unit.symbol}." to true
+      texts.get(R.string.volume_hint_cant_convert, formatted, doseUnit.symbol, concentration.unit.symbol) to true
     else -> perMl to false
   }
 }
@@ -171,7 +178,11 @@ internal fun HubColorHint(gauge: Int?) {
         .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
     )
     Text(
-      text = "${gauge}G: ${hub.name.lowercase()} hub (standard color; some brands differ)",
+      text = stringResource(
+        R.string.hub_hint,
+        gauge ?: 0,
+        stringResource(hub.nameRes).lowercase(LocalConfiguration.current.locales[0]),
+      ),
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -451,7 +462,7 @@ fun MedicationEditorScreen(
       when (outcome) {
         is CrossReferenceOutcome.UnambiguousMatch -> {
           val cand = outcome.candidate
-          val signals = cand.matchedSignals.joinToString(", ")
+          val signals = cand.matchedSignals.joinToString(", ") { it.resolve(resources.texts()) }
           applyFdaResultToForm(
             fda = cand.result,
             statusSummary = resources.getString(R.string.editor_verified, cand.result.ndc11, signals),
@@ -462,9 +473,9 @@ fun MedicationEditorScreen(
         }
         is CrossReferenceOutcome.NoMatch -> {
           if (formulaName.isBlank() && brandName.isBlank()) {
-            ndcErrorText = outcome.message
+            ndcErrorText = outcome.message.resolve(resources.texts())
           } else {
-            ndcStatusText = outcome.message
+            ndcStatusText = outcome.message.resolve(resources.texts())
           }
         }
       }
@@ -543,13 +554,13 @@ fun MedicationEditorScreen(
         context = context,
         imageUris = imageUris,
         userConfiguredPatientName = configuredPatientName.takeIf { it.isNotBlank() },
-        onStatusUpdate = { status -> ndcStatusText = status },
+        onStatusUpdate = { status -> ndcStatusText = status.resolve(resources.texts()) },
       )
       DrugBarcodeScanner.clearLabelPhotos(context)
       isLookingUpNdc = false
       res.fold(
         onSuccess = { parsed -> applyParsedMedicationLabel(parsed) },
-        onFailure = { err -> ndcErrorText = err.localizedMessage ?: resources.getString(R.string.editor_analyze_failed) },
+        onFailure = { err -> ndcErrorText = err.userMessage(resources.texts()) ?: resources.getString(R.string.editor_analyze_failed) },
       )
     }
   }
@@ -562,12 +573,12 @@ fun MedicationEditorScreen(
       val res = DrugBarcodeScanner.analyzeLabelFromText(
         rawLabelText = rawText,
         userConfiguredPatientName = configuredPatientName.takeIf { it.isNotBlank() },
-        onStatusUpdate = { status -> ndcStatusText = status },
+        onStatusUpdate = { status -> ndcStatusText = status.resolve(resources.texts()) },
       )
       isLookingUpNdc = false
       res.fold(
         onSuccess = { parsed -> applyParsedMedicationLabel(parsed) },
-        onFailure = { err -> ndcErrorText = err.localizedMessage ?: resources.getString(R.string.editor_analyze_text_failed) },
+        onFailure = { err -> ndcErrorText = err.userMessage(resources.texts()) ?: resources.getString(R.string.editor_analyze_text_failed) },
       )
     }
   }
@@ -613,7 +624,8 @@ fun MedicationEditorScreen(
         },
         onFailure = { err ->
           ndcMatched = false
-          ndcErrorText = err.message ?: resources.getString(R.string.editor_ndc_not_found)
+          ndcErrorText = (err as? MessageException)?.text?.resolve(resources.texts())
+            ?: resources.getString(R.string.editor_ndc_not_found)
         },
       )
     }
@@ -881,9 +893,9 @@ fun MedicationEditorScreen(
             )
             DropdownSelectorField(
               label = stringResource(R.string.editor_form),
-              selectedText = form.displayName,
+              selectedText = form.label(),
               options = MedicationForm.entries,
-              optionLabel = { it.displayName },
+              optionLabel = { resources.label(it) },
               onOptionSelected = { selectedForm ->
                 form = selectedForm
                 if (selectedForm.isInjectable && defaultDoseUnit == DoseUnit.TABLET) {
@@ -914,9 +926,9 @@ fun MedicationEditorScreen(
             )
             DropdownSelectorField(
               label = stringResource(R.string.editor_unit),
-              selectedText = "${defaultDoseUnit.symbol} (${defaultDoseUnit.displayName})",
+              selectedText = "${defaultDoseUnit.symbol} (${defaultDoseUnit.label()})",
               options = DoseUnit.entries,
-              optionLabel = { "${it.symbol} — ${it.displayName}" },
+              optionLabel = { "${it.symbol} — ${resources.label(it)}" },
               onOptionSelected = { defaultDoseUnit = it },
               modifier = Modifier.weight(0.55f),
             )
@@ -924,7 +936,7 @@ fun MedicationEditorScreen(
 
           // Volumes come from the strength, so there's no separate concentration to keep in step.
           if (form == MedicationForm.INJECTABLE_VIAL || form == MedicationForm.LIQUID) {
-            volumeHint(strength, doseCheck.validOrNull(), defaultDoseUnit)?.let { (text, isProblem) ->
+            volumeHint(resources.texts(), strength, doseCheck.validOrNull(), defaultDoseUnit)?.let { (text, isProblem) ->
               Text(
                 text = text,
                 style = MaterialTheme.typography.bodySmall,
@@ -938,7 +950,7 @@ fun MedicationEditorScreen(
             Text(stringResource(R.string.indications_title), style = MaterialTheme.typography.titleSmall)
             IndicationTimeline.sections(indications).forEach { (title, group) ->
               Text(
-                title,
+                stringResource(title),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
@@ -988,9 +1000,9 @@ fun MedicationEditorScreen(
 
                 DropdownSelectorField(
                   label = stringResource(R.string.editor_route),
-                  selectedText = route.displayName,
+                  selectedText = route.label(),
                   options = InjectionRoute.entries,
-                  optionLabel = { it.displayName },
+                  optionLabel = { resources.label(it) },
                   onOptionSelected = { route = it },
                   modifier = Modifier.fillMaxWidth(),
                 )
@@ -1010,9 +1022,9 @@ fun MedicationEditorScreen(
                 if (!pen) {
                   DropdownSelectorField(
                     label = stringResource(R.string.med_syringe),
-                    selectedText = syringeType?.displayName ?: stringResource(R.string.value_not_set),
+                    selectedText = syringeType?.label() ?: stringResource(R.string.value_not_set),
                     options = listOf<SyringeType?>(null) + SyringeType.entries,
-                    optionLabel = { it?.displayName ?: notSetLabel },
+                    optionLabel = { it?.let { v -> resources.label(v) } ?: notSetLabel },
                     onOptionSelected = { type ->
                       syringeType = type
                       val sizes = type?.volumesMl.orEmpty()
@@ -1153,12 +1165,12 @@ fun MedicationEditorScreen(
                       },
                       shape = SegmentedButtonDefaults.itemShape(index = i, count = SiteMode.entries.size),
                       icon = {},
-                      label = { Text(mode.displayName, maxLines = 1) },
+                      label = { Text(mode.label(), maxLines = 1) },
                     )
                   }
                 }
                 Text(
-                  text = siteMode.description,
+                  text = stringResource(siteMode.descriptionRes),
                   style = MaterialTheme.typography.bodySmall,
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1539,11 +1551,11 @@ fun MedicationEditorScreen(
   // Disambiguation Dialog when multiple OpenFDA packages/strengths/manufacturers match
   disambiguationPrompt?.let { prompt ->
     CrossReferenceDisambiguationDialog(
-      reason = prompt.reason,
+      reason = prompt.reason.resolve(resources.texts()),
       candidates = prompt.candidates,
       onSelectCandidate = { chosen ->
         disambiguationPrompt = null
-        val signals = chosen.matchedSignals.joinToString(", ")
+        val signals = chosen.matchedSignals.joinToString(", ") { it.resolve(resources.texts()) }
         applyFdaResultToForm(
           fda = chosen.result,
           statusSummary = resources.getString(R.string.editor_selected_match, chosen.result.ndc11, signals),
@@ -1565,6 +1577,7 @@ private fun CrossReferenceDisambiguationDialog(
   onSelectCandidate: (CrossReferencedFdaCandidate) -> Unit,
   onKeepWithoutNdc: () -> Unit,
 ) {
+  val texts = LocalResources.current.texts()
   AlertDialog(
     onDismissRequest = onKeepWithoutNdc,
     title = { Text(stringResource(R.string.editor_confirm_match)) },
@@ -1615,20 +1628,20 @@ private fun CrossReferenceDisambiguationDialog(
                 fontWeight = FontWeight.SemiBold,
               )
               Text(
-                text = stringResource(R.string.editor_candidate_line, res.form.displayName, res.manufacturer ?: stringResource(R.string.editor_unspecified), res.ndc11),
+                text = stringResource(R.string.editor_candidate_line, res.form.label(), res.manufacturer ?: stringResource(R.string.editor_unspecified), res.ndc11),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
               if (cand.matchedSignals.isNotEmpty()) {
                 Text(
-                  text = stringResource(R.string.editor_matched, cand.matchedSignals.joinToString(" • ")),
+                  text = stringResource(R.string.editor_matched, cand.matchedSignals.joinToString(" • ") { it.resolve(texts) }),
                   style = MaterialTheme.typography.labelSmall,
                   color = MaterialTheme.colorScheme.primary,
                 )
               }
               if (cand.missingOrDifferentSignals.isNotEmpty()) {
                 Text(
-                  text = stringResource(R.string.editor_note, cand.missingOrDifferentSignals.joinToString(" • ")),
+                  text = stringResource(R.string.editor_note, cand.missingOrDifferentSignals.joinToString(" • ") { it.resolve(texts) }),
                   style = MaterialTheme.typography.labelSmall,
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1987,9 +2000,9 @@ fun ScheduleEditorScreen(
 
     DropdownSelectorField(
       label = stringResource(R.string.schedule_how_often),
-      selectedText = frequencyType.displayName,
+      selectedText = frequencyType.label(),
       options = ScheduleFrequencyType.entries,
-      optionLabel = { it.displayName },
+      optionLabel = { resources.label(it) },
       onOptionSelected = { frequencyType = it },
       modifier = Modifier.fillMaxWidth(),
     )
@@ -2007,7 +2020,7 @@ fun ScheduleEditorScreen(
         label = stringResource(R.string.editor_unit),
         selectedText = doseUnit.symbol,
         options = DoseUnit.entries,
-        optionLabel = { "${it.symbol} — ${it.displayName}" },
+        optionLabel = { "${it.symbol} — ${resources.label(it)}" },
         onOptionSelected = { doseUnit = it },
         modifier = Modifier.weight(1f),
       )

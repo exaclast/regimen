@@ -56,6 +56,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import com.exaclast.regimen.model.texts
+import com.exaclast.regimen.model.userMessage
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -117,6 +119,7 @@ fun BackupEncryptionScreen(
     BackupEncryptionMode.RESET -> stringResource(R.string.backup_reset_passphrase_title)
   }
   val genericError = stringResource(R.string.error_generic)
+  val errorTexts = LocalResources.current.texts()
 
   fun submit() {
     if (!inputValid || busy) return
@@ -126,7 +129,7 @@ fun BackupEncryptionScreen(
       busy = false
       result.fold(
         onSuccess = { code -> if (code != null) recoveryCode = code else onDone(true) },
-        onFailure = { error = it.message ?: genericError },
+        onFailure = { error = it.userMessage(errorTexts) ?: genericError },
       )
     }
     when (mode) {
@@ -428,7 +431,7 @@ private fun PreviewContent(state: RestoreUiState.Preview, onApply: (Boolean) -> 
           supportingContent = { Text(diffSummary(resources, kind)) },
           trailingContent = { Text("${kind.inFile}", style = MaterialTheme.typography.titleMedium) },
           colors = groupListItemColors(),
-        ) { Text(kind.label) }
+        ) { Text(stringResource(kind.labelRes)) }
       }
     }
   }

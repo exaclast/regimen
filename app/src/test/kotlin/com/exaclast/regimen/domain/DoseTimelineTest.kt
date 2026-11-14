@@ -1,5 +1,6 @@
 package com.exaclast.regimen.domain
 
+import com.exaclast.regimen.TestTexts
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
@@ -35,7 +36,7 @@ class DoseTimelineTest {
     existingLog = log,
     suggestedSite = null,
     lastSiteUsed = null,
-    pacing = PacingEvaluation(canTakeNow = true, isIntervalWarning = false, isDailyLimitReached = false, statusSummary = "Ready"),
+    pacing = PacingEvaluation(canTakeNow = true, isIntervalWarning = false, isDailyLimitReached = false),
     indications = emptyList(),
     prescriber = null,
   )
@@ -155,24 +156,24 @@ class DoseTimelineTest {
 
   @Test
   fun pacingWarningExplainsTheLimit() {
-    val base = PacingEvaluation(canTakeNow = false, isIntervalWarning = false, isDailyLimitReached = true, statusSummary = "")
+    val base = PacingEvaluation(canTakeNow = false, isIntervalWarning = false, isDailyLimitReached = true)
     val now = at(3, 9)
-    assertEquals("Daily amount limit reached", base.warningText(now, zone))
-    assertEquals("Daily limit reached (2 of 2)", base.copy(dosesTakenToday = 2, maxDailyDoses = 2.0).warningText(now, zone))
+    assertEquals("Daily amount limit reached", base.warningText(TestTexts, now, zone))
+    assertEquals("Daily limit reached (2 of 2)", base.copy(dosesTakenToday = 2, maxDailyDoses = 2.0).warningText(TestTexts, now, zone))
     val waiting = base.copy(isDailyLimitReached = false, isIntervalWarning = true, nextAllowedAtMillis = at(3, 12))
-    assertEquals("Next dose allowed at 12:00 PM", waiting.warningText(now, zone))
-    assertNull(base.copy(canTakeNow = true, isDailyLimitReached = false).warningText(now, zone))
+    assertEquals("Next dose allowed at 12:00 PM", waiting.warningText(TestTexts, now, zone))
+    assertNull(base.copy(canTakeNow = true, isDailyLimitReached = false).warningText(TestTexts, now, zone))
   }
 
   @Test
   fun pacingWarningSaysWhichDayTheNextDoseIsAllowed() {
-    val waiting = PacingEvaluation(canTakeNow = false, isIntervalWarning = true, isDailyLimitReached = false, statusSummary = "")
+    val waiting = PacingEvaluation(canTakeNow = false, isIntervalWarning = true, isDailyLimitReached = false)
     val now = at(3, 22)
     val tomorrow = waiting.copy(nextAllowedAtMillis = at(4, 18))
-    assertEquals("tomorrow at 6:00 PM", tomorrow.nextAllowedText(now, zone))
-    assertEquals("Next dose allowed tomorrow at 6:00 PM", tomorrow.warningText(now, zone))
+    assertEquals("tomorrow at 6:00 PM", tomorrow.nextAllowedText(TestTexts, now, zone))
+    assertEquals("Next dose allowed tomorrow at 6:00 PM", tomorrow.warningText(TestTexts, now, zone))
     val later = waiting.copy(nextAllowedAtMillis = at(9, 18))
-    assertEquals("Next dose allowed Nov 9 at 6:00 PM", later.warningText(now, zone))
+    assertEquals("Next dose allowed Nov 9 at 6:00 PM", later.warningText(TestTexts, now, zone))
   }
 
   @Test

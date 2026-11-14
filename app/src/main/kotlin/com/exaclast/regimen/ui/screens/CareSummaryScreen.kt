@@ -32,6 +32,8 @@ import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.CareSummary
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.SectionHeader
+import androidx.compose.ui.platform.LocalResources
+import com.exaclast.regimen.model.texts
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.groupListItemColors
 import java.time.LocalDate
@@ -43,7 +45,15 @@ import java.time.LocalDate
 @Composable
 fun CareSummaryScreen(snapshot: RegimenSnapshot, onBack: () -> Unit) {
   val context = LocalContext.current
-  val summary = remember(snapshot) { CareSummary.build(snapshot, formatTaken = UiFormat::dateTime, formatDate = { UiFormat.date(it, withWeekday = false) }) }
+  val resources = LocalResources.current
+  val summary = remember(snapshot, resources) {
+    CareSummary.build(
+      resources.texts(),
+      snapshot,
+      formatTaken = UiFormat::dateTime,
+      formatDate = { UiFormat.date(it, withWeekday = false) },
+    )
+  }
   val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
   val subject = stringResource(R.string.summary_title)
   val chooserTitle = stringResource(R.string.summary_share_chooser)
@@ -60,7 +70,7 @@ fun CareSummaryScreen(snapshot: RegimenSnapshot, onBack: () -> Unit) {
         actions = {
           IconButton(
             onClick = {
-              val text = CareSummary.toText(summary, asOf = UiFormat.date(LocalDate.now(), withWeekday = false))
+              val text = CareSummary.toText(resources.texts(), summary, asOf = UiFormat.date(LocalDate.now(), withWeekday = false))
               val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
                 putExtra(Intent.EXTRA_SUBJECT, subject)

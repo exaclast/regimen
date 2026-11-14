@@ -33,6 +33,9 @@ import com.exaclast.regimen.ui.checkOptionalPositiveDecimal
 import com.exaclast.regimen.ui.components.DatePickerField
 import com.exaclast.regimen.ui.components.EditorScaffold
 import com.exaclast.regimen.ui.components.SwitchRow
+import com.exaclast.regimen.ui.components.label
+import com.exaclast.regimen.model.texts
+import androidx.compose.ui.platform.LocalResources
 import java.time.LocalDate
 
 /**
@@ -124,7 +127,7 @@ fun AdjustmentEditorScreen(
         onValueChange = { text -> doseTexts = doseTexts.toMutableList().also { it[i] = text } },
         check = doseChecks[i],
         // The current value is in the label: a placeholder only shows once the field is focused.
-        label = { Text(stringResource(R.string.adjust_dose_now, ScheduleText.describe(schedule, buckets), formatNum(prior.amount), prior.unit.symbol)) },
+        label = { Text(stringResource(R.string.adjust_dose_now, ScheduleText.describe(LocalResources.current.texts(), schedule, buckets), formatNum(prior.amount), prior.unit.symbol)) },
         modifier = Modifier.fillMaxWidth(),
       )
     }
@@ -167,8 +170,8 @@ fun AdjustmentEditorScreen(
     initial?.injectableDetails?.let { details ->
       SwitchRow(
         title = stringResource(R.string.adjust_keep_injection),
-        subtitle = Adjustments.describe(initial.copy(scheduleDoses = emptyList(), strength = null, ndc11 = null, defaultDose = null)) { null }
-          .joinToString().ifEmpty { details.route.displayName },
+        subtitle = Adjustments.describe(LocalResources.current.texts(), initial.copy(scheduleDoses = emptyList(), strength = null, ndc11 = null, defaultDose = null)) { null }
+          .joinToString().ifEmpty { details.route.label() },
         checked = keepInjection,
         onCheckedChange = { keepInjection = it },
       )

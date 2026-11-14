@@ -1,9 +1,12 @@
 package com.exaclast.regimen.data
 
+import com.exaclast.regimen.R
 import com.exaclast.regimen.model.Concentration
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.InjectionRoute
 import com.exaclast.regimen.model.MedicationForm
+import com.exaclast.regimen.model.Message
+import com.exaclast.regimen.model.MessageException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -19,7 +22,7 @@ data class ParsedDrugBarcode(
   val gtin14: String? = null,
   val expirationDateIso: String? = null,
   val lotNumber: String? = null,
-  val nonNdcHint: String? = null,
+  val nonNdcHint: Message? = null,
 )
 
 data class FdaDrugLookupResult(
@@ -55,8 +58,8 @@ data class DrugCrossReferenceCriteria(
 data class CrossReferencedFdaCandidate(
   val result: FdaDrugLookupResult,
   val score: Int,
-  val matchedSignals: List<String>,
-  val missingOrDifferentSignals: List<String>,
+  val matchedSignals: List<Message>,
+  val missingOrDifferentSignals: List<Message>,
   val matchesName: Boolean,
   /** The name's words are the same, not just close: look-alike drugs differ by a letter or two. */
   val exactNameMatch: Boolean,
@@ -68,10 +71,10 @@ data class CrossReferencedFdaCandidate(
 sealed class CrossReferenceOutcome {
   data class UnambiguousMatch(val candidate: CrossReferencedFdaCandidate) : CrossReferenceOutcome()
   data class NeedsUserSelection(
-    val reason: String,
+    val reason: Message,
     val candidates: List<CrossReferencedFdaCandidate>,
   ) : CrossReferenceOutcome()
-  data class NoMatch(val message: String) : CrossReferenceOutcome()
+  data class NoMatch(val message: Message) : CrossReferenceOutcome()
 }
 
 @Serializable
@@ -212,7 +215,7 @@ object FdaNdcLookupService {
         return ParsedDrugBarcode(
           rawBarcode = rawInput,
           extractedNdc = cleaned,
-          nonNdcHint = "Scanned code '$cleaned' is an internal packaging/lot code (${digitsOnly.length} digits), not an FDA NDC. Tap 'Scan Label' to read the printed drug text instead.",
+          nonNdcHint = Message(R.string.fda_hint_short_code, cleaned, digitsOnly.length),
         )
       }
 
@@ -221,7 +224,7 @@ object FdaNdcLookupService {
         return ParsedDrugBarcode(
           rawBarcode = rawInput,
           extractedNdc = digitsOnly.take(11),
-          nonNdcHint = "Pharmacy vial barcode ('$cleaned') encodes a store prescription refill number rather than an FDA NDC. Tap 'Scan Label' to read the printed medication text.",
+          nonNdcHint = Message(R.string.fda_hint_pharmacy, cleaned),
         )
       }
     }
@@ -355,10 +358,7 @@ object FdaNdcLookupService {
       val primaryNdc11 = candidates.first()
       val digitsOnly = primaryNdc11.filter { it.isDigit() }
       if (digitsOnly.length < 10) {
-        throw IllegalArgumentException(
-          parsedBarcode.nonNdcHint
-            ?: "Please enter a valid 10- or 11-digit NDC (or tap 'Scan Label' to read printed bottle text)."
-        )
+        throw MessageException(parsedBarcode.nonNdcHint ?: Message(R.string.fda_invalid_ndc))
       }
 
       // 1. Exact package: a bare 10-digit NDC only has three layouts (4-4-2, 5-3-2, 5-4-1), and the
@@ -376,10 +376,7 @@ object FdaNdcLookupService {
         )
       }
 
-      throw IllegalStateException(
-        parsedBarcode.nonNdcHint
-          ?: "No matching FDA NDC record found for $primaryNdc11. Tap 'Scan Label' to read the printed drug name & strength."
-      )
+      throw MessageException(parsedBarcode.nonNdcHint ?: Message(R.string.fda_no_ndc_record, primaryNdc11))
     }
   }
 
@@ -414,7 +411,7 @@ object FdaNdcLookupService {
         if (ndcMatchIsConclusive(scored, criteria)) {
           val withNdcSignal = scored.copy(
             score = scored.score + 100,
-            matchedSignals = listOf("NDC (${ndcResult.ndc11})") + scored.matchedSignals,
+            matchedSignals = listOf(Message(R.string.fda_sig_ndc, ndcResult.ndc11)) + scored.matchedSignals,
           )
           return@withContext CrossReferenceOutcome.UnambiguousMatch(withNdcSignal)
         }
@@ -425,9 +422,9 @@ object FdaNdcLookupService {
       ?: criteria.brandName?.takeIf { it.isNotBlank() }
       ?: return@withContext CrossReferenceOutcome.NoMatch(
         if (!criteria.ndc.isNullOrBlank()) {
-          "No matching FDA record found for NDC '${criteria.ndc}', and no drug name was provided to cross-reference."
+          Message(R.string.fda_no_record_for_ndc_no_name, criteria.ndc)
         } else {
-          "Scan a medication label or enter a Brand / Formula Name (or NDC-11) to cross-reference against OpenFDA."
+          Message(R.string.fda_enter_name)
         }
       )
 
@@ -483,7 +480,8 @@ object FdaNdcLookupService {
     val scoredCandidates = scoreAndFilterCandidates(apiResults, criteria)
     if (scoredCandidates.isEmpty()) {
       return@withContext CrossReferenceOutcome.NoMatch(
-        "No OpenFDA records matched '$nameQuery'${criteria.strength?.let { " ($it)" } ?: ""}."
+        criteria.strength?.let { Message(R.string.fda_no_records_for_name_strength, nameQuery, it) }
+          ?: Message(R.string.fda_no_records_for_name, nameQuery),
       )
     }
 
@@ -541,7 +539,7 @@ object FdaNdcLookupService {
     criteria: DrugCrossReferenceCriteria,
   ): CrossReferenceOutcome {
     if (candidates.isEmpty()) {
-      return CrossReferenceOutcome.NoMatch("No matching FDA records found.")
+      return CrossReferenceOutcome.NoMatch(Message(R.string.fda_no_records))
     }
 
     val hasStrength = !criteria.strength.isNullOrBlank()
@@ -566,14 +564,14 @@ object FdaNdcLookupService {
       // A close name may be a different drug, so it's never filled in without asking.
       if (!single.exactNameMatch) {
         return CrossReferenceOutcome.NeedsUserSelection(
-          reason = "This is the closest FDA record, but its name differs from what you entered. Check it's the same medication:",
+          reason = Message(R.string.fda_reason_name_differs),
           candidates = effectivePool,
         )
       }
       // If manufacturer was NOT provided and there were other manufacturers in `candidates`, do not guess the manufacturer!
       if (!hasMfg && candidates.size > 1) {
         return CrossReferenceOutcome.NeedsUserSelection(
-          reason = "Multiple manufacturers/packages match ${single.result.formulaName} (${single.result.strength}). Select your exact package or apply without a specific manufacturer NDC:",
+          reason = Message(R.string.fda_reason_many_manufacturers, single.result.formulaName, single.result.strength),
           candidates = candidates.take(10),
         )
       }
@@ -582,11 +580,11 @@ object FdaNdcLookupService {
 
     val reason = when {
       !hasStrength && distinctStrengths.size > 1 ->
-        "Multiple strengths exist for this medication (${distinctStrengths.take(4).joinToString(", ")}). Select the exact strength & package:"
+        Message(R.string.fda_reason_many_strengths, distinctStrengths.take(4).joinToString(", "))
       hasMfg && mfgMatchedSubset.size > 1 ->
-        "Multiple packages from ${criteria.manufacturer} matched. Select the exact match:"
+        Message(R.string.fda_reason_many_packages, criteria.manufacturer)
       else ->
-        "Found ${candidates.size} matching FDA records across different manufacturers/strengths. Select the exact match:"
+        Message(R.plurals.fda_reason_found, listOf(candidates.size), quantity = candidates.size)
     }
 
     return CrossReferenceOutcome.NeedsUserSelection(
@@ -600,8 +598,8 @@ object FdaNdcLookupService {
     criteria: DrugCrossReferenceCriteria,
   ): CrossReferencedFdaCandidate {
     var score = 0
-    val matched = mutableListOf<String>()
-    val missingOrDiff = mutableListOf<String>()
+    val matched = mutableListOf<Message>()
+    val missingOrDiff = mutableListOf<Message>()
 
     // 1. Name cross-reference (Formula / Generic & Brand) with OCR-tolerant fuzzy matching
     val qFormula = criteria.formulaName?.trim()?.lowercase().orEmpty()
@@ -620,11 +618,7 @@ object FdaNdcLookupService {
         exactNameMatch = exactMatch
         score += if (exactMatch) 40 else 34
         matched.add(
-          if (exactMatch) {
-            "Formula (${candidate.formulaName})"
-          } else {
-            "Formula (${candidate.formulaName}, fuzzy match)"
-          }
+          Message(if (exactMatch) R.string.fda_sig_formula else R.string.fda_sig_formula_fuzzy, candidate.formulaName),
         )
       }
     }
@@ -640,14 +634,14 @@ object FdaNdcLookupService {
         matchesName = true
         if (qBrandTokens.isNotEmpty() && qBrandTokens.all { qt -> qt in cBrandTokens }) exactNameMatch = true
         score += if (exactBrand) 35 else 30
-        matched.add("Brand (${candidate.brandName ?: candidate.formulaName})")
+        matched.add(Message(R.string.fda_sig_brand, candidate.brandName ?: candidate.formulaName))
       } else {
-        missingOrDiff.add("Brand differs (${candidate.brandName ?: "Generic"})")
+        missingOrDiff.add(Message(R.string.fda_sig_brand_differs, candidate.brandName ?: Message(R.string.fda_generic)))
       }
     }
 
     if (matchesName && !exactNameMatch) {
-      missingOrDiff.add("Name differs from what you entered (${candidate.formulaName})")
+      missingOrDiff.add(Message(R.string.fda_sig_name_differs, candidate.formulaName))
     }
 
     // 2. Strength cross-reference
@@ -658,13 +652,13 @@ object FdaNdcLookupService {
       if (DrugStrength.equivalent(qStrength, candidate.strength)) {
         matchesStrength = true
         score += 45
-        matched.add("Strength (${candidate.strength})")
+        matched.add(Message(R.string.fda_sig_strength, candidate.strength))
       } else {
         score -= 40
-        missingOrDiff.add("Strength is ${candidate.strength} (wanted $qStrength)")
+        missingOrDiff.add(Message(R.string.fda_sig_strength_is, candidate.strength, qStrength))
       }
     } else {
-      missingOrDiff.add("Strength not specified (${candidate.strength})")
+      missingOrDiff.add(Message(R.string.fda_sig_strength_unspecified, candidate.strength))
     }
 
     // 3. Dosage Form cross-reference
@@ -673,10 +667,10 @@ object FdaNdcLookupService {
       if (candidate.form == criteria.form) {
         matchesForm = true
         score += 20
-        matched.add("Form (${candidate.form.displayName})")
+        matched.add(Message(R.string.fda_sig_form, candidate.form))
       } else {
         score -= 15
-        missingOrDiff.add("Form is ${candidate.form.displayName}")
+        missingOrDiff.add(Message(R.string.fda_sig_form_is, candidate.form))
       }
     }
 
@@ -693,9 +687,9 @@ object FdaNdcLookupService {
       if (qMfgTokens.isNotEmpty() && qMfgTokens.any { qt -> cMfgTokens.any { ct -> tokensMatchFuzzy(qt, ct) } }) {
         matchesMfg = true
         score += 45
-        matched.add("Mfg (${candidate.manufacturer})")
+        matched.add(Message(R.string.fda_sig_mfg, candidate.manufacturer.orEmpty()))
       } else {
-        missingOrDiff.add("Mfg: ${candidate.manufacturer ?: "Unknown"}")
+        missingOrDiff.add(Message(R.string.fda_sig_mfg_other, candidate.manufacturer ?: Message(R.string.fda_unknown)))
       }
     }
 

@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -287,7 +288,8 @@ fun RegimenApp(
                   val current = Adjustments.asOf(existing!!, today)
                   val parts = Adjustments.askParts(current, edited)
                   ChangeOrFixDialog(
-                    what = "the " + parts.joinToString(" and ") { it.label },
+                    what = android.icu.text.ListFormatter.getInstance(LocalConfiguration.current.locales[0])
+                      .format(parts.map { stringResource(it.labelRes) }),
                     clearsNdc = Adjustments.clearsNdc(current, edited),
                     onDismiss = { pendingEdit = null },
                     onConfirm = { mode ->
@@ -341,7 +343,7 @@ fun RegimenApp(
                 }
                 pendingEdit?.let { edited ->
                   ChangeOrFixDialog(
-                    what = "the dose",
+                    what = stringResource(Adjustments.Part.DOSE.labelRes),
                     onDismiss = { pendingEdit = null },
                     onConfirm = { mode ->
                       pendingEdit = null

@@ -34,6 +34,9 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderState
+import androidx.compose.ui.draw.alpha
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -56,6 +59,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
@@ -84,13 +88,14 @@ import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.ui.components.SwitchRow
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.groupListItemColors
+import com.exaclast.regimen.ui.components.label
 import java.time.LocalDate
 
 /** Short labels that fit a four-way segmented button on a 360 dp phone. */
 private fun IndicationKind.shortStatusLabel(res: Resources, status: IndicationStatus): String = when (status) {
   IndicationStatus.MANAGED -> res.getString(R.string.status_managed_short)
   IndicationStatus.REMISSION -> res.getString(R.string.status_remission_short)
-  else -> statusLabel(status)
+  else -> res.getString(statusLabelRes(status))
 }
 
 private fun Indication.matches(query: String): Boolean =
@@ -99,11 +104,11 @@ private fun Indication.matches(query: String): Boolean =
     reaction?.contains(query.trim(), ignoreCase = true) == true
 
 /** "Acute", or "Allergy · Drug" / "Intolerance · Food". */
-private fun Indication.typeLabel(): String =
+private fun Indication.typeLabel(res: Resources): String =
   if (kind.isReaction) {
-    listOfNotNull(kind.displayName, (allergenType ?: AllergenType.DRUG).displayName).joinToString(" · ")
+    listOf(res.label(kind), res.label(allergenType ?: AllergenType.DRUG)).joinToString(" · ")
   } else {
-    kind.displayName
+    res.label(kind)
   }
 
 /**
@@ -123,20 +128,20 @@ internal fun indicationSummary(
   return if (archived) {
     listOfNotNull(
       res.getString(R.string.indication_suspected).takeIf { indication.suspected },
-      indication.typeLabel(),
-      end?.let { res.getString(R.string.indication_ended_on, UiFormat.date(it.date, withWeekday = false)) } ?: indication.kind.statusLabel(indication.status),
+      indication.typeLabel(res),
+      end?.let { res.getString(R.string.indication_ended_on, UiFormat.date(it.date, withWeekday = false)) } ?: res.getString(indication.kind.statusLabelRes(indication.status)),
     ).joinToString(" · ")
   } else {
     listOfNotNull(
       res.getString(R.string.indication_suspected).takeIf { indication.suspected && showKind && showSuspected },
-      indication.typeLabel().takeIf { showKind },
+      indication.typeLabel(res).takeIf { showKind },
       // Allergies and intolerances share a heading, so each says which it is.
-      indication.kind.displayName.takeIf { !showKind && indication.kind.isReaction },
-      indication.severity?.displayName,
+      res.label(indication.kind).takeIf { !showKind && indication.kind.isReaction },
+      indication.severity?.let { res.getString(it.labelRes) },
       IndicationTimeline.primariesOf(indication, snapshot.indications).takeIf { it.isNotEmpty() }
         ?.let { res.getString(R.string.indication_secondary_to_names, it.joinToString { p -> p.name }) },
       indication.reaction?.takeIf { indication.kind.isReaction && it.isNotBlank() },
-      indication.status.displayName.takeIf { indication.kind == IndicationKind.CHRONIC },
+      res.label(indication.status).takeIf { indication.kind == IndicationKind.CHRONIC },
       end?.let { res.getString(R.string.indication_until, UiFormat.date(it.date, withWeekday = false)) },
       medicationCount(res, medCount),
     ).joinToString(" · ")
@@ -218,7 +223,7 @@ fun IndicationListScreen(
         }
       }
       currentGroups.forEach { (title, group) ->
-        item(key = "header-$title") { SectionHeader(title) }
+        item(key = "header-$title") { SectionHeader(stringResource(title)) }
         itemsIndexed(group, key = { _, c -> c.id }) { index, indication ->
           GroupItem(index = index, count = group.size, onClick = { onOpenIndication(indication.id) }) {
             ListItem(
@@ -317,8 +322,8 @@ fun IndicationDetailScreen(
           Text(
             listOfNotNull(
               stringResource(R.string.indication_suspected).takeIf { indication.suspected },
-              indication.typeLabel(),
-              if (archived) stringResource(R.string.label_past) else indication.kind.statusLabel(indication.status),
+              indication.typeLabel(LocalResources.current),
+              if (archived) stringResource(R.string.label_past) else stringResource(indication.kind.statusLabelRes(indication.status)),
             ).joinToString(" · "),
           )
         },
@@ -364,17 +369,17 @@ fun IndicationDetailScreen(
           else -> UiFormat.date(end.date)
         }
         val rows = listOfNotNull(
-          stringResource(R.string.field_type) to indication.typeLabel(),
+          stringResource(R.string.field_type) to indication.typeLabel(LocalResources.current),
           stringResource(R.string.field_diagnosis) to stringResource(
             if (indication.suspected) R.string.indication_diagnosis_suspected else R.string.indication_diagnosis_diagnosed,
           ),
-          indication.severity?.let { stringResource(R.string.field_severity) to it.displayName },
+          indication.severity?.let { stringResource(R.string.field_severity) to stringResource(it.labelRes) },
           primaries.takeIf { it.isNotEmpty() }
             ?.let { stringResource(R.string.indication_secondary_to) to it.joinToString { p -> p.name } },
           secondaries.takeIf { it.isNotEmpty() }
             ?.let { stringResource(R.string.indication_has_secondary) to it.joinToString { s -> s.name } },
           indication.reaction?.takeIf { it.isNotBlank() }?.let { stringResource(R.string.field_reaction) to it },
-          stringResource(R.string.field_status) to indication.kind.statusLabel(indication.status),
+          stringResource(R.string.field_status) to stringResource(indication.kind.statusLabelRes(indication.status)),
           stringResource(R.string.field_started) to (UiFormat.dateIso(indication.diagnosedDateIso) ?: stringResource(R.string.value_not_set)),
           (endLabel to endValue).takeIf { !indication.kind.isReaction || end != null },
           indication.details?.takeIf { it.isNotBlank() }?.let { stringResource(R.string.field_notes) to it },
@@ -573,15 +578,15 @@ fun IndicationEditorScreen(
           details = details.trim().takeIf { it.isNotBlank() },
           kind = kind,
           status = status,
-          suspected = suspected,
+          suspected = suspected && kind.canBeSuspected,
           // Only drug intolerances are recorded, so there's nothing to choose for one.
           allergenType = (if (kind == IndicationKind.INTOLERANCE) AllergenType.DRUG else allergenType).takeIf { isAllergy },
-          severity = severity,
+          severity = severity.takeIf { kind.hasSeverity },
           reaction = reaction.trim().takeIf { isAllergy && it.isNotEmpty() },
           diagnosedDateIso = startDateIso.takeIf { it.isNotBlank() },
           endDateIso = endDateIso.takeIf { it.isNotBlank() },
           providerIds = providerIds.filter { id -> snapshot.providers.any { it.id == id } },
-          primaryIds = primaryIds.filter { id -> snapshot.indications.any { it.id == id } },
+          primaryIds = if (kind.canBeSecondary) primaryIds.filter { id -> snapshot.indications.any { it.id == id } } else emptyList(),
           createdAtEpochMillis = initialIndication?.createdAtEpochMillis ?: System.currentTimeMillis(),
         )
       )
@@ -626,7 +631,7 @@ fun IndicationEditorScreen(
             kind = k
             if (status !in k.statuses) status = IndicationStatus.ACTIVE
           },
-          label = { Text(k.displayName) },
+          label = { Text(k.label()) },
         )
       }
     }
@@ -651,7 +656,7 @@ fun IndicationEditorScreen(
               onClick = { allergenType = type },
               shape = SegmentedButtonDefaults.itemShape(index = i, count = AllergenType.entries.size),
               icon = {},
-              label = { Text(type.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+              label = { Text(type.label(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
             )
           }
         }
@@ -664,14 +669,42 @@ fun IndicationEditorScreen(
         modifier = Modifier.fillMaxWidth(),
       )
     }
-    Text(stringResource(R.string.field_severity), style = MaterialTheme.typography.titleSmall)
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-      Severity.entries.forEach { level ->
-        FilterChip(
-          selected = severity == level,
-          onClick = { severity = if (severity == level) null else level },
-          label = { Text(level.displayName) },
+    if (kind.hasSeverity) {
+      val scale = Severity.scale
+      val onScale = severity in scale
+      Text(
+        stringResource(R.string.field_severity) + ": " + (severity?.label() ?: stringResource(R.string.value_not_set)),
+        style = MaterialTheme.typography.titleSmall,
+      )
+      val sliderState = remember {
+        SliderState(
+          value = scale.indexOf(severity).coerceAtLeast(0).toFloat(),
+          steps = scale.size - 2,
+          trackRange = 0f..(scale.size - 1).toFloat(),
         )
+      }
+      // Greyed until a level is chosen, so an unset or unsure severity doesn't look like "Mild".
+      Slider(
+        state = sliderState,
+        onValueChange = { v ->
+          sliderState.value = v
+          severity = scale[v.roundToInt().coerceIn(scale.indices)]
+        },
+        modifier = Modifier.fillMaxWidth().alpha(if (onScale) 1f else 0.5f),
+      )
+      FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        FilterChip(
+          selected = severity == Severity.UNSURE,
+          onClick = { severity = if (severity == Severity.UNSURE) null else Severity.UNSURE },
+          label = { Text(Severity.UNSURE.label()) },
+        )
+        if (severity != null) {
+          FilterChip(
+            selected = false,
+            onClick = { severity = null },
+            label = { Text(stringResource(R.string.action_clear)) },
+          )
+        }
       }
     }
     Text(stringResource(R.string.field_status), style = MaterialTheme.typography.titleSmall)
@@ -687,13 +720,13 @@ fun IndicationEditorScreen(
         )
       }
     }
-    SwitchRow(
+    if (kind.canBeSuspected) SwitchRow(
       title = stringResource(R.string.indication_suspected),
       subtitle = stringResource(R.string.indication_suspected_help),
       checked = suspected,
       onCheckedChange = { suspected = it },
     )
-    if (primaryOptions.isNotEmpty()) {
+    if (kind.canBeSecondary && primaryOptions.isNotEmpty()) {
       Text(stringResource(R.string.indication_secondary_to), style = MaterialTheme.typography.titleSmall)
       Text(
         stringResource(R.string.indication_secondary_to_help),

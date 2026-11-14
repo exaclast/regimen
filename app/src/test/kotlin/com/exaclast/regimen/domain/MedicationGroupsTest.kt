@@ -1,5 +1,6 @@
 package com.exaclast.regimen.domain
 
+import com.exaclast.regimen.TestTexts
 import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.IndicationKind
 import com.exaclast.regimen.model.IndicationStatus
@@ -11,6 +12,8 @@ import com.exaclast.regimen.model.ScheduleFrequencyType
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Test
+
+private fun MedicationSection.text() = label(TestTexts)
 
 class MedicationGroupsTest {
 
@@ -106,7 +109,7 @@ class MedicationGroupsTest {
   fun scheduleSectionsPutShortTermFirstAndSkipEmptyOnes() {
     val meds = listOf(med("a"), med("b"))
     val schedules = listOf(open("a"), ending("b", "2026-12-01"))
-    val titles = MedicationGroups.group(MedicationGrouping.SCHEDULE, meds, schedules, emptyList(), today).sections.map { it.title }
+    val titles = MedicationGroups.group(MedicationGrouping.SCHEDULE, meds, schedules, emptyList(), today).sections.map { it.text() }
     assertEquals(listOf("Short-term", "Ongoing"), titles)
   }
 
@@ -136,7 +139,7 @@ class MedicationGroupsTest {
       today,
     )
     // Acute before chronic, then anything unlinked.
-    assertEquals(listOf("Sinusitis", "Asthma", "No indication"), grouped.sections.map { it.title })
+    assertEquals(listOf("Sinusitis", "Asthma", "No indication"), grouped.sections.map { it.text() })
     assertEquals(listOf("both"), grouped.sections[0].medications.map { it.id })
     assertEquals(listOf("both"), grouped.sections[1].medications.map { it.id })
     assertEquals(listOf("none"), grouped.sections[2].medications.map { it.id })
@@ -148,7 +151,7 @@ class MedicationGroupsTest {
     val schedules = listOf(open("a"), ending("b", "2026-12-01"), ending("done", "2026-10-01"))
     val filtered = MedicationGroups.group(MedicationGrouping.SCHEDULE, meds, schedules, emptyList(), today)
       .filter { it.id == "a" }
-    assertEquals(listOf("Ongoing"), filtered.sections.map { it.title })
+    assertEquals(listOf("Ongoing"), filtered.sections.map { it.text() })
     assertEquals(emptyList<Medication>(), filtered.finished)
   }
 
@@ -163,6 +166,6 @@ class MedicationGroupsTest {
       listOf(resolved, asthma),
       today,
     )
-    assertEquals(listOf("Asthma", "Bronchitis (past)"), grouped.sections.map { it.title })
+    assertEquals(listOf("Asthma", "Bronchitis (past)"), grouped.sections.map { it.text() })
   }
 }

@@ -1,5 +1,6 @@
 package com.exaclast.regimen.data
 
+import com.exaclast.regimen.TestTexts
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.SyringeType
 import kotlinx.serialization.json.Json
@@ -23,7 +24,7 @@ class SyringeMigrationTest {
     val details = migrated("0.5 mL U-100 Insulin Syringe").injectableDetails!!
     assertEquals(SyringeType.INSULIN_U100, details.syringeType)
     assertNull(details.syringeDescription)
-    assertEquals("0.5 mL U-100 insulin", details.formattedSyringe())
+    assertEquals("0.5 mL U-100 insulin", details.formattedSyringe(TestTexts))
   }
 
   @Test

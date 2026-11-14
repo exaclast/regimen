@@ -2,6 +2,9 @@ package com.exaclast.regimen.data
 
 import android.content.Context
 import android.net.Uri
+import com.exaclast.regimen.R
+import com.exaclast.regimen.model.Message
+import com.exaclast.regimen.model.MessageException
 import com.exaclast.regimen.model.RegimenBackupBundle
 import com.exaclast.regimen.sync.BackupFiles
 import com.exaclast.regimen.sync.BundleCrypto
@@ -31,14 +34,14 @@ class BackupManager(context: Context, private val repository: RegimenRepository)
 
   /** Re-locks the same data key with a new passphrase, so earlier backups stay readable. */
   fun changePassphrase(current: CharArray, new: CharArray) {
-    val envelope = keys.envelope() ?: error("Encryption isn't set up")
+    val envelope = keys.envelope() ?: throw MessageException(Message(R.string.backup_err_not_set_up))
     val dataKey = BundleCrypto.unwrapWithPassphrase(envelope, current)
     keys.save(dataKey, BundleCrypto.wrapWithPassphrase(dataKey, new))
   }
 
   /** Shows the recovery code after confirming the passphrase. */
   fun recoveryCode(passphrase: CharArray): String {
-    val envelope = keys.envelope() ?: error("Encryption isn't set up")
+    val envelope = keys.envelope() ?: throw MessageException(Message(R.string.backup_err_not_set_up))
     return BundleCrypto.recoveryCode(BundleCrypto.unwrapWithPassphrase(envelope, passphrase))
   }
 
@@ -60,7 +63,7 @@ class BackupManager(context: Context, private val repository: RegimenRepository)
 
   /** Encrypted export of everything on this device. */
   fun exportEncrypted(uri: Uri) {
-    val dataKey = keys.dataKey() ?: error("Set a backup passphrase first")
+    val dataKey = keys.dataKey() ?: throw MessageException(Message(R.string.backup_err_set_passphrase_first))
     val file = BundleCrypto.encrypt(BackupFiles.encode(repository.currentBundle()), dataKey, keys.envelope())
     write(uri, file)
   }
@@ -71,7 +74,7 @@ class BackupManager(context: Context, private val repository: RegimenRepository)
   }
 
   private fun write(uri: Uri, bytes: ByteArray) {
-    val stream = appContext.contentResolver.openOutputStream(uri, "wt") ?: error("Couldn't open the file")
+    val stream = appContext.contentResolver.openOutputStream(uri, "wt") ?: throw MessageException(Message(R.string.backup_err_open_file))
     stream.use { it.write(bytes) }
   }
 
@@ -87,7 +90,7 @@ class BackupManager(context: Context, private val repository: RegimenRepository)
 
   fun open(uri: Uri): OpenResult {
     val bytes = appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-      ?: error("Couldn't read the file")
+      ?: throw MessageException(Message(R.string.backup_err_read_file))
     return when (val opened = BackupFiles.open(bytes)) {
       is BackupFiles.Opened.Plain -> ready(opened.bundle, wasEncrypted = false)
       is BackupFiles.Opened.Encrypted -> {

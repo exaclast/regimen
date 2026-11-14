@@ -1,5 +1,7 @@
 package com.exaclast.regimen.model
 
+import androidx.annotation.StringRes
+import com.exaclast.regimen.R
 import java.math.MathContext
 import java.math.RoundingMode
 import java.time.LocalDate
@@ -20,6 +22,12 @@ object ClockPreferences {
   var use24Hour: Boolean = false
 }
 
+/** An enum value with a user-visible name. Read it with `label()` in Compose or `Resources.label` elsewhere. */
+interface Labeled {
+  @get:StringRes
+  val labelRes: Int
+}
+
 /** Windows in time-of-day order. */
 fun List<TimeOfDayBucket>.chronological(): List<TimeOfDayBucket> = sortedWith(TimeOfDayBucket.CHRONOLOGICAL)
 
@@ -28,24 +36,24 @@ fun List<TimeOfDayBucket>.chronological(): List<TimeOfDayBucket> = sortedWith(Ti
  * eye) and suggests the last one; [ROTATE] suggests the next site in order.
  */
 @Serializable
-enum class SiteMode(val displayName: String, val description: String) {
-  OFF("Off", "Doses don't record a site"),
-  RECORD("Record", "Records where each dose goes and suggests the last site used"),
-  ROTATE("Rotate", "Suggests the next site in order after the last one used"),
+enum class SiteMode(override val labelRes: Int, @param:StringRes val descriptionRes: Int) : Labeled {
+  OFF(R.string.enum_site_mode_off, R.string.enum_site_mode_off_help),
+  RECORD(R.string.enum_site_mode_record, R.string.enum_site_mode_record_help),
+  ROTATE(R.string.enum_site_mode_rotate, R.string.enum_site_mode_rotate_help),
 }
 
 /** [hasSites]: a dose goes somewhere on the body worth recording. Oral forms don't. */
 @Serializable
-enum class MedicationForm(val displayName: String, val hasSites: Boolean) {
-  TABLET("Tablet", false),
-  CAPSULE("Capsule", false),
-  INJECTABLE_VIAL("Injectable (Vial)", true),
-  INJECTABLE_PEN("Injectable (Pen / Auto-injector / Prefilled syringe)", true),
-  TOPICAL("Topical (Gel / Cream / Patch)", true),
-  LIQUID("Oral Liquid / Solution", false),
-  INHALER("Inhaler / Nasal Spray", true),
-  DROPS("Drops (Ophthalmic / Otic)", true),
-  OTHER("Other", true);
+enum class MedicationForm(override val labelRes: Int, val hasSites: Boolean) : Labeled {
+  TABLET(R.string.enum_form_tablet, false),
+  CAPSULE(R.string.enum_form_capsule, false),
+  INJECTABLE_VIAL(R.string.enum_form_vial, true),
+  INJECTABLE_PEN(R.string.enum_form_pen, true),
+  TOPICAL(R.string.enum_form_topical, true),
+  LIQUID(R.string.enum_form_liquid, false),
+  INHALER(R.string.enum_form_inhaler, true),
+  DROPS(R.string.enum_form_drops, true),
+  OTHER(R.string.enum_form_other, true);
 
   val isInjectable: Boolean
     get() = this == INJECTABLE_VIAL || this == INJECTABLE_PEN
@@ -60,25 +68,25 @@ enum class MedicationForm(val displayName: String, val hasSites: Boolean) {
 }
 
 @Serializable
-enum class InjectionRoute(val code: String, val displayName: String) {
-  IM("IM", "Intramuscular (IM)"),
-  SC("SC", "Subcutaneous (SC)"),
-  INTRADERMAL("ID", "Intradermal (ID)"),
-  IV("IV", "Intravenous (IV)"),
+enum class InjectionRoute(val code: String, override val labelRes: Int) : Labeled {
+  IM("IM", R.string.enum_route_im),
+  SC("SC", R.string.enum_route_sc),
+  INTRADERMAL("ID", R.string.enum_route_id),
+  IV("IV", R.string.enum_route_iv),
 }
 
 @Serializable
-enum class DoseUnit(val symbol: String, val displayName: String) {
-  MG("mg", "Milligrams (mg)"),
-  MCG("mcg", "Micrograms (mcg)"),
-  ML("mL", "Milliliters (mL)"),
-  UNITS("units", "Units (syringe or pen)"),
-  IU("IU", "International Units (IU)"),
-  TABLET("tab", "Tablet(s)"),
-  CAPSULE("cap", "Capsule(s)"),
-  APPLICATION("app", "Application / Pump(s)"),
-  PUFF("puff", "Puff(s) / Spray(s)"),
-  DROP("drop", "Drop(s)"),
+enum class DoseUnit(val symbol: String, override val labelRes: Int) : Labeled {
+  MG("mg", R.string.enum_unit_mg),
+  MCG("mcg", R.string.enum_unit_mcg),
+  ML("mL", R.string.enum_unit_ml),
+  UNITS("units", R.string.enum_unit_units),
+  IU("IU", R.string.enum_unit_iu),
+  TABLET("tab", R.string.enum_unit_tablet),
+  CAPSULE("cap", R.string.enum_unit_capsule),
+  APPLICATION("app", R.string.enum_unit_application),
+  PUFF("puff", R.string.enum_unit_puff),
+  DROP("drop", R.string.enum_unit_drop),
 }
 
 @Serializable
@@ -113,12 +121,12 @@ data class InjectableDetails(
     get() = syringeType?.needleAttached == true
 
   /** "0.5 mL U-100 insulin", or the description for an unlisted type. */
-  fun formattedSyringe(): String? {
-    val volume = syringeVolumeMl?.let { "${formatNum(it)} mL" }
+  fun formattedSyringe(texts: Texts): String? {
+    val volume = syringeVolumeMl?.let { texts.get(R.string.syringe_volume_ml, formatNum(it)) }
     val kind = when (syringeType) {
       null -> syringeDescription
-      SyringeType.OTHER -> syringeDescription ?: "Other"
-      else -> syringeType.displayName
+      SyringeType.OTHER -> syringeDescription ?: texts.label(syringeType)
+      else -> texts.label(syringeType)
     }
     return listOfNotNull(volume, kind).joinToString(" ").ifBlank { null }
   }
@@ -310,11 +318,11 @@ data class Provider(
 }
 
 @Serializable
-enum class IndicationStatus(val displayName: String) {
-  ACTIVE("Active"),
-  MANAGED("Managed / Stable"),
-  REMISSION("In Remission"),
-  RESOLVED("Resolved"),
+enum class IndicationStatus(override val labelRes: Int) : Labeled {
+  ACTIVE(R.string.enum_status_active),
+  MANAGED(R.string.enum_status_managed),
+  REMISSION(R.string.enum_status_remission),
+  RESOLVED(R.string.enum_status_resolved),
 }
 
 /**
@@ -323,24 +331,36 @@ enum class IndicationStatus(val displayName: String) {
  * because it usually needs attention soonest.
  */
 @Serializable
-enum class IndicationKind(val displayName: String) {
-  ACUTE("Acute"),
-  CHRONIC("Chronic"),
-  PREVENTIVE("Preventive"),
+enum class IndicationKind(override val labelRes: Int) : Labeled {
+  ACUTE(R.string.enum_kind_acute),
+  CHRONIC(R.string.enum_kind_chronic),
+  PREVENTIVE(R.string.enum_kind_preventive),
 
   /** An immune reaction to a drug, food or something in the environment. Its name is the allergen. */
-  ALLERGY("Allergy"),
+  ALLERGY(R.string.enum_kind_allergy),
 
   /**
    * A non-immune bad reaction to a drug, such as a side effect that can't be tolerated. Kept apart from
    * an allergy, which it is often mistaken for, but listed and edited the same way. Only drug
    * intolerances are recorded: those are what a provider or first responder needs to know.
    */
-  INTOLERANCE("Intolerance");
+  INTOLERANCE(R.string.enum_kind_intolerance);
 
   /** Allergies and intolerances: recorded with a trigger, severity and reaction, and no course. */
   val isReaction: Boolean
     get() = this == ALLERGY || this == INTOLERANCE
+
+  /** Prevention has no severity: nothing is wrong yet. */
+  val hasSeverity: Boolean
+    get() = this != PREVENTIVE
+
+  /** Prevention isn't a diagnosis, so it can't be suspected. */
+  val canBeSuspected: Boolean
+    get() = this != PREVENTIVE
+
+  /** A cause or underlying condition only applies to a condition, not to prevention or a reaction. */
+  val canBeSecondary: Boolean
+    get() = this == ACUTE || this == CHRONIC
 
   /** Statuses that make sense for this kind: acute, preventive and reactions are either active or over. */
   val statuses: List<IndicationStatus>
@@ -354,27 +374,35 @@ enum class IndicationKind(val displayName: String) {
     get() = this == ACUTE || this == PREVENTIVE
 
   /** Nothing is "resolved" about prevention, so a preventive course is "Completed" instead. */
-  fun statusLabel(status: IndicationStatus): String =
-    if (this == PREVENTIVE && status == IndicationStatus.RESOLVED) "Completed" else status.displayName
+  @StringRes
+  fun statusLabelRes(status: IndicationStatus): Int =
+    if (this == PREVENTIVE && status == IndicationStatus.RESOLVED) R.string.enum_status_completed else status.labelRes
 }
 
 /** What an allergy or intolerance is to. Declared in display order. */
 @Serializable
-enum class AllergenType(val displayName: String, val sectionTitle: String) {
-  DRUG("Drug", "Drug allergies and intolerances"),
-  FOOD("Food", "Food allergies"),
-  ENVIRONMENTAL("Environmental", "Environmental allergies"),
+enum class AllergenType(override val labelRes: Int, @param:StringRes val sectionTitleRes: Int) : Labeled {
+  DRUG(R.string.enum_allergen_drug, R.string.enum_allergen_drug_section),
+  FOOD(R.string.enum_allergen_food, R.string.enum_allergen_food_section),
+  ENVIRONMENTAL(R.string.enum_allergen_environmental, R.string.enum_allergen_environmental_section),
 }
 
 @Serializable
-enum class Severity(val displayName: String) {
-  MILD("Mild"),
-  MODERATE("Moderate"),
-  SEVERE("Severe"),
-  LIFE_THREATENING("Life-threatening"),
+enum class Severity(override val labelRes: Int) : Labeled {
+  MILD(R.string.enum_severity_mild),
+  MILD_MODERATE(R.string.enum_severity_mild_moderate),
+  MODERATE(R.string.enum_severity_moderate),
+  MODERATE_SEVERE(R.string.enum_severity_moderate_severe),
+  SEVERE(R.string.enum_severity_severe),
+  LIFE_THREATENING(R.string.enum_severity_life_threatening),
 
   /** Chosen on purpose, as opposed to null, which means it was never set. */
-  UNSURE("Unsure"),
+  UNSURE(R.string.enum_severity_unsure);
+
+  companion object {
+    /** The levels in order of seriousness, as shown on the slider (everything but [UNSURE]). */
+    val scale: List<Severity> = entries.filter { it != UNSURE }
+  }
 }
 
 @Serializable
@@ -512,13 +540,13 @@ data class TimeOfDayBucket(
 }
 
 @Serializable
-enum class ScheduleFrequencyType(val displayName: String) {
-  DAILY("Every Day"),
-  EVERY_N_DAYS("Every N Days (Fixed Cycle)"),
-  DAYS_OF_WEEK("Specific Days of Week"),
-  RELATIVE_TO_LAST_DOSE("Every N Days From Last Taken Dose"),
-  SPECIFIC_DATES("Specific Dates"),
-  AS_NEEDED("As Needed (PRN)"),
+enum class ScheduleFrequencyType(override val labelRes: Int) : Labeled {
+  DAILY(R.string.enum_freq_daily),
+  EVERY_N_DAYS(R.string.enum_freq_every_n_days),
+  DAYS_OF_WEEK(R.string.enum_freq_days_of_week),
+  RELATIVE_TO_LAST_DOSE(R.string.enum_freq_relative),
+  SPECIFIC_DATES(R.string.enum_freq_specific_dates),
+  AS_NEEDED(R.string.enum_freq_as_needed),
 }
 
 @Serializable
@@ -605,10 +633,10 @@ data class MedicationSchedule(
 }
 
 @Serializable
-enum class DoseStatus(val displayName: String) {
-  TAKEN("Taken"),
-  SKIPPED("Skipped"),
-  SNOOZED("Snoozed"),
+enum class DoseStatus(override val labelRes: Int) : Labeled {
+  TAKEN(R.string.enum_dose_taken),
+  SKIPPED(R.string.enum_dose_skipped),
+  SNOOZED(R.string.enum_dose_snoozed),
 }
 
 @Serializable
@@ -631,18 +659,18 @@ data class DoseLog(
 )
 
 @Serializable
-enum class ThemeMode(val displayName: String) {
-  SYSTEM("System Default"),
-  LIGHT("Light"),
-  DARK("Dark"),
+enum class ThemeMode(override val labelRes: Int) : Labeled {
+  SYSTEM(R.string.enum_theme_system),
+  LIGHT(R.string.enum_theme_light),
+  DARK(R.string.enum_theme_dark),
 }
 
 /** How the medication list is split into sections. */
 @Serializable
-enum class MedicationGrouping(val displayName: String) {
-  SCHEDULE("Schedule"),
-  INDICATION("Indication"),
-  FORM("Form"),
+enum class MedicationGrouping(override val labelRes: Int) : Labeled {
+  SCHEDULE(R.string.enum_grouping_schedule),
+  INDICATION(R.string.enum_grouping_indication),
+  FORM(R.string.enum_grouping_form),
 }
 
 @Serializable

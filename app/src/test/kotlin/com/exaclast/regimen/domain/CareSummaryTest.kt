@@ -1,5 +1,6 @@
 package com.exaclast.regimen.domain
 
+import com.exaclast.regimen.TestTexts
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.model.AllergenType
 import com.exaclast.regimen.model.Severity
@@ -36,7 +37,7 @@ class CareSummaryTest {
     )
 
   private fun build(snapshot: RegimenSnapshot) =
-    CareSummary.build(snapshot, now, today) { "t=$it" }
+    CareSummary.build(TestTexts, snapshot, now, today) { "t=$it" }
 
   private fun scheduled(med: Medication, endDateIso: String? = null) =
     MedicationSchedule(medicationId = med.id, endDateIso = endDateIso)
@@ -134,6 +135,7 @@ class CareSummaryTest {
   @Test
   fun endedIndications_appearOnlyIfTheyEndedWithinTheLookback() {
     val summary = CareSummary.build(
+      TestTexts,
       RegimenSnapshot(
         indications = listOf(
           Indication(name = "Sinusitis", kind = IndicationKind.ACUTE, endDateIso = "2026-10-20"),
@@ -173,7 +175,7 @@ class CareSummaryTest {
         doseLogs = listOf(log(metformin, day)),
       ),
     )
-    val text = CareSummary.toText(summary, asOf = "Nov 13")
+    val text = CareSummary.toText(TestTexts, summary, asOf = "Nov 13")
     assertTrue(text.startsWith("Health summary for Sam\nAs of Nov 13"))
     assertTrue(text.contains("Current medications\n- Metformin 500 mg — 1 tab, last taken"))
   }

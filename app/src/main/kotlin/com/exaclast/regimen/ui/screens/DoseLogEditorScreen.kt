@@ -35,6 +35,7 @@ import com.exaclast.regimen.ui.checkRequiredPositiveDecimal
 import com.exaclast.regimen.ui.components.DatePickerField
 import com.exaclast.regimen.ui.components.EditorScaffold
 import com.exaclast.regimen.ui.components.TimePickerField
+import com.exaclast.regimen.ui.components.label
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -88,7 +89,7 @@ fun DoseLogEditorScreen(
     },
   ) {
     Text(
-      text = if (taken) stringResource(R.string.dose_status_taken) else log.status.displayName,
+      text = if (taken) stringResource(R.string.dose_status_taken) else log.status.label(),
       style = MaterialTheme.typography.titleMedium,
     )
     if (taken) {

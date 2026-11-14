@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -74,6 +75,7 @@ import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.model.formatNum
 import com.exaclast.regimen.notifications.DoseAlarmTiming
 import com.exaclast.regimen.ui.ScheduleText
+import com.exaclast.regimen.model.texts
 import com.exaclast.regimen.ui.components.AppSnackbarHost
 import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.GroupItem
@@ -83,6 +85,10 @@ import com.exaclast.regimen.ui.components.LogTimeDialog
 import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.groupListItemColors
+import com.exaclast.regimen.ui.components.doseText
+import com.exaclast.regimen.ui.components.label
+import com.exaclast.regimen.ui.components.nextAllowed
+import com.exaclast.regimen.ui.components.warning
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -143,7 +149,8 @@ fun MedicationDetailScreen(
   var loggingAt by remember { mutableStateOf<Long?>(null) }
   var loggingNote by remember { mutableStateOf<String?>(null) }
   var timeChoice by remember { mutableStateOf<TimeChoice?>(null) }
-  val warning = pacing.warningText()
+  val warning = pacing.warning()
+  val texts = LocalResources.current.texts()
 
   // A dose logged at another time is paced against that time, not now.
   fun pacingFor(takenAtMillis: Long?) = if (takenAtMillis == null) {
@@ -169,7 +176,7 @@ fun MedicationDetailScreen(
     loggingExtra = extra
     loggingAt = takenAtMillis
     loggingNote = note
-    if (pacingFor(takenAtMillis).warningText() != null) pacingPrompt = true else proceedWithoutPacingCheck()
+    if (pacingFor(takenAtMillis).warningText(texts) != null) pacingPrompt = true else proceedWithoutPacingCheck()
   }
 
   Scaffold(
@@ -214,9 +221,9 @@ fun MedicationDetailScreen(
         ) {
           Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(medication.strength, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            val route = medication.injectableDetails?.route?.displayName
+            val route = medication.injectableDetails?.route?.label()
             Text(
-              listOfNotNull(medication.form.displayName, route).joinToString(" · "),
+              listOfNotNull(medication.form.label(), route).joinToString(" · "),
               style = MaterialTheme.typography.bodyMedium,
             )
             Text(stringResource(R.string.med_default_dose, medication.formattedDefaultDose()), style = MaterialTheme.typography.bodyMedium)
@@ -329,8 +336,8 @@ fun MedicationDetailScreen(
           }
           changes.forEachIndexed { i, change ->
             val date = change.effectiveDateOrNull()!!
-            val lines = Adjustments.describe(change) { id ->
-              schedules.find { it.id == id }?.let { ScheduleText.describe(it, snapshot.buckets) }
+            val lines = Adjustments.describe(texts, change) { id ->
+              schedules.find { it.id == id }?.let { ScheduleText.describe(texts, it, snapshot.buckets) }
             }
             GroupItem(index = i, count = changes.size, onClick = { onOpenChange(change.id) }) {
               ListItem(
@@ -350,7 +357,7 @@ fun MedicationDetailScreen(
           SectionHeader(stringResource(R.string.med_injection))
           val pen = medication.form.isPrefilledInjector
           val rows = buildList {
-            add(stringResource(R.string.med_route) to inj.route.displayName)
+            add(stringResource(R.string.med_route) to inj.route.label())
             // Worked out from the strength; only worth a row when the strength isn't already per 1 mL.
             medication.concentration?.formatted()
               ?.takeUnless { medication.strength.contains(it, ignoreCase = true) }
@@ -361,7 +368,9 @@ fun MedicationDetailScreen(
             // A needle with its standard hub color, which is how it's picked out of a box.
             @Composable
             fun needle(text: String?, gauge: Int?) = text?.let { t ->
-              NeedleHub.colorFor(gauge)?.let { stringResource(R.string.med_needle_hub, t, it.name.lowercase()) } ?: t
+              NeedleHub.colorFor(gauge)?.let {
+                stringResource(R.string.med_needle_hub, t, stringResource(it.nameRes).lowercase(LocalConfiguration.current.locales[0]))
+              } ?: t
             }
             if (pen) {
               needle(inj.formattedInjectNeedle(), inj.injectNeedleGauge)?.let { add(stringResource(R.string.med_pen_needle) to it) }
@@ -369,10 +378,10 @@ fun MedicationDetailScreen(
               medication.doseVolumeMl(medication.defaultDoseAmount, medication.defaultDoseUnit)?.let { ml ->
                 // Insulin syringes are marked in units; say where to draw to on one.
                 val marks = inj.syringeType?.unitsPerMl
-                  ?.let { " " + stringResource(R.string.med_syringe_marks, formatNum(ml * it), inj.syringeType.displayName) }
+                  ?.let { " " + stringResource(R.string.med_syringe_marks, formatNum(ml * it), stringResource(inj.syringeType.labelRes)) }
                 add(stringResource(R.string.med_draw_volume) to stringResource(R.string.med_ml, formatNum(ml)) + marks.orEmpty())
               }
-              inj.formattedSyringe()?.let { add(stringResource(R.string.med_syringe) to it) }
+              inj.formattedSyringe(LocalResources.current.texts())?.let { add(stringResource(R.string.med_syringe) to it) }
               if (inj.needleAttached) {
                 needle(inj.formattedInjectNeedle(), inj.injectNeedleGauge)?.let { add(stringResource(R.string.med_needle_attached) to it) }
               } else {
@@ -495,7 +504,7 @@ fun MedicationDetailScreen(
                 },
                 colors = groupListItemColors(),
               ) {
-                  Text("${log.status.displayName} · ${formatNum(log.amountTaken)} ${log.amountUnit.symbol}")
+                  Text("${log.status.label()} · ${formatNum(log.amountTaken)} ${log.amountUnit.symbol}")
                 }
             }
           }
@@ -522,7 +531,7 @@ fun MedicationDetailScreen(
     val duePart = dueDose.takeIf { !choice.extra }
     LogTimeDialog(
       title = duePart?.let { stringResource(R.string.med_log_window_dose, it.bucket.name) } ?: stringResource(R.string.today_log_named, medication.primaryName),
-      doseLabel = duePart?.formattedDoseInstruction() ?: medication.formattedDefaultDose(),
+      doseLabel = duePart?.doseText() ?: medication.formattedDefaultDose(),
       defaultDateIso = todayIso,
       startWithOtherTime = choice.startWithOtherTime,
       onDismiss = { timeChoice = null },
@@ -542,7 +551,7 @@ fun MedicationDetailScreen(
       text = {
         Text(
           listOfNotNull(
-            shownPacing.nextAllowedText()?.let { stringResource(R.string.pacing_next_dose, it) },
+            shownPacing.nextAllowed()?.let { stringResource(R.string.pacing_next_dose, it) },
             if (shownPacing.isDailyLimitReached) stringResource(R.string.pacing_daily_limit_reached) else null,
             stringResource(R.string.pacing_from_settings),
           ).joinToString(" ")
@@ -684,6 +693,6 @@ private fun ScheduleRow(
     },
     colors = groupListItemColors(),
   ) {
-      Text("${formatNum(dose.amount)} ${dose.unit.symbol} · ${ScheduleText.frequency(schedule)}")
+      Text("${formatNum(dose.amount)} ${dose.unit.symbol} · ${ScheduleText.frequency(LocalResources.current.texts(), schedule)}")
     }
 }

@@ -5,8 +5,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import com.exaclast.regimen.model.texts
 import com.exaclast.regimen.ui.FieldCheck
 
 /**
@@ -25,7 +27,7 @@ internal fun ValidatedNumberField(
   keyboardType: KeyboardType = KeyboardType.Decimal,
   singleLine: Boolean = true,
 ) {
-  val error = check.errorMessage
+  val error = check.errorMessage?.resolve(LocalResources.current.texts())
   OutlinedTextField(
     value = value,
     onValueChange = onValueChange,

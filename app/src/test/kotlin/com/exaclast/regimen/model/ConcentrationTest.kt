@@ -1,5 +1,6 @@
 package com.exaclast.regimen.model
 
+import com.exaclast.regimen.TestTexts
 import com.exaclast.regimen.model.Concentration.AmountUnit
 import com.exaclast.regimen.ui.screens.volumeHint
 import org.junit.Assert.assertEquals
@@ -76,11 +77,11 @@ class ConcentrationTest {
 
   @Test
   fun editorHintExplainsOrWarns() {
-    assertEquals("200 mg/mL. 100 mg is 0.5 mL." to false, volumeHint("200 mg/mL", 100.0, DoseUnit.MG))
-    val unreadable = volumeHint("200 mg", 100.0, DoseUnit.MG)!!
+    assertEquals("200 mg/mL. 100 mg is 0.5 mL." to false, volumeHint(TestTexts, "200 mg/mL", 100.0, DoseUnit.MG))
+    val unreadable = volumeHint(TestTexts, "200 mg", 100.0, DoseUnit.MG)!!
     assertTrue(unreadable.first.startsWith("To show volumes"))
     assertFalse(unreadable.second)
-    assertTrue(volumeHint("100 units/mL", 20.0, DoseUnit.MG)!!.second)
-    assertNull(volumeHint("", 1.0, DoseUnit.MG))
+    assertTrue(volumeHint(TestTexts, "100 units/mL", 20.0, DoseUnit.MG)!!.second)
+    assertNull(volumeHint(TestTexts, "", 1.0, DoseUnit.MG))
   }
 }

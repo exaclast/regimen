@@ -1,5 +1,6 @@
 package com.exaclast.regimen.sync
 
+import com.exaclast.regimen.TestTexts
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseUnit
@@ -68,10 +69,10 @@ class BackupFilesTest {
     )
     val preview = BackupFiles.preview(device, file)
     assertEquals("Pixel 8a", preview.sourceDeviceName)
-    val meds = preview.kinds.single { it.label == "Medications" }
+    val meds = preview.kinds.single { TestTexts.get(it.labelRes) == "Medications" }
     assertEquals(1, meds.changed)
     assertEquals(0, meds.new)
-    val history = preview.kinds.single { it.label == "Dose history" }
+    val history = preview.kinds.single { TestTexts.get(it.labelRes) == "Dose history" }
     assertEquals(3, history.inFile)
     // "c" is new; "gone" is deleted here but live in the file, so it comes back as new.
     assertEquals(2, history.new)

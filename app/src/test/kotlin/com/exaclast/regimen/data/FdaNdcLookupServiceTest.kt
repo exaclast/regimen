@@ -1,5 +1,6 @@
 package com.exaclast.regimen.data
 
+import com.exaclast.regimen.TestTexts
 import com.exaclast.regimen.model.Concentration
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.InjectionRoute
@@ -111,7 +112,7 @@ class FdaNdcLookupServiceTest {
     // 5. Short OTC packaging code (e.g. "824208" on Allegra label corner) gives non-NDC hint
     val shortCode = FdaNdcLookupService.parseDrugBarcode("824208")
     assertNotNull(shortCode.nonNdcHint)
-    assertTrue(shortCode.nonNdcHint!!.contains("Scan Label"))
+    assertTrue(shortCode.nonNdcHint!!.resolve(TestTexts).contains("Scan Label"))
   }
 
   @Test
@@ -333,7 +334,7 @@ class FdaNdcLookupServiceTest {
   @Test
   fun lookAlikeChoiceSaysTheNameDiffers() {
     val outcome = outcomeFor("Prednisone", listOf(fdaResult("Prednisolone"))) as CrossReferenceOutcome.NeedsUserSelection
-    assertTrue(outcome.candidates.single().missingOrDifferentSignals.any { it.contains("Name differs") })
+    assertTrue(outcome.candidates.single().missingOrDifferentSignals.any { it.resolve(TestTexts).contains("Name differs") })
   }
 
   @Test

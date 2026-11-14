@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.core.app.NotificationManagerCompat
+import com.exaclast.regimen.R
 import com.exaclast.regimen.data.RegimenRepository
 import com.exaclast.regimen.model.DoseStatus
 import java.time.LocalDate
@@ -185,18 +186,22 @@ class DoseActionReceiver : BroadcastReceiver() {
       )
     }
 
-    val noun = if (logged.size == 1) "dose" else "${logged.size} doses"
+    val res = context.resources
     val message = when (status) {
       DoseStatus.TAKEN -> {
-        val siteNote = logged.singleOrNull()?.siteUsed?.let { " ($it)" } ?: ""
-        "Logged $noun taken$siteNote"
+        val site = logged.singleOrNull()?.siteUsed
+        if (site != null) {
+          res.getString(R.string.receiver_taken_site, site)
+        } else {
+          res.getQuantityString(R.plurals.receiver_taken, logged.size, logged.size)
+        }
       }
-      DoseStatus.SNOOZED -> "Snoozed for $snoozeMins minutes"
-      DoseStatus.SKIPPED -> "Marked $noun skipped"
+      DoseStatus.SNOOZED -> res.getQuantityString(R.plurals.receiver_snoozed, snoozeMins, snoozeMins)
+      DoseStatus.SKIPPED -> res.getQuantityString(R.plurals.receiver_skipped, logged.size, logged.size)
     }
     val blockedNote = blocked.takeIf { it.isNotEmpty() }?.let { doses ->
       val names = doses.joinToString { it.medication.primaryName }
-      "Not logged: $names is over its pacing limit. Open Regimen to log it anyway."
+      res.getQuantityString(R.plurals.receiver_blocked, doses.size, names)
     }
     val text = listOfNotNull(message.takeIf { logged.isNotEmpty() }, blockedNote).joinToString(" ")
     if (text.isNotEmpty() && !quiet) Toast.makeText(context, text, Toast.LENGTH_LONG).show()

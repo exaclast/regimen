@@ -127,7 +127,10 @@ import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.GroupedColumn
 import com.exaclast.regimen.ui.components.LogTimeDialog
 import com.exaclast.regimen.ui.components.SectionHeader
+import com.exaclast.regimen.model.texts
 import com.exaclast.regimen.ui.components.UiFormat
+import com.exaclast.regimen.ui.components.doseText
+import com.exaclast.regimen.ui.components.warning
 import com.exaclast.regimen.ui.components.groupListItemColors
 import java.time.LocalDate
 import java.time.ZoneId
@@ -353,7 +356,7 @@ fun TodayScreen(
         item(key = "reminders-blocked") {
           NoticeCard(
             icon = Icons.Default.Warning,
-            text = problem.message,
+            text = stringResource(problem.messageRes),
             actionLabel = stringResource(R.string.action_fix),
             onAction = { DoseNotificationManager.openSettingsFor(context, problem) },
           )
@@ -486,7 +489,7 @@ fun TodayScreen(
     AlertDialog(
       onDismissRequest = { confirmPrompt = null },
       title = { Text(stringResource(R.string.today_log_named_question, item.medication.primaryName)) },
-      text = { Text("${item.formattedDoseInstruction()} · ${item.bucket.name}") },
+      text = { Text("${item.doseText()} · ${item.bucket.name}") },
       confirmButton = {
         Button(onClick = {
           confirmPrompt = null
@@ -616,7 +619,7 @@ private sealed interface TakeRequest {
 
 private fun pacingExplanation(res: Resources, pacing: PacingEvaluation, medication: Medication): String {
   val parts = mutableListOf<String>()
-  pacing.nextAllowedText()?.let { parts.add(res.getString(R.string.pacing_next_dose, it)) }
+  pacing.nextAllowedText(res.texts())?.let { parts.add(res.getString(R.string.pacing_next_dose, it)) }
   if (pacing.isDailyLimitReached) {
     val limit = pacing.maxDailyDoses?.let { formatNum(it) }
     parts.add(
@@ -820,7 +823,7 @@ private fun DoseCard(
   val med = item.medication
   val missed = DoseTimeline.isMissed(item, nowMillis)
   val snoozedUntil = DoseTimeline.activeSnoozeUntil(item, nowMillis)
-  val warning = if (!item.isCompleted) item.pacing.warningText() else null
+  val warning = if (!item.isCompleted) item.pacing.warning() else null
   val canAct = !item.isCompleted && !isFutureDate
   val canSnooze = canAct && !missed && phase == WindowPhase.NOW
   val tracksSites = med.tracksSites
@@ -874,7 +877,7 @@ private fun DoseCard(
   val a11yDescription = listOfNotNull(
     med.primaryName,
     med.secondaryName,
-    item.formattedDoseInstruction(),
+    item.doseText(),
     if (item.isNewDose && !item.isCompleted) stringResource(R.string.dose_new_from_today) else null,
     statusText,
     warning,
@@ -911,7 +914,7 @@ private fun DoseCard(
             overflow = TextOverflow.Ellipsis,
           )
           Text(
-            text = item.formattedDoseInstruction(),
+            text = item.doseText(),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Medium,
@@ -1057,7 +1060,7 @@ private fun PrnCard(
   onOpenMedication: () -> Unit,
 ) {
   val med = item.medication
-  val warning = item.pacing.warningText()
+  val warning = item.pacing.warning()
   val dailyNote = item.pacing.maxDailyDoses?.let {
     stringResource(
       if (isToday) R.string.prn_daily_note_today else R.string.prn_daily_note_that_day,

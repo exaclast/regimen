@@ -1,5 +1,6 @@
 package com.exaclast.regimen.domain
 
+import com.exaclast.regimen.TestTexts
 import com.exaclast.regimen.model.AllergenType
 import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.IndicationKind
@@ -41,7 +42,7 @@ class IndicationTimelineTest {
         "Food allergies",
         "Environmental allergies",
       ),
-      sections.map { it.first },
+      sections.map { TestTexts.get(it.first) },
     )
     // An allergy with no type recorded counts as a drug allergy.
     assertEquals(listOf("Metformin", "Penicillin", "Sulfa"), sections[1].second.map { it.name })
@@ -119,9 +120,9 @@ class IndicationTimelineTest {
 
   @Test
   fun onlyPreventiveCallsResolvedCompleted() {
-    assertEquals("Completed", IndicationKind.PREVENTIVE.statusLabel(IndicationStatus.RESOLVED))
-    assertEquals("Resolved", IndicationKind.ACUTE.statusLabel(IndicationStatus.RESOLVED))
-    assertEquals("Active", IndicationKind.PREVENTIVE.statusLabel(IndicationStatus.ACTIVE))
+    assertEquals("Completed", TestTexts.get(IndicationKind.PREVENTIVE.statusLabelRes(IndicationStatus.RESOLVED)))
+    assertEquals("Resolved", TestTexts.get(IndicationKind.ACUTE.statusLabelRes(IndicationStatus.RESOLVED)))
+    assertEquals("Active", TestTexts.get(IndicationKind.PREVENTIVE.statusLabelRes(IndicationStatus.ACTIVE)))
   }
 
   @Test

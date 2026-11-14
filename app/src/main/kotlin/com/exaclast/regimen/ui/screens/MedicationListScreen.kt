@@ -62,11 +62,14 @@ import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationGrouping
 import com.exaclast.regimen.ui.ScheduleText
+import androidx.compose.ui.platform.LocalResources
+import com.exaclast.regimen.model.texts
 import com.exaclast.regimen.ui.components.AppSnackbarHost
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.ListContentPadding
 import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.ui.components.groupListItemColors
+import com.exaclast.regimen.ui.components.label
 import java.time.LocalDate
 
 @Composable
@@ -148,7 +151,7 @@ fun MedicationListScreen(
             FilterChip(
               selected = option == activeGrouping,
               onClick = { onGroupingChange(option) },
-              label = { Text(option.displayName) },
+              label = { Text(option.label()) },
             )
           }
         }
@@ -157,7 +160,7 @@ fun MedicationListScreen(
         item { Text(stringResource(R.string.list_no_matches, query), modifier = Modifier.padding(16.dp)) }
       }
       grouped.sections.forEach { section ->
-        item(key = "header-${section.key}") { SectionHeader(section.title) }
+        item(key = "header-${section.key}") { SectionHeader(section.label(LocalResources.current.texts())) }
         // Grouped by indication a medication can be in several sections, so its id alone isn't unique.
         itemsIndexed(section.medications, key = { _, m -> "${section.key}/${m.id}" }) { index, med ->
           GroupItem(index = index, count = section.medications.size, onClick = { onOpenMedication(med.id) }) {
@@ -194,7 +197,7 @@ private fun MedicationListItem(med: Medication, snapshot: RegimenSnapshot) {
       Text(
         text = listOfNotNull(
           listOfNotNull(med.secondaryName, med.strength).joinToString(" · "),
-          ScheduleText.summary(snapshot.schedules.filter { it.medicationId == med.id }, snapshot.buckets),
+          ScheduleText.summary(LocalResources.current.texts(), snapshot.schedules.filter { it.medicationId == med.id }, snapshot.buckets),
         ).joinToString("\n"),
         maxLines = 3,
         overflow = TextOverflow.Ellipsis,
@@ -214,7 +217,7 @@ fun FormIcon(form: MedicationForm) {
     modifier = Modifier.size(40.dp),
   ) {
     Box(contentAlignment = Alignment.Center) {
-      Icon(formIcon(form), contentDescription = form.displayName, modifier = Modifier.size(22.dp))
+      Icon(formIcon(form), contentDescription = form.label(), modifier = Modifier.size(22.dp))
     }
   }
 }

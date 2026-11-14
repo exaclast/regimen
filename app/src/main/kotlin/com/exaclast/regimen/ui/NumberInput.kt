@@ -1,5 +1,7 @@
 package com.exaclast.regimen.ui
 
+import com.exaclast.regimen.R
+import com.exaclast.regimen.model.Message
 import java.time.LocalDate
 
 /**
@@ -84,36 +86,36 @@ object NumberInput {
 /** Validation result for one form field. */
 sealed interface FieldCheck<out T> {
   data class Valid<T>(val value: T) : FieldCheck<T>
-  data class Invalid(val message: String) : FieldCheck<Nothing>
+  data class Invalid(val message: Message) : FieldCheck<Nothing>
 
-  val errorMessage: String? get() = (this as? Invalid)?.message
+  val errorMessage: Message? get() = (this as? Invalid)?.message
   val isValid: Boolean get() = this is Valid
 }
 
 /** Required amount > 0. */
 fun checkRequiredPositiveDecimal(text: String): FieldCheck<Double> {
-  if (text.isBlank()) return FieldCheck.Invalid("Required")
-  val v = NumberInput.parseDecimal(text) ?: return FieldCheck.Invalid("Enter a number, e.g. 0.5 or 1/2")
-  return if (v > 0.0) FieldCheck.Valid(v) else FieldCheck.Invalid("Must be greater than 0")
+  if (text.isBlank()) return FieldCheck.Invalid(Message(R.string.check_required))
+  val v = NumberInput.parseDecimal(text) ?: return FieldCheck.Invalid(Message(R.string.check_number_example))
+  return if (v > 0.0) FieldCheck.Valid(v) else FieldCheck.Invalid(Message(R.string.check_greater_than_zero))
 }
 
 /** Optional amount: blank → null; otherwise must be > 0. */
 fun checkOptionalPositiveDecimal(text: String): FieldCheck<Double?> {
   if (text.isBlank()) return FieldCheck.Valid(null)
-  val v = NumberInput.parseDecimal(text) ?: return FieldCheck.Invalid("Enter a number, e.g. 4 or 0.5")
-  return if (v > 0.0) FieldCheck.Valid(v) else FieldCheck.Invalid("Must be greater than 0")
+  val v = NumberInput.parseDecimal(text) ?: return FieldCheck.Invalid(Message(R.string.check_number_example_short))
+  return if (v > 0.0) FieldCheck.Valid(v) else FieldCheck.Invalid(Message(R.string.check_greater_than_zero))
 }
 
 /** Optional whole number: blank → null; otherwise must be a positive integer. */
 fun checkOptionalPositiveInt(text: String): FieldCheck<Int?> {
   if (text.isBlank()) return FieldCheck.Valid(null)
-  val v = NumberInput.parsePositiveInt(text) ?: return FieldCheck.Invalid("Enter a whole number")
+  val v = NumberInput.parsePositiveInt(text) ?: return FieldCheck.Invalid(Message(R.string.check_whole_number))
   return FieldCheck.Valid(v)
 }
 
 /** Required whole number ≥ 1. */
 fun checkRequiredPositiveInt(text: String): FieldCheck<Int> {
-  if (text.isBlank()) return FieldCheck.Invalid("Required")
-  val v = NumberInput.parsePositiveInt(text) ?: return FieldCheck.Invalid("Enter a whole number of 1 or more")
+  if (text.isBlank()) return FieldCheck.Invalid(Message(R.string.check_required))
+  val v = NumberInput.parsePositiveInt(text) ?: return FieldCheck.Invalid(Message(R.string.check_whole_number_one_plus))
   return FieldCheck.Valid(v)
 }

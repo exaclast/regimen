@@ -1,5 +1,7 @@
 package com.exaclast.regimen.sync
 
+import androidx.annotation.StringRes
+import com.exaclast.regimen.R
 import com.exaclast.regimen.model.RegimenBackupBundle
 import kotlinx.serialization.json.Json
 
@@ -48,7 +50,7 @@ object BackupFiles {
 
   /** Per record type: how the file compares with this device. */
   data class KindDiff(
-    val label: String,
+    @param:StringRes val labelRes: Int,
     /** Live records in the file. */
     val inFile: Int,
     /** In the file but not on this device. */
@@ -74,7 +76,7 @@ object BackupFiles {
 
   fun preview(current: RegimenBackupBundle, imported: RegimenBackupBundle): Preview {
     fun <T : Any> diff(
-      label: String,
+      @StringRes labelRes: Int,
       device: List<T>,
       file: List<T>,
       id: (T) -> String,
@@ -83,7 +85,7 @@ object BackupFiles {
       val deviceById = device.associateBy(id)
       val fileById = file.associateBy(id)
       return KindDiff(
-        label = label,
+        labelRes = labelRes,
         inFile = file.count(isLive),
         new = file.count { isLive(it) && deviceById[id(it)].let { d -> d == null || !isLive(d) } },
         changed = file.count { f -> deviceById[id(f)]?.let { d -> isLive(d) && d != f } == true },
@@ -96,12 +98,12 @@ object BackupFiles {
       sourceDeviceName = imported.devices.firstOrNull { it.id == imported.sourceDeviceId }?.name,
       version = imported.version,
       kinds = listOf(
-        diff("Medications", current.medications, imported.medications, { it.id }, { it.deletedAtEpochMillis == null }),
-        diff("Schedules", current.schedules, imported.schedules, { it.id }, { it.deletedAtEpochMillis == null }),
-        diff("Dose history", current.doseLogs, imported.doseLogs, { it.id }, { it.deletedAtEpochMillis == null }),
-        diff("Dose windows", current.buckets, imported.buckets, { it.id }, { true }),
-        diff("Providers", current.providers, imported.providers, { it.id }, { it.deletedAtEpochMillis == null }),
-        diff("Indications", current.indications, imported.indications, { it.id }, { it.deletedAtEpochMillis == null }),
+        diff(R.string.backup_kind_medications, current.medications, imported.medications, { it.id }, { it.deletedAtEpochMillis == null }),
+        diff(R.string.backup_kind_schedules, current.schedules, imported.schedules, { it.id }, { it.deletedAtEpochMillis == null }),
+        diff(R.string.backup_kind_dose_history, current.doseLogs, imported.doseLogs, { it.id }, { it.deletedAtEpochMillis == null }),
+        diff(R.string.backup_kind_dose_windows, current.buckets, imported.buckets, { it.id }, { true }),
+        diff(R.string.backup_kind_providers, current.providers, imported.providers, { it.id }, { it.deletedAtEpochMillis == null }),
+        diff(R.string.backup_kind_indications, current.indications, imported.indications, { it.id }, { it.deletedAtEpochMillis == null }),
       ),
       firstDoseDateIso = liveLogs.minOfOrNull { it.scheduledDateIso },
       lastDoseDateIso = liveLogs.maxOfOrNull { it.scheduledDateIso },
