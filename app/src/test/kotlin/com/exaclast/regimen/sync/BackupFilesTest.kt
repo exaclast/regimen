@@ -5,12 +5,16 @@ import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.Medication
+import com.exaclast.regimen.model.Indication
+import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.PrimaryClaim
+import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.RegimenBackupBundle
 import com.exaclast.regimen.model.SyncDevice
 import com.exaclast.regimen.model.TimeOfDayBucket
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -46,12 +50,128 @@ class BackupFilesTest {
 
   @Test(expected = BundleCrypto.UnsupportedFormatException::class)
   fun backupFromNewerAppVersionIsRejected() {
-    BackupFiles.open("""{"version":99,"medications":[]}""".toByteArray())
+    BackupFiles.open("""{"format":"regimen_backup","version":99,"medications":[]}""".toByteArray())
   }
 
   @Test(expected = BundleCrypto.NotABackupException::class)
   fun randomFileIsRejected() {
     BackupFiles.open("hello, not a backup".toByteArray())
+  }
+
+  @Test(expected = BundleCrypto.NotABackupException::class)
+  fun emptyJsonIsRejectedAsNotABackup() {
+    BackupFiles.open("{}".toByteArray())
+  }
+
+  @Test(expected = BundleCrypto.NotABackupException::class)
+  fun jsonWithoutFormatMarkerIsRejected() {
+    BackupFiles.open("""{"version":1,"medications":[]}""".toByteArray())
+  }
+
+  @Test
+  fun invalidBucketHourIsRejected() {
+    val badBucketJson = """{"format":"regimen_backup","version":1,"buckets":[{"id":"b1","name":"Bad","hour":25,"minute":0,"endHour":10,"endMinute":0}]}"""
+    assertThrows(BundleCrypto.CorruptedException::class.java) {
+      BackupFiles.open(badBucketJson.toByteArray())
+    }
+  }
+
+  @Test
+  fun danglingScheduleMedicationIsRejected() {
+    val bundle = RegimenBackupBundle(
+      medications = emptyList(),
+      schedules = listOf(
+        MedicationSchedule(
+          id = "s1",
+          medicationId = "m_missing",
+          bucketIds = listOf(TimeOfDayBucket.BUCKET_MORNING),
+        ),
+      ),
+    )
+    val ex = assertThrows(BackupFiles.InvalidBackupException::class.java) {
+      BackupFiles.validate(bundle)
+    }
+    assertTrue(ex.reason.contains("m_missing"))
+  }
+
+  @Test
+  fun danglingScheduleBucketIsRejected() {
+    val bundle = RegimenBackupBundle(
+      medications = listOf(med),
+      schedules = listOf(
+        MedicationSchedule(
+          id = "s1",
+          medicationId = med.id,
+          bucketIds = listOf("nonexistent_bucket"),
+        ),
+      ),
+    )
+    val ex = assertThrows(BackupFiles.InvalidBackupException::class.java) {
+      BackupFiles.validate(bundle)
+    }
+    assertTrue(ex.reason.contains("nonexistent_bucket"))
+  }
+
+  @Test
+  fun danglingDoseLogMedicationIsRejected() {
+    val bundle = RegimenBackupBundle(
+      medications = emptyList(),
+      doseLogs = listOf(log("l1", "2026-11-01")),
+    )
+    val ex = assertThrows(BackupFiles.InvalidBackupException::class.java) {
+      BackupFiles.validate(bundle)
+    }
+    assertTrue(ex.reason.contains(med.id))
+  }
+
+  @Test
+  fun scheduleWithInvalidDateRangeIsRejected() {
+    val bundle = RegimenBackupBundle(
+      medications = listOf(med),
+      schedules = listOf(
+        MedicationSchedule(
+          id = "s1",
+          medicationId = med.id,
+          startDateIso = "2026-11-20",
+          endDateIso = "2026-11-10",
+        ),
+      ),
+    )
+    val ex = assertThrows(BackupFiles.InvalidBackupException::class.java) {
+      BackupFiles.validate(bundle)
+    }
+    assertTrue(ex.reason.contains("start date"))
+  }
+
+  @Test
+  fun indicationSecondaryToItselfIsRejected() {
+    val bundle = RegimenBackupBundle(
+      indications = listOf(
+        Indication(id = "ind1", name = "Headache", primaryIds = listOf("ind1")),
+      ),
+    )
+    val ex = assertThrows(BackupFiles.InvalidBackupException::class.java) {
+      BackupFiles.validate(bundle)
+    }
+    assertTrue(ex.reason.contains("secondary to itself"))
+  }
+
+  @Test
+  fun validBundleWithRelationsPassesValidation() {
+    val provider = Provider(id = "p1", name = "Dr. Smith")
+    val indication = Indication(id = "ind1", name = "Hypertension", providerIds = listOf("p1"))
+    val validMed = med.copy(prescriberId = "p1", indicationIds = listOf("ind1"))
+    val schedule = MedicationSchedule(id = "s1", medicationId = validMed.id, bucketIds = listOf(TimeOfDayBucket.BUCKET_MORNING))
+    val doseLog = log("l1", "2026-11-01")
+
+    val bundle = RegimenBackupBundle(
+      providers = listOf(provider),
+      indications = listOf(indication),
+      medications = listOf(validMed),
+      schedules = listOf(schedule),
+      doseLogs = listOf(doseLog),
+    )
+    BackupFiles.validate(bundle)
   }
 
   @Test

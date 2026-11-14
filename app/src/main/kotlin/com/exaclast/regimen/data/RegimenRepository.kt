@@ -26,6 +26,7 @@ import com.exaclast.regimen.model.SyringeType
 import com.exaclast.regimen.model.SiteMode
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.notifications.DoseNotificationManager
+import com.exaclast.regimen.sync.BackupFiles
 import com.exaclast.regimen.sync.DeviceIdentity
 import java.time.LocalDate
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,12 +38,18 @@ import kotlinx.serialization.json.Json
 data class RegimenSnapshot(
   val settings: AppSettings = AppSettings(),
   val medications: List<Medication> = emptyList(),
+  val deletedMedications: List<Medication> = emptyList(),
   val providers: List<Provider> = emptyList(),
   val indications: List<Indication> = emptyList(),
   val buckets: List<TimeOfDayBucket> = TimeOfDayBucket.defaultBuckets(),
   val schedules: List<MedicationSchedule> = emptyList(),
   val doseLogs: List<DoseLog> = emptyList(),
 ) {
+  val allMedications: List<Medication>
+    get() = medications + deletedMedications
+
+  fun medication(id: String): Medication? =
+    medications.find { it.id == id } ?: deletedMedications.find { it.id == id }
   /**
    * Providers and indications are optional. Until the user chooses, they're shown only when
    * records exist: new installs start minimal, and nobody loses sight of data they entered.
@@ -115,15 +122,20 @@ class RegimenRepository private constructor(context: Context) {
     reloadSnapshot()
   }
 
-  private fun readSnapshot(): RegimenSnapshot = RegimenSnapshot(
-    settings = loadSettings(),
-    medications = db.getAllMedications(),
-    providers = db.getAllProviders(),
-    indications = db.getAllIndications(),
-    buckets = db.getAllBuckets().ifEmpty { TimeOfDayBucket.defaultBuckets() },
-    schedules = db.getAllSchedules(),
-    doseLogs = db.getAllDoseLogs(),
-  )
+  private fun readSnapshot(): RegimenSnapshot {
+    val (liveMeds, deletedMeds) = db.getAllMedications(includeDeleted = true)
+      .partition { it.deletedAtEpochMillis == null }
+    return RegimenSnapshot(
+      settings = loadSettings(),
+      medications = liveMeds,
+      deletedMedications = deletedMeds,
+      providers = db.getAllProviders(),
+      indications = db.getAllIndications(),
+      buckets = db.getAllBuckets().ifEmpty { TimeOfDayBucket.defaultBuckets() },
+      schedules = db.getAllSchedules(),
+      doseLogs = db.getAllDoseLogs(),
+    )
+  }
 
   @Synchronized
   fun reloadSnapshot() {
@@ -403,8 +415,11 @@ class RegimenRepository private constructor(context: Context) {
     return "${scheduleId}_${bucketId}_${log.scheduledDateIso}"
   }
 
+  /** Counts undecodable rows across all database tables to detect corruption before backup or sync. */
+  fun undecodableRowCount(): Int = db.undecodableRowCount()
+
   /**
-   * Everything on this device as a v3 bundle (the input to export and sync), including deletion
+   * Everything on this device as a bundle (the input to export and sync), including deletion
    * tombstones so a device that never saw a record still learns it was deleted.
    */
   @Synchronized
@@ -434,6 +449,7 @@ class RegimenRepository private constructor(context: Context) {
    */
   @Synchronized
   fun applyBundle(bundle: RegimenBackupBundle, replace: Boolean) {
+    BackupFiles.validate(bundle)
     val current = loadSettings()
     val shared = bundle.sharedSettings
     val settings = if (replace) {
@@ -479,6 +495,10 @@ class RegimenRepository private constructor(context: Context) {
     DoseNotificationManager.cancelAllNotifications(appContext)
     db.clearUserRecords()
     seedInitialSampleData()
+    // Suppress reminders and alarms while demo data is loaded to prevent ringing real alarms for fictional meds.
+    val current = loadSettings()
+    val suppressed = current.copy(notificationsEnabled = false, alarmsEnabled = false)
+    prefs.edit().putString(KEY_APP_SETTINGS, json.encodeToString(suppressed)).apply()
     reloadSnapshot()
   }
 

@@ -118,6 +118,7 @@ import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.NeedleHub
 import com.exaclast.regimen.model.SiteMode
 import com.exaclast.regimen.model.SyringeType
+import com.exaclast.regimen.notifications.DoseAlarmTiming
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.model.formatExact
@@ -427,7 +428,7 @@ fun MedicationEditorScreen(
   }
 
   fun applyFdaResultToForm(fda: FdaDrugLookupResult, statusSummary: String? = null) {
-    ndc11 = fda.ndc11
+    ndc11 = fda.ndc11.orEmpty()
     formulaName = fda.formulaName
     brandName = fda.brandName.orEmpty()
     fda.manufacturer?.let { manufacturer = it }
@@ -439,14 +440,15 @@ fun MedicationEditorScreen(
     val metaParts = mutableListOf<String>()
     fda.lotNumber?.let { metaParts.add(resources.getString(R.string.label_lot, it)) }
     fda.expirationDateIso?.let { metaParts.add(resources.getString(R.string.label_exp, it)) }
+    val ndcOrName = fda.ndc11 ?: fda.formulaName
     if (metaParts.isNotEmpty()) {
       val metaLine = metaParts.joinToString(" • ")
-      ndcStatusText = statusSummary ?: resources.getString(R.string.editor_autofilled_meta, fda.ndc11, metaLine)
+      ndcStatusText = statusSummary ?: resources.getString(R.string.editor_autofilled_meta, ndcOrName, metaLine)
       if (!notes.contains(metaLine)) {
         notes = if (notes.isBlank()) metaLine else "$notes\n$metaLine"
       }
     } else {
-      ndcStatusText = statusSummary ?: resources.getString(R.string.editor_autofilled, fda.ndc11)
+      ndcStatusText = statusSummary ?: resources.getString(R.string.editor_autofilled, ndcOrName)
     }
     ndcErrorText = null
     ndcMatched = true
@@ -463,9 +465,10 @@ fun MedicationEditorScreen(
         is CrossReferenceOutcome.UnambiguousMatch -> {
           val cand = outcome.candidate
           val signals = cand.matchedSignals.joinToString(", ") { it.resolve(resources.texts()) }
+          val ndcOrName = cand.result.ndc11 ?: cand.result.formulaName
           applyFdaResultToForm(
             fda = cand.result,
-            statusSummary = resources.getString(R.string.editor_verified, cand.result.ndc11, signals),
+            statusSummary = resources.getString(R.string.editor_verified, ndcOrName, signals),
           )
         }
         is CrossReferenceOutcome.NeedsUserSelection -> {
@@ -1556,9 +1559,10 @@ fun MedicationEditorScreen(
       onSelectCandidate = { chosen ->
         disambiguationPrompt = null
         val signals = chosen.matchedSignals.joinToString(", ") { it.resolve(resources.texts()) }
+        val ndcOrName = chosen.result.ndc11 ?: chosen.result.formulaName
         applyFdaResultToForm(
           fda = chosen.result,
-          statusSummary = resources.getString(R.string.editor_selected_match, chosen.result.ndc11, signals),
+          statusSummary = resources.getString(R.string.editor_selected_match, ndcOrName, signals),
         )
       },
       onKeepWithoutNdc = {
@@ -1628,7 +1632,12 @@ private fun CrossReferenceDisambiguationDialog(
                 fontWeight = FontWeight.SemiBold,
               )
               Text(
-                text = stringResource(R.string.editor_candidate_line, res.form.label(), res.manufacturer ?: stringResource(R.string.editor_unspecified), res.ndc11),
+                text = stringResource(
+                  R.string.editor_candidate_line,
+                  res.form.label(),
+                  res.manufacturer ?: stringResource(R.string.editor_unspecified),
+                  res.ndc11 ?: stringResource(R.string.value_none),
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
@@ -1882,6 +1891,17 @@ fun ScheduleEditorScreen(
   }
   var doseUnit by rememberSaveable { mutableStateOf(initialSchedule?.doseUnit ?: medication.defaultDoseUnit) }
   var intervalDaysText by rememberSaveable { mutableStateOf((initialSchedule?.intervalDays ?: 7).toString()) }
+  // Default start date and start window to the next upcoming window, so a new schedule doesn't
+  // start out with "Missed" doses for windows that already ended today.
+  val defaultStartDate = remember(orderedBuckets) {
+    val nowMillis = System.currentTimeMillis()
+    val today = LocalDate.now()
+    val allEndedToday = orderedBuckets.isNotEmpty() && orderedBuckets.all { b ->
+      val end = DoseAlarmTiming.windowEndMillis(b, today.toString())
+      end != null && end <= nowMillis
+    }
+    if (allEndedToday) today.plusDays(1).toString() else today.toString()
+  }
   // One start date serves as both the range start and an interval schedule's cycle anchor.
   var startDateIso by rememberSaveable {
     mutableStateOf(
@@ -1890,12 +1910,22 @@ fun ScheduleEditorScreen(
           it.frequencyType == ScheduleFrequencyType.EVERY_N_DAYS ||
             it.frequencyType == ScheduleFrequencyType.RELATIVE_TO_LAST_DOSE
         }?.anchorDateIso
-        ?: LocalDate.now().toString()
+        ?: defaultStartDate
     )
   }
   var endDateIso by rememberSaveable { mutableStateOf(initialSchedule?.endDateIso.orEmpty()) }
+  val defaultStartBucketId = remember(orderedBuckets, selectedBucketIds) {
+    val nowMillis = System.currentTimeMillis()
+    val today = LocalDate.now().toString()
+    val chosen = orderedBuckets.filter { it.id in selectedBucketIds }
+    val nextUpcoming = chosen.firstOrNull { b ->
+      val end = DoseAlarmTiming.windowEndMillis(b, today)
+      end == null || end > nowMillis
+    }
+    nextUpcoming?.id ?: chosen.firstOrNull()?.id
+  }
   // Partial first/last day, e.g. a twice-daily course started with the evening dose.
-  var startBucketId by rememberSaveable { mutableStateOf(initialSchedule?.startBucketId) }
+  var startBucketId by rememberSaveable { mutableStateOf(initialSchedule?.startBucketId ?: defaultStartBucketId) }
   var endBucketId by rememberSaveable { mutableStateOf(initialSchedule?.endBucketId) }
   val selectedDaysOfWeek = rememberSavableList { (initialSchedule?.daysOfWeek ?: setOf(1, 2, 3, 4, 5, 6, 7)).toList() }
   val selectedSpecificDates = rememberSavableList { initialSchedule?.specificDatesIso?.sorted().orEmpty() }

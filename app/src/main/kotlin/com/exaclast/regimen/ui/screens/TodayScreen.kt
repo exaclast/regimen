@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -196,7 +197,8 @@ fun TodayScreen(
     }
   }
 
-  // Take flow: pacing gate → optional confirmation / site choice → log.
+  // Take flow: early warning → pacing gate → optional confirmation / site choice → log.
+  var earlyPrompt by remember { mutableStateOf<TakeRequest.Scheduled?>(null) }
   var pacingPrompt by remember { mutableStateOf<TakeRequest?>(null) }
   var confirmPrompt by remember { mutableStateOf<TakeRequest?>(null) }
   var sitePrompt by remember { mutableStateOf<TakeRequest?>(null) }
@@ -224,7 +226,14 @@ fun TodayScreen(
     }
   }
 
-  fun requestTake(request: TakeRequest) {
+  fun requestTake(request: TakeRequest, confirmedEarly: Boolean = false) {
+    if (!confirmedEarly && request is TakeRequest.Scheduled) {
+      val start = DoseAlarmTiming.windowStartMillis(request.item.bucket, request.item.dateIso)
+      if (start != null && (start - now) >= 60 * 60 * 1000L) {
+        earlyPrompt = request
+        return
+      }
+    }
     if (!request.pacing.canTakeNow) pacingPrompt = request else afterPacing(request, alreadyConfirmed = false)
   }
 
@@ -421,7 +430,13 @@ fun TodayScreen(
             item = prn,
             isToday = uiState.isToday,
             enabled = !uiState.isFuture,
-            onLog = { requestTake(TakeRequest.Prn(prn)) },
+            onLog = {
+              if (uiState.isToday) {
+                requestTake(TakeRequest.Prn(prn))
+              } else {
+                timePrompt = LogTimeRequest(prn, startWithOtherTime = true)
+              }
+            },
             onLogAtOtherTime = { timePrompt = LogTimeRequest(prn, startWithOtherTime = true) },
             onOpenMedication = { onOpenMedication(prn.medication.id) },
           )
@@ -436,7 +451,7 @@ fun TodayScreen(
         item(key = "log-list") {
           DayLogList(
             logs = dayLogs,
-            medications = uiState.snapshot.medications,
+            medications = uiState.snapshot.allMedications,
             onDelete = onDeleteLog,
             onEdit = onEditLog,
           )
@@ -451,7 +466,7 @@ fun TodayScreen(
       onDismiss = { pickingExtraDose = false },
       onPick = {
         pickingExtraDose = false
-        timePrompt = LogTimeRequest(extraDoseItem(it), startWithOtherTime = false)
+        timePrompt = LogTimeRequest(extraDoseItem(it), startWithOtherTime = !uiState.isToday)
       },
     )
   }
@@ -467,6 +482,31 @@ fun TodayScreen(
         timePrompt = null
         requestPrnDose(request.item, takenAtMillis, note)
       },
+    )
+  }
+
+  earlyPrompt?.let { request ->
+    val item = request.item
+    AlertDialog(
+      onDismissRequest = { earlyPrompt = null },
+      icon = { Icon(Icons.Default.Warning, contentDescription = null) },
+      title = { Text(stringResource(R.string.today_take_early_title, request.medication.primaryName)) },
+      text = {
+        Text(
+          stringResource(
+            R.string.today_take_early_text,
+            item.bucket.name,
+            item.bucket.formattedStartTime(),
+          )
+        )
+      },
+      confirmButton = {
+        Button(onClick = {
+          earlyPrompt = null
+          requestTake(request, confirmedEarly = true)
+        }) { Text(stringResource(R.string.take_early)) }
+      },
+      dismissButton = { TextButton(onClick = { earlyPrompt = null }) { Text(stringResource(R.string.action_cancel)) } },
     )
   }
 
@@ -743,7 +783,11 @@ private fun WindowSection(
           }
         }
         if (pending.size > 1 && !isFutureDate && (phase == WindowPhase.NOW || phase == WindowPhase.MISSED)) {
-          TextButton(onClick = { onTakeAll(pending) }, modifier = Modifier.align(Alignment.End)) {
+          TextButton(
+            onClick = { onTakeAll(pending) },
+            colors = ButtonDefaults.textButtonColors(contentColor = onContainer),
+            modifier = Modifier.align(Alignment.End),
+          ) {
             Text(stringResource(R.string.today_take_all_n, pending.size))
           }
         }
@@ -857,10 +901,16 @@ private fun DoseCard(
     DoseAlarmTiming.windowEndMillis(item.bucket, item.dateIso)?.takeIf { it <= nowMillis }
   } else null
 
+  val isPastDay = item.dateIso < LocalDate.now().toString()
   val a11yActions = buildList {
-    if (canAct) add(CustomAccessibilityAction(takeLabel.removeSuffix("…")) { onTake(); true })
-    if (canLogOnTime) {
-      add(CustomAccessibilityAction(stringResource(R.string.a11y_taken_on_time, UiFormat.time(windowEnd!!))) { onTakenOnTime(); true })
+    if (canLogOnTime && isPastDay) {
+      add(CustomAccessibilityAction(stringResource(R.string.a11y_taken_on_time, UiFormat.time(windowEnd))) { onTakenOnTime(); true })
+      add(CustomAccessibilityAction(stringResource(R.string.take_now)) { onTake(); true })
+    } else {
+      if (canAct) add(CustomAccessibilityAction(takeLabel.removeSuffix("…")) { onTake(); true })
+      if (canLogOnTime) {
+        add(CustomAccessibilityAction(stringResource(R.string.a11y_taken_on_time, UiFormat.time(windowEnd))) { onTakenOnTime(); true })
+      }
     }
     if (canSnooze) add(CustomAccessibilityAction(pluralStringResource(R.plurals.a11y_snooze_minutes, snoozeMinutes, snoozeMinutes)) { onSnooze(); true })
     if (canAct) add(CustomAccessibilityAction(stringResource(R.string.action_skip)) { onSkip(); true })
@@ -1007,6 +1057,16 @@ private fun DoseCard(
           Spacer(Modifier.height(4.dp))
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             when {
+              canLogOnTime && isPastDay -> {
+                Button(onClick = onTakenOnTime, modifier = Modifier.weight(1f)) {
+                  Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                  Spacer(Modifier.width(8.dp))
+                  Text(stringResource(R.string.taken_on_time), maxLines = 1)
+                }
+                OutlinedButton(onClick = onTake, modifier = Modifier.weight(1f)) {
+                  Text(stringResource(R.string.take_now), maxLines = 1)
+                }
+              }
               canLogOnTime -> {
                 Button(onClick = onTake, modifier = Modifier.weight(1f)) {
                   Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -1145,7 +1205,7 @@ private fun DayLogList(
         if (log.status == DoseStatus.SKIPPED) R.string.log_skipped_at else R.string.log_taken_at,
         UiFormat.time(log.actionTimestampMillis),
       )
-      // The editor needs the medication, so a log whose medication was deleted stays read-only.
+      // The editor needs the medication; if the record is truly missing, the row stays read-only.
       GroupItem(index = index, count = logs.size, onClick = if (med != null) ({ onEdit(log) }) else null) {
         ListItem(
           supportingContent = {
@@ -1178,9 +1238,10 @@ private fun NoticeCard(
   onAction: () -> Unit,
   icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Default.NotificationsOff,
 ) {
+  val onContainer = MaterialTheme.colorScheme.onTertiaryContainer
   Surface(
     color = MaterialTheme.colorScheme.tertiaryContainer,
-    contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+    contentColor = onContainer,
     shape = MaterialTheme.shapes.large,
     modifier = Modifier.fillMaxWidth(),
   ) {
@@ -1191,7 +1252,10 @@ private fun NoticeCard(
       Icon(icon, contentDescription = null)
       Spacer(Modifier.width(12.dp))
       Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-      TextButton(onClick = onAction) { Text(actionLabel) }
+      TextButton(
+        onClick = onAction,
+        colors = ButtonDefaults.textButtonColors(contentColor = onContainer),
+      ) { Text(actionLabel) }
     }
   }
 }

@@ -63,6 +63,7 @@ class BackupManager(context: Context, private val repository: RegimenRepository)
 
   /** Encrypted export of everything on this device. */
   fun exportEncrypted(uri: Uri) {
+    verifyExportIntegrity()
     val dataKey = keys.dataKey() ?: throw MessageException(Message(R.string.backup_err_set_passphrase_first))
     val file = BundleCrypto.encrypt(BackupFiles.encode(repository.currentBundle()), dataKey, keys.envelope())
     write(uri, file)
@@ -70,7 +71,15 @@ class BackupManager(context: Context, private val repository: RegimenRepository)
 
   /** Unencrypted, human-readable JSON (for inspection or other tools). */
   fun exportPlainJson(uri: Uri) {
+    verifyExportIntegrity()
     write(uri, BackupFiles.encode(repository.currentBundle(), pretty = true))
+  }
+
+  private fun verifyExportIntegrity() {
+    val unreadable = repository.undecodableRowCount()
+    if (unreadable > 0) {
+      throw MessageException(Message(R.plurals.backup_err_unreadable_records, unreadable, unreadable))
+    }
   }
 
   private fun write(uri: Uri, bytes: ByteArray) {

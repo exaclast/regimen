@@ -72,6 +72,7 @@
                 <action android:name="com.exaclast.regimen.action.SNOOZE_DOSE" />
                 <action android:name="com.exaclast.regimen.action.SKIP_DOSE" />
                 <action android:name="com.exaclast.regimen.action.DOSE_NOTIFICATION_DISMISSED" />
+                <action android:name="com.exaclast.regimen.action.DISMISS_TEST" />
                 <action android:name="com.exaclast.regimen.action.TRIGGER_WINDOW_START" />
                 <action android:name="com.exaclast.regimen.action.TRIGGER_WINDOW_NUDGE" />
                 <action android:name="com.exaclast.regimen.action.TRIGGER_WINDOW_END_ALARM" />

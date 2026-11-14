@@ -14,7 +14,7 @@ The one list of everything still to do. Last reconciled 2026-11-14 against commi
 
 ## How to use this file
 
-**Adding something.** Add one row in the matching area, using the next free number (next: **T-122**). IDs never change
+**Adding something.** Add one row in the matching area, using the next free number (next: **T-123**). IDs never change
 or get reused. One sentence is enough; anything longer goes in `designs/`. An audit or device pass adds rows here, and its
 raw report goes in `archive/`.
 
@@ -50,7 +50,7 @@ is not part of the v1.0 promise.
 
 | | Milestone | Release | Why | Tasks |
 |-|-----------|---------|-----|-------|
-| **M1** | **Trust** | v0.8 | Make reminders reliable, protect health data, fix wrong information, and the two P0 data-loss bugs | T-001–006, T-011–013, T-016, T-019, T-026, T-027, T-038, T-050–053, T-057, T-058, T-068, T-084 |
+| **M1** | **Trust** | v0.8 | Make reminders reliable, protect health data, fix wrong information, and the two P0 data-loss bugs | T-001–006, T-011–013, T-016, T-019, T-026, T-027, T-038, T-050–053, T-057, T-058, T-068, T-084, T-122 |
 | **M3** | **Foundations** | v0.9 | Everything that reshapes stored data, plus the safety net. Scoped: T-060 is the receivers and the worst reload path, T-085 is Robolectric only | T-014, T-015, T-054, T-055, T-059–064, T-085 |
 | **M5** | **Stable release** | v1.0 | Release gates and cheap wins on top of v0.9, including automatic local backups and the two width fixes that keep tablets from looking broken | T-029, T-039, T-040, T-044, T-056, T-066, T-072, T-078, T-087, T-090, T-093 |
 | **M2** | **Adaptive** | 1.x | Tablet, foldable and desktop. UI only, so it can overlap anything. T-066 and T-072 are pulled into v1.0 | T-036, T-069–071, T-073, T-074 |
@@ -60,13 +60,11 @@ is not part of the v1.0 promise.
 
 ### Up next
 
-For v0.8. Small, high-value and independent of each other. Suggested order (T-111 to T-113, which reshaped data, are done):
+For v0.9 (M3: Foundations):
 
-1. **T-057** / **T-058** The two P0s: a bad backup crash-loops the app, and unreadable rows vanish from backups
-2. **T-003** / **T-004** Test notifications and demo data touch real alarms
-3. **T-026** Scans overwriting the dose
-4. **T-068** Invisible "Review" button
-5. **T-084** Lint in CI, so all of this stays fixed
+1. **T-060** Room migration (receivers and worst reload path)
+2. **T-014, T-015** Schedule window changes and schedule versioning
+3. **T-059, T-061, T-064** Local/shared settings split, sync payload format, tombstone expiry
 
 ---
 
@@ -76,10 +74,6 @@ For v0.8. Small, high-value and independent of each other. Suggested order (T-11
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-003 | Test reminders use the real notification: Take logs a real dose, swiping snoozes real doses. Send a labelled test with no dose actions | P1 | S | M1 | B25 |
-| T-004 | Demo data arms real alarms, is available in release builds, and from Settings replaces real data. Limit it to debug or suppress its reminders | P1 | S | M1 | B26, A5 |
-| T-005 | (verify) Opening the alarm screen from the notification (`ACTION_SHOW`) may not silence the insistent sound | P1 | S | M1 | B35 |
-| T-006 | Pressing Home on the alarm screen leaves it ringing up to 10 minutes with nothing on screen | P2 | S | M1 | Low |
 | T-007 | `AlarmRingtonePlayer` leaks a `MediaPlayer` on a failed attempt, and `prepare()` runs on the main thread | P3 | S | — | Low |
 | T-008 | Notification channel description still mentions Snooze | P3 | S | — | Low |
 | T-009 | Remove legacy notification code: `dose:` tag, `END_ALARM` snooze, `legacyItemKey`, unused `EXTRA_*` | P3 | S | — | O9, roadmap |
@@ -89,14 +83,10 @@ For v0.8. Small, high-value and independent of each other. Suggested order (T-11
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-012 | "Take early" has no friction hours ahead of a window, and on past days the main button is "Take now" | P1 | S | M1 | B29 |
-| T-013 | A new schedule can start out "Missed": it defaults to today, including windows already over | P1 | S | M1 | B31 |
 | T-014 | Adding a window to a schedule back-fills missed doses, because the schedule's start date covers the new window | P1 | M | M3 | B60 |
 | T-015 | Editing a schedule rewrites history. Version schedules: end the old one and start a new one on a meaningful edit. Needed before the calendar (T-101). Dose amount, strength and injection details already change by date (`MedicationAdjustment`, T-113); this is what's left (windows, frequency, date range) | P1 | L | M3 | B30 |
-| T-016 | (partial) "Other time" shipped, but choosing "Now" while viewing a past day still stamps the current time on that day. Default to "Other time" on past days | P2 | S | M1 | B32 |
 | T-017 | Add Pause for a schedule. "Paused" displays but nothing sets it, and a disabled schedule makes the medication appear as As needed. Update `MedicationGroups` too | P2 | M | M4 | B42 |
 | T-018 | An every-N-days-from-last-dose schedule stays due every day after its due date until taken | P2 | S | M4 | Low |
-| T-019 | Logs for deleted medications show as "Medication" and can't be edited. Load deleted records for names | P2 | S | M1 | B33 |
 | T-020 | The "doses from yesterday" notice stays all day and can't be dismissed | P3 | S | — | B1 leftover |
 | T-021 | Calm Today: upcoming windows take as much room as the current one. Collapse those after the next | P2 | M | M4 | O10 |
 | T-022 | "Take all on time" for a missed window | P3 | S | — | roadmap |
@@ -110,8 +100,6 @@ For v0.8. Small, high-value and independent of each other. Suggested order (T-11
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-026 | The scan prompt's example is `"defaultDoseAmount": 1.0`, so a scan tends to overwrite the dose with 1 | P1 | S | M1 | B38, A12 |
-| T-027 | A record with no package gets a made-up NDC (`<product>-01` or `00000-0000-00`) that can be saved. Use null | P1 | S | M1 | B41 |
 | T-029 | Being offline reads as "no matching FDA record". Separate network errors from empty results | P2 | S | M5 | B40 |
 | T-030 | "Needs review" state for fields filled by AI or FDA data, since they directly affect dosing. T-104 reuses it | P2 | M | M4 | O10 |
 | T-031 | Sanitizer: patient names of 4+ letters still match inside longer words (Mann → Mannitol) | P3 | S | — | B39 leftover |
@@ -141,9 +129,6 @@ For v0.8. Small, high-value and independent of each other. Suggested order (T-11
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-051 | The alarm screen draws medication details over the lock screen even in discreet mode | P1 | S | M1 | B15 |
-| T-052 | Privacy text is inaccurate: the name "stays on your device" but is in every backup and syncs. ML Kit sends telemetry. Auto Backup includes the plaintext database (see D-3) | P1 | S | M1 | B24 |
-| T-053 | Passphrases go into saved state via `rememberSaveable`; the recovery code screen has no `FLAG_SECURE` | P1 | S | M1 | B43 |
 | T-054 | Recovery code: ✕ and back skip the "I've saved it" check; unlocking with a code adopts that file's passphrase before the restore is confirmed | P2 | S | M3 | B44 |
 | T-055 | Harden backup reading: cap PBKDF2 iterations from the header, cap file and decompressed size, clear keys after use, cache `isConfigured`, explain a lost Keystore key | P1 | S | M3 | O7 |
 | T-056 | Play policy: justify or replace `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` and `USE_FULL_SCREEN_INTENT`; complete Data Safety | P2 | M | M5 | O10 |
@@ -152,8 +137,6 @@ For v0.8. Small, high-value and independent of each other. Suggested order (T-11
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-057 | Backups aren't validated. A window with `hour: 25` crash-loops the app on every launch, `{}` counts as a backup, dangling references pass. Add `validate()` before preview | P0 | M | M1 | B20 |
-| T-058 | Undecodable database rows vanish silently and drop out of future backups. Log, count, keep the raw row, and stop the export | P0 | S | M1 | B21 |
 | T-059 | `applyBundle` writes settings before the transaction, so a failed restore leaves them out of step | P1 | S | M3 | B22 |
 | T-060 | All database and scheduling work runs on the main thread and reloads everything on each tap; receivers don't use `goAsync`. For v0.9, only the receivers (`goAsync`, work off the main thread) and the worst reload-on-tap path. The rest is T-121 | P1 | M | M3 | O1, A17 |
 | T-121 | The rest of the threading work: a background dispatcher for all database and scheduling work, batched writes, a recent-logs snapshot, coalesced `refresh` | P2 | L | — | split from T-060 |
@@ -170,7 +153,6 @@ Measurements and device notes are in `designs/form-factors.md`.
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
 | T-066 | Cap content width, centered (600-840 dp), on lists, the medication page, editors and Settings. Up to 1,690 dp wide today | P1 | S | M5 | form factors |
-| T-068 | The "Review" button on the notice card is nearly invisible where the card is light (seen in dark theme). Use the card's on-container color; check other text buttons on tinted containers | P1 | S | M1 | form factors |
 | T-069 | List and detail side by side for Medications, Providers and Indications with Navigation 3 scenes. Threshold above 840 dp (see D-7) | P2 | L | M2 | form factors |
 | T-070 | Today as a grid of dose windows in wide windows | P2 | M | M2 | form factors |
 | T-071 | Two-column editors and medication page | P2 | M | M2 | form factors |
@@ -195,7 +177,6 @@ Measurements and device notes are in `designs/form-factors.md`.
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-084 | CI: add `lintDebug` (suppress the one false alarm first); `contents: write` only on the release job; fail instead of publishing unsigned; pass `version_name` via `env`; pin actions to SHAs; drop V1 signing | P1 | S | M1 | O4 |
 | T-085 | Test the layers where bugs live: For v0.9: Robolectric for the repository and receivers. Compose tests for the take flow and state restoration, and instrumented Undo after Replace, come later. `androidTest` is empty | P1 | L | M3 | O5, known gap |
 | T-087 | Turn on R8 and resource shrinking; `proguard-rules.pro` is referenced but missing | P2 | M | M5 | O2, A18 |
 | T-088 | Baseline Profile | P3 | S | — | O2 |

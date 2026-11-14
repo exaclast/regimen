@@ -39,6 +39,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.Button
@@ -63,7 +64,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -91,6 +91,7 @@ class DoseAlarmActivity : ComponentActivity() {
   private data class AlarmTarget(val bucketId: String?, val dateIso: String)
 
   private var target by mutableStateOf(AlarmTarget(null, LocalDate.now().toString()))
+  private var isDeviceLocked by mutableStateOf(false)
   private val ringTimeoutHandler = Handler(Looper.getMainLooper())
   private val stopRinging = Runnable { AlarmRingtonePlayer.stop() }
 
@@ -104,11 +105,14 @@ class DoseAlarmActivity : ComponentActivity() {
     setTurnScreenOn(true)
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+    val keyguard = getSystemService(KeyguardManager::class.java)
+    isDeviceLocked = keyguard?.isKeyguardLocked == true
+
     // Acting on a dose from the lock screen is the point of an alarm, so don't force an unlock —
     // unless the user asked to keep medication details off the lock screen.
     val repo = RegimenRepository.getInstance(applicationContext)
-    if (repo.snapshot.value.settings.discreetNotifications) {
-      getSystemService(KeyguardManager::class.java)?.requestDismissKeyguard(this, null)
+    if (repo.snapshot.value.settings.discreetNotifications && isDeviceLocked) {
+      requestUnlock()
     }
 
     // Recreated after a configuration change: the alarm is already ringing (or was silenced).
@@ -119,6 +123,8 @@ class DoseAlarmActivity : ComponentActivity() {
         DoseAlarmScreen(
           bucketId = target.bucketId,
           dateIso = target.dateIso,
+          isDeviceLocked = isDeviceLocked,
+          onRequestUnlock = { requestUnlock() },
           onTake = { items ->
             logAll(items, DoseStatus.TAKEN)
             finish()
@@ -142,6 +148,36 @@ class DoseAlarmActivity : ComponentActivity() {
     }
   }
 
+  override fun onResume() {
+    super.onResume()
+    val keyguard = getSystemService(KeyguardManager::class.java)
+    isDeviceLocked = keyguard?.isKeyguardLocked == true
+  }
+
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    val keyguard = getSystemService(KeyguardManager::class.java)
+    isDeviceLocked = keyguard?.isKeyguardLocked == true
+  }
+
+  private fun requestUnlock(onSuccess: () -> Unit = {}) {
+    val keyguard = getSystemService(KeyguardManager::class.java)
+    if (keyguard?.isKeyguardLocked == true) {
+      keyguard.requestDismissKeyguard(
+        this,
+        object : KeyguardManager.KeyguardDismissCallback() {
+          override fun onDismissSucceeded() {
+            isDeviceLocked = false
+            onSuccess()
+          }
+        },
+      )
+    } else {
+      isDeviceLocked = false
+      onSuccess()
+    }
+  }
+
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
@@ -153,16 +189,17 @@ class DoseAlarmActivity : ComponentActivity() {
     val dateIso = intent.getStringExtra(EXTRA_DATE_ISO) ?: LocalDate.now().toString()
     target = AlarmTarget(bucketId, dateIso)
 
+    // Stop the notification's insistent copy on any launch (ACTION_RING or ACTION_SHOW)
+    // so tapping the notification silences its sound, and the screen owns any ringing audio.
+    if (bucketId != null) {
+      val snapshot = RegimenRepository.getInstance(applicationContext).snapshot.value
+      DoseNotificationManager.silenceAlarmNotifications(applicationContext, snapshot, bucketId, dateIso)
+    }
+
     if (startRinging && intent.action == ACTION_RING) {
       AlarmRingtonePlayer.play(this)
       ringTimeoutHandler.removeCallbacks(stopRinging)
       ringTimeoutHandler.postDelayed(stopRinging, RING_TIMEOUT_MILLIS)
-      // This screen owns the audio now (volume keys silence it); stop the notification's
-      // insistent copy so the two don't overlap and silencing actually silences.
-      if (bucketId != null) {
-        val snapshot = RegimenRepository.getInstance(applicationContext).snapshot.value
-        DoseNotificationManager.silenceAlarmNotifications(applicationContext, snapshot, bucketId, dateIso)
-      }
     }
   }
 
@@ -222,6 +259,12 @@ class DoseAlarmActivity : ComponentActivity() {
     return super.onKeyDown(keyCode, event)
   }
 
+  override fun onStop() {
+    super.onStop()
+    // Pressing Home, switching apps, or turning off the screen silences the ringing alarm.
+    if (!isChangingConfigurations) silence()
+  }
+
   override fun onDestroy() {
     super.onDestroy()
     if (!isChangingConfigurations) silence()
@@ -242,6 +285,8 @@ class DoseAlarmActivity : ComponentActivity() {
 fun DoseAlarmScreen(
   bucketId: String?,
   dateIso: String,
+  isDeviceLocked: Boolean = false,
+  onRequestUnlock: () -> Unit = {},
   onTake: (List<ScheduledDoseItem>) -> Unit,
   onSnooze: (List<ScheduledDoseItem>, Int) -> Unit,
   onSkip: (List<ScheduledDoseItem>) -> Unit,
@@ -251,6 +296,7 @@ fun DoseAlarmScreen(
 ) {
   val repo = RegimenRepository.getInstance(androidx.compose.ui.platform.LocalContext.current)
   val snapshot by repo.snapshot.collectAsState()
+  val isDiscreetLocked = isDeviceLocked && snapshot.settings.discreetNotifications
 
   val board = remember(snapshot, dateIso) {
     DoseEngine.buildDailyBoard(
@@ -405,6 +451,83 @@ fun DoseAlarmScreen(
           shape = RoundedCornerShape(16.dp),
         ) {
           Text(stringResource(R.string.action_dismiss))
+        }
+      } else if (isDiscreetLocked) {
+        val count = activeItems.size
+        Card(
+          shape = RoundedCornerShape(20.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+          modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f),
+        ) {
+          Column(
+            modifier = Modifier
+              .fillMaxSize()
+              .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+          ) {
+            Icon(
+              imageVector = Icons.Default.Lock,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.primary,
+              modifier = Modifier.size(48.dp),
+            )
+            Spacer(Modifier.height(16.dp))
+            val dosesCountText = pluralStringResource(R.plurals.notif_doses_due, count, count)
+            Text(
+              text = stringResource(R.string.alarm_discreet_summary, bucketTitle, dosesCountText),
+              style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+              textAlign = TextAlign.Center,
+              color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(24.dp))
+            Button(
+              onClick = onRequestUnlock,
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp),
+              shape = RoundedCornerShape(16.dp),
+            ) {
+              Text(
+                text = stringResource(R.string.alarm_discreet_unlock),
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+              )
+            }
+          }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        val snoozeLabel = stringResource(R.string.alarm_snooze, snapshot.settings.snoozeMinutes)
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+          FilledTonalButton(
+            onClick = { onSnooze(activeItems, snapshot.settings.snoozeMinutes) },
+            modifier = Modifier
+              .weight(1f)
+              .height(50.dp),
+            shape = RoundedCornerShape(14.dp),
+          ) {
+            Icon(Icons.Default.Alarm, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(snoozeLabel, maxLines = 1)
+          }
+
+          OutlinedButton(
+            onClick = onDismiss,
+            modifier = Modifier
+              .weight(1f)
+              .height(50.dp),
+            shape = RoundedCornerShape(14.dp),
+          ) {
+            Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(stringResource(R.string.action_dismiss), maxLines = 1)
+          }
         }
       } else {
         // Items list

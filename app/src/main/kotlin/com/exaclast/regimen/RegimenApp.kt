@@ -1,5 +1,6 @@
 package com.exaclast.regimen
 
+import android.content.pm.ApplicationInfo
 import android.widget.Toast
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.Badge
@@ -22,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -65,6 +67,12 @@ import com.exaclast.regimen.ui.screens.ProviderEditorScreen
 import com.exaclast.regimen.ui.screens.ProviderListScreen
 import com.exaclast.regimen.ui.screens.ScheduleEditorScreen
 import com.exaclast.regimen.ui.screens.SettingsScreen
+import com.exaclast.regimen.ui.screens.SettingsRemindersScreen
+import com.exaclast.regimen.ui.screens.SettingsMedicationsScreen
+import com.exaclast.regimen.ui.screens.SettingsBackupScreen
+import com.exaclast.regimen.ui.screens.SettingsAppearanceScreen
+import com.exaclast.regimen.ui.screens.SettingsScanningScreen
+import com.exaclast.regimen.ui.screens.SettingsDiagnosticsScreen
 import com.exaclast.regimen.ui.screens.StartupPermissionsDialog
 import com.exaclast.regimen.ui.screens.TodayScreen
 import com.exaclast.regimen.ui.theme.RegimenTheme
@@ -77,6 +85,10 @@ fun RegimenApp(
   viewModel: RegimenViewModel = viewModel(),
 ) {
   val context = LocalContext.current
+  val resources = LocalResources.current
+  val isDebugBuild = remember(context) {
+    (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0 || context.packageName.endsWith(".debug")
+  }
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val snapshot = uiState.snapshot
   val backupEncryptionConfigured by viewModel.backupEncryptionConfigured.collectAsStateWithLifecycle()
@@ -197,7 +209,7 @@ fun RegimenApp(
                 onOpenWindow = { navigator.navigate(Route.DoseWindowEditor(it)) },
                 onAddMedication = { navigator.navigate(Route.MedicationEditor()) },
                 onReviewYesterday = { viewModel.selectDate(uiState.yesterdayIso) },
-                onLoadDemoData = viewModel::resetToSampleData,
+                onLoadDemoData = if (isDebugBuild) viewModel::resetToSampleData else null,
                 onRestoreBackup = { uri ->
                   viewModel.openBackup(uri)
                   navigator.navigate(Route.BackupRestore)
@@ -386,7 +398,7 @@ fun RegimenApp(
 
             entry<Route.DoseLogEditor> { key ->
               val log = snapshot.doseLogs.find { it.id == key.id }
-              val medication = log?.let { l -> snapshot.medications.find { it.id == l.medicationId } }
+              val medication = log?.let { l -> snapshot.medication(l.medicationId) }
               if (log == null || medication == null) {
                 LaunchedEffect(key) { navigator.backFrom(key) }
               } else {
@@ -480,40 +492,42 @@ fun RegimenApp(
             }
 
             entry<Route.Settings> {
-              // A dose due today to exercise test notifications with (prefer one still pending).
-              val testItem = remember(snapshot, uiState.todayIso) {
-                DoseEngine.buildDailyBoard(
-                  dateIso = uiState.todayIso,
-                  medications = snapshot.medications,
-                  schedules = snapshot.schedules,
-                  buckets = snapshot.buckets,
-                  logs = snapshot.doseLogs,
-                  indications = snapshot.indications,
-                  providers = snapshot.providers,
-                ).bucketGroups.flatMap { it.items }.let { items -> items.firstOrNull { !it.isCompleted } ?: items.firstOrNull() }
-              }
               SettingsScreen(
-                settings = settings,
-                tracksProviders = snapshot.tracksProviders,
-                tracksIndications = snapshot.tracksIndications,
-                buckets = snapshot.buckets,
-                diagnosticsTarget = testItem?.let {
-                  DiagnosticsTarget("${it.medication.primaryName} (${it.bucket.name})")
-                },
+                showDiagnostics = isDebugBuild,
+                onNavigateReminders = { navigator.navigate(Route.SettingsReminders) },
+                onNavigateMedications = { navigator.navigate(Route.SettingsMedications) },
+                onNavigateBackup = { navigator.navigate(Route.SettingsBackup) },
+                onNavigateAppearance = { navigator.navigate(Route.SettingsAppearance) },
+                onNavigateScanning = { navigator.navigate(Route.SettingsScanning) },
+                onNavigateDiagnostics = { navigator.navigate(Route.SettingsDiagnostics) },
                 onBack = navigator::back,
+              )
+            }
+
+            entry<Route.SettingsReminders> {
+              SettingsRemindersScreen(
+                settings = settings,
+                buckets = snapshot.buckets,
                 onSaveSettings = viewModel::saveSettings,
                 onOpenWindow = { navigator.navigate(Route.DoseWindowEditor(it)) },
                 onResetWindows = viewModel::resetBucketsToDefault,
-                onTestNotification = { stage ->
-                  val item = testItem ?: return@SettingsScreen
-                  val posted = viewModel.sendTestReminder(item, stage)
-                  val text = when {
-                    !posted -> "Allow notifications to test reminders"
-                    stage == DoseNotificationStage.WINDOW_END_ALARM -> "Test alarm sent"
-                    else -> "Test reminder sent"
-                  }
-                  Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
-                },
+                onPermissionsChanged = viewModel::refreshPermissionsAndAlarms,
+                onBack = navigator::back,
+              )
+            }
+
+            entry<Route.SettingsMedications> {
+              SettingsMedicationsScreen(
+                settings = settings,
+                tracksProviders = snapshot.tracksProviders,
+                tracksIndications = snapshot.tracksIndications,
+                onSaveSettings = viewModel::saveSettings,
+                onBack = navigator::back,
+              )
+            }
+
+            entry<Route.SettingsBackup> {
+              SettingsBackupScreen(
                 backupEncryptionConfigured = backupEncryptionConfigured,
                 pendingExport = pendingExport,
                 onConsumePendingExport = viewModel::consumePendingExport,
@@ -526,8 +540,55 @@ fun RegimenApp(
                 onOpenBackupEncryption = { mode -> navigator.navigate(Route.BackupEncryption(mode)) },
                 onRequestExportAfterSetup = viewModel::requestExportAfterSetup,
                 onClearAllData = viewModel::clearAllUserData,
-                onResetSampleData = viewModel::resetToSampleData,
-                onPermissionsChanged = viewModel::refreshPermissionsAndAlarms,
+                onResetSampleData = if (isDebugBuild) viewModel::resetToSampleData else null,
+                onBack = navigator::back,
+              )
+            }
+
+            entry<Route.SettingsAppearance> {
+              SettingsAppearanceScreen(
+                settings = settings,
+                onSaveSettings = viewModel::saveSettings,
+                onBack = navigator::back,
+              )
+            }
+
+            entry<Route.SettingsScanning> {
+              SettingsScanningScreen(
+                settings = settings,
+                onSaveSettings = viewModel::saveSettings,
+                onBack = navigator::back,
+              )
+            }
+
+            entry<Route.SettingsDiagnostics> {
+              val testItem = remember(snapshot, uiState.todayIso) {
+                DoseEngine.buildDailyBoard(
+                  dateIso = uiState.todayIso,
+                  medications = snapshot.medications,
+                  schedules = snapshot.schedules,
+                  buckets = snapshot.buckets,
+                  logs = snapshot.doseLogs,
+                  indications = snapshot.indications,
+                  providers = snapshot.providers,
+                ).bucketGroups.flatMap { it.items }.let { items -> items.firstOrNull { !it.isCompleted } ?: items.firstOrNull() }
+              }
+              SettingsDiagnosticsScreen(
+                settings = settings,
+                diagnosticsTarget = testItem?.let {
+                  DiagnosticsTarget("${it.medication.primaryName} (${it.bucket.name})")
+                },
+                onTestNotification = { stage ->
+                  val targetLabel = testItem?.let { "${it.medication.primaryName} (${it.bucket.name})" }
+                  val posted = viewModel.sendTestReminder(stage, targetLabel)
+                  val text = when {
+                    !posted -> resources.getString(R.string.settings_test_allow_notif)
+                    stage == DoseNotificationStage.WINDOW_END_ALARM -> resources.getString(R.string.settings_test_alarm_sent)
+                    else -> resources.getString(R.string.settings_test_reminder_sent)
+                  }
+                  Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
+                },
+                onBack = navigator::back,
               )
             }
 

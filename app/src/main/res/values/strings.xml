@@ -319,6 +319,8 @@
     <string name="today_log_named_question">Log %1$s?</string>
     <string name="today_take_anyway_title">Take %1$s anyway?</string>
     <string name="today_take_anyway">Take anyway</string>
+    <string name="today_take_early_title">Take %1$s early?</string>
+    <string name="today_take_early_text">This dose is scheduled for %1$s at %2$s. Are you sure you want to take it early?</string>
     <plurals name="today_take_all_anyway_title">
         <item quantity="one">Take %1$d anyway?</item>
         <item quantity="other">Take all %1$d anyway?</item>
@@ -344,7 +346,7 @@
     <string name="today_empty_first_run">Add your medications and schedules to start tracking doses, restore a backup, or load demo data to explore.</string>
     <string name="demo_load">Load demo data</string>
     <string name="demo_load_title">Load demo data?</string>
-    <string name="demo_load_text">This populates sample medications, indications, providers, and schedules.</string>
+    <string name="demo_load_text">This replaces your medications, schedules and dose history with sample data. Reminders and alarms are turned off.</string>
     <string name="pacing_next_dose">The next dose isn\'t due until %1$s.</string>
     <string name="pacing_daily_limit">You\'ve reached the daily limit (%1$d of %2$s).</string>
     <string name="pacing_daily_amount_limit">You\'ve reached the daily amount limit for %1$s.</string>
@@ -467,6 +469,15 @@
 
     <!-- Settings -->
     <string name="value_off">Off</string>
+    <string name="settings_category_reminders">Reminders and dose windows</string>
+    <string name="settings_category_reminders_desc">Reminders, alarms, dose windows, and permissions</string>
+    <string name="settings_category_medications">Medications and privacy</string>
+    <string name="settings_category_medications_desc">Tracking options, discreet notifications, and printed name</string>
+    <string name="settings_category_backup">Backup and data</string>
+    <string name="settings_category_backup_desc">Backups, encryption, restore, and data management</string>
+    <string name="settings_category_appearance_desc">Theme and wallpaper colors</string>
+    <string name="settings_category_scanning_desc">Gemini Nano on-device scanner and OpenFDA lookup</string>
+    <string name="settings_category_diagnostics_desc">Test reminders and alarms</string>
     <string name="settings_reminders">Reminders</string>
     <string name="settings_dose_reminders">Dose reminders</string>
     <string name="settings_dose_reminders_help">Notify when a dose window opens</string>
@@ -507,10 +518,20 @@
     <string name="settings_diagnostics">Diagnostics</string>
     <string name="settings_test_turn_on">Turn on dose reminders first</string>
     <string name="settings_test_no_dose">No scheduled dose today to test with</string>
+    <string name="settings_test_generic">Sends a sample reminder</string>
     <string name="settings_test_uses">Uses %1$s</string>
     <string name="settings_test_reminder">Send a test reminder</string>
     <string name="settings_alarm_is_off">End-of-window alarm is off</string>
     <string name="settings_test_alarm">Test the end-of-window alarm</string>
+    <string name="settings_test_allow_notif">Allow notifications to test reminders</string>
+    <string name="settings_test_reminder_sent">Test reminder sent</string>
+    <string name="settings_test_alarm_sent">Test alarm sent</string>
+    <string name="notif_test_reminder_title">Test reminder</string>
+    <string name="notif_test_alarm_title">Test alarm</string>
+    <string name="notif_test_reminder_body">Testing reminder notifications. Tapping or swiping this test will not log or snooze any doses.</string>
+    <string name="notif_test_reminder_body_with_med">Sample preview for %1$s. Tapping or swiping this test will not log or snooze any doses.</string>
+    <string name="notif_test_alarm_body">Testing end-of-window alarm. Tapping or swiping this test will not log or snooze any doses.</string>
+    <string name="notif_test_alarm_body_with_med">Sample alarm preview for %1$s. Tapping or swiping this test will not log or snooze any doses.</string>
     <string name="settings_backup">Backup</string>
     <string name="settings_export_help">Save an encrypted file with everything on this device</string>
     <string name="settings_export_help_setup">Set a passphrase, then save an encrypted file</string>
@@ -526,7 +547,7 @@
     <string name="settings_passphrase_not_set">Not set up yet</string>
     <string name="settings_danger">Danger zone</string>
     <string name="settings_demo_help">Replace everything with sample medications</string>
-    <string name="settings_demo_text">This replaces your medications, schedules and dose history with sample data.</string>
+    <string name="settings_demo_text">This replaces your medications, schedules and dose history with sample data. Reminders and alarms are turned off.</string>
     <string name="settings_demo_loaded">Demo data loaded.</string>
     <string name="settings_delete_all">Delete all data</string>
     <string name="settings_delete_all_help">Medications, providers, indications and dose history</string>
@@ -538,7 +559,7 @@
     <string name="settings_plain_text">The file will contain your medications, doses and history in plain text. Anyone who gets the file, or any app or cloud service it\'s stored in, can read it.</string>
     <string name="settings_plain_confirm">Export</string>
     <string name="settings_label_name">Your name as printed on labels</string>
-    <string name="settings_label_name_help">Used by on-device Gemini Nano as a filter so your printed name is never misread as a medication brand or generic name. Stays entirely on-device; only required if you plan to use label scanning.</string>
+    <string name="settings_label_name_help">Used by on-device Gemini Nano as a filter so your printed name is never misread as a medication brand or generic name. Saved in your Regimen settings and backups; only needed if you use label scanning.</string>
 
     <!-- Dose windows -->
     <string name="window_reminders_off">Reminders off</string>
@@ -587,9 +608,9 @@
     <string name="setup_indications_help">What each medication is for</string>
     <string name="setup_scanning_optional">Label Scanning &amp; Lookup (Optional)</string>
     <string name="setup_lookup_optional">Medication Lookup (Optional)</string>
-    <string name="setup_nano_help">On-device AI extracts medication details from prescription bottle labels without sending images to the cloud.</string>
+    <string name="setup_nano_help">On-device AI extracts medication details from prescription bottle labels without sending photos or label text to the cloud. Google ML Kit may send basic SDK diagnostics.</string>
     <string name="setup_name_title">Your Name on Labels (Optional)</string>
-    <string name="setup_name_help">Label scanning ignores this name so it\'s never mistaken for a medication. It stays on your device.</string>
+    <string name="setup_name_help">Label scanning ignores this name so it\'s never mistaken for a medication. Saved in your Regimen settings and backups.</string>
     <string name="setup_name_label">Name as printed on labels</string>
     <string name="setup_name_hint">e.g. Jane Doe</string>
     <string name="setup_all_set">All Set</string>
@@ -788,6 +809,8 @@
     <string name="alarm_site_last">(Last: %1$s)</string>
     <string name="alarm_draw">Draw: %1$s</string>
     <string name="alarm_inject">Inject: %1$s</string>
+    <string name="alarm_discreet_unlock">Unlock to view and log</string>
+    <string name="alarm_discreet_summary">%1$s · %2$s</string>
 
     <!-- Names of enum values (model/*, domain/MedicationGroups) -->
     <string name="enum_site_mode_off">Off</string>
@@ -998,7 +1021,12 @@
     <string name="backup_err_wrong_passphrase">Incorrect passphrase</string>
     <string name="backup_err_wrong_key">This recovery code is for a different backup</string>
     <string name="backup_err_corrupted">The backup is damaged and can\'t be read</string>
+    <string name="backup_err_invalid">This backup contains invalid data and can\'t be read</string>
     <string name="backup_err_bad_recovery_code">That recovery code isn\'t valid; check for typos</string>
+    <plurals name="backup_err_unreadable_records">
+        <item quantity="one">Can\'t export: %1$d unreadable record in database; export stopped to prevent data loss</item>
+        <item quantity="other">Can\'t export: %1$d unreadable records in database; export stopped to prevent data loss</item>
+    </plurals>
 
     <!-- Snackbar messages from the view model -->
     <string name="vm_logged">Logged %1$s</string>

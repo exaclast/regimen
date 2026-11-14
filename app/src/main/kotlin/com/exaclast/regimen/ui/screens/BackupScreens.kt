@@ -1,11 +1,14 @@
 package com.exaclast.regimen.ui.screens
 
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.res.Resources
 import android.os.PersistableBundle
+import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -46,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -96,12 +100,12 @@ fun BackupEncryptionScreen(
   onDone: (changed: Boolean) -> Unit,
   onClose: () -> Unit,
 ) {
-  var current by rememberSaveable { mutableStateOf("") }
-  var newPass by rememberSaveable { mutableStateOf("") }
-  var confirm by rememberSaveable { mutableStateOf("") }
+  // Not saveable: passphrases and recovery codes shouldn't be written into saved instance state.
+  var current by remember { mutableStateOf("") }
+  var newPass by remember { mutableStateOf("") }
+  var confirm by remember { mutableStateOf("") }
   var busy by remember { mutableStateOf(false) }
   var error by remember { mutableStateOf<String?>(null) }
-  // Not saveable: the code shouldn't be written into saved instance state.
   var recoveryCode by remember { mutableStateOf<String?>(null) }
   var savedConfirmed by rememberSaveable { mutableStateOf(false) }
 
@@ -142,6 +146,7 @@ fun BackupEncryptionScreen(
 
   val code = recoveryCode
   if (code != null) {
+    SecureScreenEffect()
     val mustConfirm = mode != BackupEncryptionMode.SHOW_CODE
     EditorScaffold(
       title = title,
@@ -255,6 +260,25 @@ private fun copySensitive(context: Context, label: String, text: String) {
   (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(clip)
 }
 
+/** Prevents screenshots and hides the window contents from Android's Recents switcher while active. */
+@Composable
+private fun SecureScreenEffect() {
+  val context = LocalContext.current
+  DisposableEffect(Unit) {
+    val window = context.findActivity()?.window
+    window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    onDispose {
+      window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+  }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+  is Activity -> this
+  is ContextWrapper -> baseContext.findActivity()
+  else -> null
+}
+
 @Composable
 private fun PassphraseField(
   value: String,
@@ -266,7 +290,7 @@ private fun PassphraseField(
   supportingText: String? = null,
   isRecoveryCode: Boolean = false,
 ) {
-  var visible by rememberSaveable { mutableStateOf(false) }
+  var visible by remember { mutableStateOf(false) }
   OutlinedTextField(
     value = value,
     onValueChange = onValueChange,

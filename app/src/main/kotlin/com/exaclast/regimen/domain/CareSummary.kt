@@ -72,7 +72,7 @@ object CareSummary {
       ),
       Section(
         texts.plural(R.plurals.summary_section_finished, RECENT_DAYS, RECENT_DAYS),
-        other.filter { it.id in takenByMedication }.sortedBy { it.sortKey() }.map { m ->
+        (other + snapshot.deletedMedications).filter { it.id in takenByMedication }.sortedBy { it.sortKey() }.map { m ->
           val course = MedicationGroups.courseOf(m, snapshot.schedules, snapshot.indications, today)
           takenLine(texts, m, takenByMedication.getValue(m.id), formatTaken, course = course)
         },

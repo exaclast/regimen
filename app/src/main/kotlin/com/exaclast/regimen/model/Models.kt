@@ -446,7 +446,7 @@ data class TimeOfDayBucket(
   val name: String,
   val hour: Int = 8,
   val minute: Int = 0,
-  val endHour: Int = (hour + 2).coerceAtMost(23),
+  val endHour: Int = (hour + 2) % 24,
   val endMinute: Int = minute,
   val sortOrder: Int = 0,
   val notificationsEnabled: Boolean = true,
@@ -454,6 +454,13 @@ data class TimeOfDayBucket(
   /** For sync conflict tie-breaks. 0 = never edited (a built-in default). */
   val updatedAtEpochMillis: Long = 0L,
 ) {
+  init {
+    require(hour in 0..23) { "Hour must be in 0..23, got $hour" }
+    require(minute in 0..59) { "Minute must be in 0..59, got $minute" }
+    require(endHour in 0..23) { "End hour must be in 0..23, got $endHour" }
+    require(endMinute in 0..59) { "End minute must be in 0..59, got $endMinute" }
+    require(hour * 60 + minute != endHour * 60 + endMinute) { "Window duration must not be zero" }
+  }
   val startHour: Int
     get() = hour
 
@@ -761,6 +768,7 @@ data class PrimaryClaim(
  */
 @Serializable
 data class RegimenBackupBundle(
+  val format: String = FORMAT,
   val version: Int = CURRENT_VERSION,
   val exportedAtEpochMillis: Long = System.currentTimeMillis(),
   val sourceDeviceId: String? = null,
@@ -776,6 +784,7 @@ data class RegimenBackupBundle(
   val doseLogs: List<DoseLog> = emptyList(),
 ) {
   companion object {
+    const val FORMAT = "regimen_backup"
     const val CURRENT_VERSION = 1
   }
 }

@@ -60,6 +60,9 @@ object DoseNotificationManager {
   const val CHANNEL_WINDOW_PERSISTENT = "regimen_window_persistent"
   const val CHANNEL_WINDOW_ALARM = "regimen_window_alarm"
 
+  const val TAG_TEST = "test_notification"
+  const val NOTIFICATION_ID_TEST = 99999
+
   /** One notification per window occurrence, tagged `window:<bucketId>:<dateIso>`. */
   private const val WINDOW_TAG_PREFIX = "window:"
 
@@ -487,6 +490,98 @@ object DoseNotificationManager {
   }
 
   /**
+   * Sends a labelled test notification with no dose actions, or actions that only dismiss.
+   * Never touches real doses or alarms.
+   */
+  fun postTestNotification(
+    context: Context,
+    stage: DoseNotificationStage,
+    settings: AppSettings,
+    targetLabel: String? = null,
+  ): Boolean {
+    if (!settings.notificationsEnabled) return false
+    val isAlarm = stage == DoseNotificationStage.WINDOW_END_ALARM
+    if (isAlarm && !settings.alarmsEnabled) return false
+
+    ensureChannels(context)
+    if (androidx.core.app.ActivityCompat.checkSelfPermission(
+        context,
+        Manifest.permission.POST_NOTIFICATIONS,
+      ) != PackageManager.PERMISSION_GRANTED
+    ) {
+      return false
+    }
+
+    val channelId = if (isAlarm) CHANNEL_WINDOW_ALARM else CHANNEL_WINDOW_PERSISTENT
+    val category = if (isAlarm) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER
+    val icon = R.drawable.ic_notification
+
+    val title = context.getString(
+      if (isAlarm) R.string.notif_test_alarm_title else R.string.notif_test_reminder_title,
+    )
+
+    val body = if (targetLabel != null) {
+      context.getString(
+        if (isAlarm) R.string.notif_test_alarm_body_with_med else R.string.notif_test_reminder_body_with_med,
+        targetLabel,
+      )
+    } else {
+      context.getString(
+        if (isAlarm) R.string.notif_test_alarm_body else R.string.notif_test_reminder_body,
+      )
+    }
+
+    val openIntent = Intent(context, MainActivity::class.java).apply {
+      flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+    }
+    val contentPendingIntent = PendingIntent.getActivity(
+      context,
+      NOTIFICATION_ID_TEST,
+      openIntent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+    val dismissIntent = Intent(context, DoseActionReceiver::class.java).apply {
+      action = DoseActionReceiver.ACTION_DISMISS_TEST
+    }
+    val dismissPendingIntent = PendingIntent.getBroadcast(
+      context,
+      NOTIFICATION_ID_TEST + 1,
+      dismissIntent,
+      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+    val builder = NotificationCompat.Builder(context, channelId)
+      .setSmallIcon(icon)
+      .setContentTitle(title)
+      .setContentText(body)
+      .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+      .setPriority(if (isAlarm) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_HIGH)
+      .setCategory(category)
+      .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+      .setShowWhen(true)
+      .setContentIntent(contentPendingIntent)
+      .setOngoing(false)
+      .setAutoCancel(true)
+      .setDeleteIntent(dismissPendingIntent)
+      .addAction(
+        android.R.drawable.ic_menu_close_clear_cancel,
+        context.getString(R.string.action_dismiss),
+        dismissPendingIntent,
+      )
+
+    val notification = builder.build()
+    if (isAlarm) {
+      notification.flags = notification.flags or Notification.FLAG_INSISTENT
+    }
+
+    return runCatching {
+      NotificationManagerCompat.from(context).notify(TAG_TEST, NOTIFICATION_ID_TEST, notification)
+      true
+    }.getOrDefault(false)
+  }
+
+  /**
    * Posts (or replaces) the single notification for [bucket]'s window on [dateIso], listing
    * [items]; cancels it when there are none.
    *
@@ -519,7 +614,13 @@ object DoseNotificationManager {
     if (isAlarm && !settings.alarmsEnabled) return false
 
     ensureChannels(context)
-    if (!hasNotificationPermission(context)) return false
+    if (androidx.core.app.ActivityCompat.checkSelfPermission(
+        context,
+        Manifest.permission.POST_NOTIFICATIONS,
+      ) != PackageManager.PERMISSION_GRANTED
+    ) {
+      return false
+    }
     ClockPreferences.use24Hour = DateFormat.is24HourFormat(context)
 
     val single = items.size == 1

@@ -8,6 +8,7 @@ import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.TimeOfDayBucket
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -509,5 +510,33 @@ class FdaNdcLookupServiceTest {
     assertEquals(MedicationForm.INJECTABLE_PEN, DrugLabelParser.mapFormString("prefilled syringe"))
     assertEquals(MedicationForm.INJECTABLE_VIAL, DrugLabelParser.mapFormString("injection vial"))
     assertEquals(MedicationForm.INJECTABLE_VIAL, DrugLabelParser.mapFormString("injectable"))
+  }
+
+  @Test
+  fun parseOpenFdaJson_recordWithNoPackageHasNullNdc() {
+    val jsonWithoutPackaging = """
+      {
+        "results": [
+          {
+            "product_ndc": "12345-678",
+            "generic_name": "Test Medication",
+            "dosage_form": "TABLET",
+            "active_ingredients": [{"name": "Test", "strength": "10 mg"}],
+            "packaging": []
+          }
+        ]
+      }
+    """.trimIndent()
+
+    val result = FdaNdcLookupService.parseOpenFdaJson(jsonWithoutPackaging, emptyList())
+    assertNotNull(result)
+    assertNull(
+      "Record with no packaging must have null ndc11 instead of made-up <product>-01 or 00000-0000-00",
+      result!!.ndc11,
+    )
+
+    val allResults = FdaNdcLookupService.parseAllOpenFdaItems(jsonWithoutPackaging)
+    assertEquals(1, allResults.size)
+    assertNull(allResults[0].ndc11)
   }
 }

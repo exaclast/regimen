@@ -10,7 +10,6 @@ When a decision is made, add it here with the date. When one is reversed, say so
 | ID | Question | Recommendation |
 |----|----------|----------------|
 | D-2 | **Calendar days or rolling 24 hours for daily limits?** (B8) Calendar days chosen without asking; rolling would flag a once-daily dose taken a little earlier than yesterday | Keep calendar days |
-| D-3 | **Is Android Auto Backup acceptable for the plaintext database?** It's protected by device backup encryption, not your passphrase (T-052) | Exclude the database, since the app has its own encrypted backups |
 | D-4 | **Is losing one-tap Take acceptable when a minimum interval blocks it?** (B7) Augmentin taken at 9:59 has no Take on its 17:00 reminder until 19:59. Also B2's single target window and B9's "Log Evening dose early", chosen without asking | Keep them; revisit if they annoy you in daily use |
 | D-5 | **Should a History tab replace Providers and Indications in the bottom bar?** Proposed 2026-11-03, before those became optional tabs | Keep four tabs; reach history from the medication page and the calendar |
 | D-7 | **Where does list/detail start, and which tabs get it?** At 852 dp (foldable inner) two panes are tight and one column already looks good | Start around 1,000 dp; all three tabs for consistency |
@@ -23,6 +22,9 @@ When a decision is made, add it here with the date. When one is reversed, say so
 
 ### Data and compatibility
 
+- **Plaintext database excluded from Android Auto Backup (D-3, T-052).** Protected by device backup encryption rather than
+  the user's passphrase; Regimen provides its own encrypted backup and restore. Excluded in `backup_rules.xml` and
+  `data_extraction_rules.xml`.
 - **No backup-format compatibility yet.** There are no users. The backup format is v1. Backups from before the Indications
   rename lose their indications.
 - **The database does migrate,** so dev installs keep their data (user decision, 2026-11-09). `RegimenDatabase` is at v5:

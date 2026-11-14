@@ -5,8 +5,19 @@ import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.Message
 import com.exaclast.regimen.model.MessageException
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.nullable
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
 
 /**
  * Structured data extracted from a medication bottle/vial label by on-device Gemini Nano (AICore).
@@ -37,6 +48,39 @@ data class ParsedMedicationLabel(
 }
 
 /**
+ * Tolerant deserializer for model-extracted dose amounts (accepts numbers, strings, fractions, or null).
+ */
+@OptIn(ExperimentalSerializationApi::class)
+object FlexibleDoubleSerializer : KSerializer<Double?> {
+  override val descriptor: SerialDescriptor = Double.serializer().nullable.descriptor
+
+  override fun serialize(encoder: Encoder, value: Double?) {
+    if (value == null) encoder.encodeNull() else encoder.encodeDouble(value)
+  }
+
+  override fun deserialize(decoder: Decoder): Double? {
+    val jsonDecoder = decoder as? JsonDecoder ?: return runCatching { decoder.decodeDouble() }.getOrNull()
+    val element = jsonDecoder.decodeJsonElement()
+    if (element is JsonNull) return null
+    if (element is JsonPrimitive) {
+      element.doubleOrNull?.let { return it }
+      val content = element.content.trim()
+      if (content.equals("null", ignoreCase = true) || content.isEmpty()) return null
+      if (content.contains('/')) {
+        val parts = content.split('/')
+        if (parts.size == 2) {
+          val num = parts[0].trim().toDoubleOrNull()
+          val den = parts[1].trim().toDoubleOrNull()
+          if (num != null && den != null && den != 0.0) return num / den
+        }
+      }
+      return content.toDoubleOrNull()
+    }
+    return null
+  }
+}
+
+/**
  * JSON schema returned by the on-device Gemini Nano prompt.
  */
 @Serializable
@@ -46,6 +90,7 @@ data class GeminiLabelExtraction(
   val brandName: String? = null,
   val strength: String? = null,
   val form: String? = null,
+  @Serializable(with = FlexibleDoubleSerializer::class)
   val defaultDoseAmount: Double? = null,
   val manufacturer: String? = null,
   val prescriberName: String? = null,
@@ -109,7 +154,7 @@ object DrugLabelParser {
         "brandName": "Proprietary commercial brand name if printed on the label (e.g. \"Allegra\", \"Advil Dual Action\"), or null for generic prescriptions. NEVER put the patient name, prescriber name, or pharmacy name here.",
         "strength": "Strength per unit or concentration (e.g. \"1 mg\", \"180 mg\", \"250 mg / 125 mg\", \"200 mg/mL\"), or null",
         "form": "One of: TABLET, CAPSULE, INJECTABLE_VIAL, INJECTABLE_PEN, TOPICAL, LIQUID, INHALER, DROPS, OTHER. Use INJECTABLE_PEN for pens, auto-injectors and prefilled syringes; INJECTABLE_VIAL only for vials drawn up with a syringe.",
-        "defaultDoseAmount": 1.0,
+        "defaultDoseAmount": "Numeric dose per intake (e.g. 2 for \"take 2 tablets\", 0.5 for \"take 1/2 tablet\"), or null if unspecified. NEVER default to 1 if not stated on the label.",
         "manufacturer": "Manufacturer, labeler (after MFG / Dist. By), or compounding pharmacy LLC name, or null",
         "prescriberName": "Prescriber / doctor name formatted as \"First Last\" without credentials, or null",
         "lotNumber": "Lot number if printed, or null",
@@ -172,7 +217,7 @@ object DrugLabelParser {
       strength = extracted.strength?.cleanNullString(),
       form = mappedForm,
       defaultDoseUnit = mappedUnit,
-      defaultDoseAmount = extracted.defaultDoseAmount?.takeIf { it > 0.0 },
+      defaultDoseAmount = extracted.defaultDoseAmount?.takeIf { it > 0.0 && it.isFinite() },
       manufacturer = extracted.manufacturer?.cleanNullString(),
       prescriberName = sanitizedPrescriber,
       lotNumber = extracted.lotNumber?.cleanNullString(),

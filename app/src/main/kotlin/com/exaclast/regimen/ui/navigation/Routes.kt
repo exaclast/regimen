@@ -46,6 +46,18 @@ sealed interface Route : NavKey {
 
   @Serializable data object Settings : Route
 
+  @Serializable data object SettingsReminders : Route
+
+  @Serializable data object SettingsMedications : Route
+
+  @Serializable data object SettingsBackup : Route
+
+  @Serializable data object SettingsAppearance : Route
+
+  @Serializable data object SettingsScanning : Route
+
+  @Serializable data object SettingsDiagnostics : Route
+
   /** Allergies, indications, providers and the past week's medications, shareable as text. */
   @Serializable data object CareSummary : Route
 
@@ -75,6 +87,12 @@ val Route.isFullScreenTask: Boolean
     this is Route.IndicationEditor ||
     this is Route.DoseLogEditor ||
     this is Route.Settings ||
+    this is Route.SettingsReminders ||
+    this is Route.SettingsMedications ||
+    this is Route.SettingsBackup ||
+    this is Route.SettingsAppearance ||
+    this is Route.SettingsScanning ||
+    this is Route.SettingsDiagnostics ||
     this is Route.CareSummary ||
     this is Route.DoseWindowEditor ||
     this is Route.BackupEncryption ||

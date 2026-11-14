@@ -266,7 +266,9 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     takenAtMillis: Long? = null,
     note: String? = null,
   ) {
-    val day = takenAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().toString() } ?: dateIso
+    // If taken now (takenAtMillis == null), log on today's date so current time isn't stamped on a past day.
+    val day = takenAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().toString() }
+      ?: if (dateIso < uiState.value.todayIso) uiState.value.todayIso else dateIso
     val log = repository.logDose(
       medicationId = medication.id,
       scheduleId = null,
@@ -409,18 +411,14 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
 
   fun resetToSampleData() = repository.resetToSampleData()
 
-  /** Previews the real notification for [item]'s window (all of its doses still due). */
-  fun sendTestReminder(item: ScheduledDoseItem, stage: DoseNotificationStage): Boolean {
+  /** Sends a labelled test notification with no dose actions. */
+  fun sendTestReminder(stage: DoseNotificationStage, targetLabel: String?): Boolean {
     val snapshot = repository.snapshot.value
-    val items = DoseNotificationManager.actionableItems(snapshot, item.bucket.id, item.dateIso)
-      .ifEmpty { listOf(item) }
-    return DoseNotificationManager.postWindowNotification(
+    return DoseNotificationManager.postTestNotification(
       context = getApplication(),
-      bucket = item.bucket,
-      dateIso = item.dateIso,
-      items = items,
       stage = stage,
       settings = snapshot.settings,
+      targetLabel = targetLabel,
     )
   }
 

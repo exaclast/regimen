@@ -178,5 +178,43 @@ class DrugLabelParserTest {
     assertEquals("10:30 PM", overnightBucket.formattedStartTime())
     assertEquals("1:30 AM", overnightBucket.formattedEndTime())
   }
+
+  @Test
+  fun buildLabelExtractionPrompt_doesNotDefaultDoseToOne() {
+    val prompt = DrugLabelParser.buildLabelExtractionPrompt()
+    assertFalse(
+      "Prompt must not contain literal defaultDoseAmount: 1.0 which causes model to overwrite doses",
+      prompt.contains("\"defaultDoseAmount\": 1.0"),
+    )
+    assertTrue(
+      "Prompt must instruct model not to default to 1",
+      prompt.contains("defaultDoseAmount"),
+    )
+  }
+
+  @Test
+  fun parseGeminiJsonResponse_handlesDoseVariations() {
+    fun parseDose(doseJsonSnippet: String): Double? {
+      val json = """
+        {
+          "formulaName": "Amoxicillin",
+          $doseJsonSnippet
+        }
+      """.trimIndent()
+      return DrugLabelParser.parseGeminiJsonResponse(json).defaultDoseAmount
+    }
+
+    assertEquals(2.0, parseDose("\"defaultDoseAmount\": 2.0")!!, 0.001)
+    assertEquals(2.0, parseDose("\"defaultDoseAmount\": 2")!!, 0.001)
+    assertEquals(2.0, parseDose("\"defaultDoseAmount\": \"2\"")!!, 0.001)
+    assertEquals(0.5, parseDose("\"defaultDoseAmount\": \"1/2\"")!!, 0.001)
+    assertEquals(0.5, parseDose("\"defaultDoseAmount\": 0.5")!!, 0.001)
+    assertNull(parseDose("\"defaultDoseAmount\": null"))
+    assertNull(parseDose("\"defaultDoseAmount\": \"null\""))
+    assertNull(parseDose("\"defaultDoseAmount\": \"\""))
+    assertNull(parseDose("\"defaultDoseAmount\": \"Numeric dose per intake, or null\""))
+    assertNull(parseDose("\"strength\": \"500 mg\""))
+  }
 }
+
 

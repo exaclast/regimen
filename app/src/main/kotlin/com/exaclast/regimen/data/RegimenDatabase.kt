@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import android.util.Log
 import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.Medication
@@ -147,13 +148,17 @@ class RegimenDatabase(context: Context) :
   fun getAllMedications(includeDeleted: Boolean = false): List<Medication> {
     val result = mutableListOf<Medication>()
     readableDatabase.rawQuery(
-      "SELECT payload_json FROM medications ${liveOnly(includeDeleted)} ORDER BY formula_name COLLATE NOCASE ASC",
+      "SELECT id, payload_json FROM medications ${liveOnly(includeDeleted)} ORDER BY formula_name COLLATE NOCASE ASC",
       null
     ).use { cursor ->
       while (cursor.moveToNext()) {
-        runCatching {
-          json.decodeFromString<Medication>(cursor.getString(0))
-        }.getOrNull()?.let { result.add(it) }
+        val id = cursor.getString(0)
+        val payload = cursor.getString(1)
+        try {
+          result.add(json.decodeFromString<Medication>(payload))
+        } catch (e: Exception) {
+          Log.e(TAG, "Undecodable medication row (id=$id): ${e.message}", e)
+        }
       }
     }
     return result
@@ -174,15 +179,17 @@ class RegimenDatabase(context: Context) :
   fun getAllProviders(includeDeleted: Boolean = false): List<Provider> {
     val result = mutableListOf<Provider>()
     readableDatabase.rawQuery(
-      "SELECT payload_json FROM providers ${liveOnly(includeDeleted)} ORDER BY is_pcp_sort DESC, name COLLATE NOCASE ASC".let {
-        "SELECT payload_json FROM providers ${liveOnly(includeDeleted)} ORDER BY name COLLATE NOCASE ASC"
-      },
+      "SELECT id, payload_json FROM providers ${liveOnly(includeDeleted)} ORDER BY name COLLATE NOCASE ASC",
       null
     ).use { cursor ->
       while (cursor.moveToNext()) {
-        runCatching {
-          json.decodeFromString<Provider>(cursor.getString(0))
-        }.getOrNull()?.let { result.add(it) }
+        val id = cursor.getString(0)
+        val payload = cursor.getString(1)
+        try {
+          result.add(json.decodeFromString<Provider>(payload))
+        } catch (e: Exception) {
+          Log.e(TAG, "Undecodable provider row (id=$id): ${e.message}", e)
+        }
       }
     }
     return result.sortedWith(
@@ -204,13 +211,17 @@ class RegimenDatabase(context: Context) :
   fun getAllIndications(includeDeleted: Boolean = false): List<Indication> {
     val result = mutableListOf<Indication>()
     readableDatabase.rawQuery(
-      "SELECT payload_json FROM indications ${liveOnly(includeDeleted)} ORDER BY name COLLATE NOCASE ASC",
+      "SELECT id, payload_json FROM indications ${liveOnly(includeDeleted)} ORDER BY name COLLATE NOCASE ASC",
       null
     ).use { cursor ->
       while (cursor.moveToNext()) {
-        runCatching {
-          json.decodeFromString<Indication>(cursor.getString(0))
-        }.getOrNull()?.let { result.add(it) }
+        val id = cursor.getString(0)
+        val payload = cursor.getString(1)
+        try {
+          result.add(json.decodeFromString<Indication>(payload))
+        } catch (e: Exception) {
+          Log.e(TAG, "Undecodable indication row (id=$id): ${e.message}", e)
+        }
       }
     }
     return result
@@ -230,13 +241,17 @@ class RegimenDatabase(context: Context) :
   fun getAllBuckets(): List<TimeOfDayBucket> {
     val result = mutableListOf<TimeOfDayBucket>()
     readableDatabase.rawQuery(
-      "SELECT payload_json FROM time_buckets ORDER BY sort_order ASC",
+      "SELECT id, payload_json FROM time_buckets ORDER BY sort_order ASC",
       null
     ).use { cursor ->
       while (cursor.moveToNext()) {
-        runCatching {
-          json.decodeFromString<TimeOfDayBucket>(cursor.getString(0))
-        }.getOrNull()?.let { result.add(it) }
+        val id = cursor.getString(0)
+        val payload = cursor.getString(1)
+        try {
+          result.add(json.decodeFromString<TimeOfDayBucket>(payload))
+        } catch (e: Exception) {
+          Log.e(TAG, "Undecodable time_bucket row (id=$id): ${e.message}", e)
+        }
       }
     }
     return result
@@ -258,13 +273,17 @@ class RegimenDatabase(context: Context) :
   fun getAllSchedules(includeDeleted: Boolean = false): List<MedicationSchedule> {
     val result = mutableListOf<MedicationSchedule>()
     readableDatabase.rawQuery(
-      "SELECT payload_json FROM schedules ${liveOnly(includeDeleted)}",
+      "SELECT id, payload_json FROM schedules ${liveOnly(includeDeleted)}",
       null
     ).use { cursor ->
       while (cursor.moveToNext()) {
-        runCatching {
-          json.decodeFromString<MedicationSchedule>(cursor.getString(0))
-        }.getOrNull()?.let { result.add(it) }
+        val id = cursor.getString(0)
+        val payload = cursor.getString(1)
+        try {
+          result.add(json.decodeFromString<MedicationSchedule>(payload))
+        } catch (e: Exception) {
+          Log.e(TAG, "Undecodable schedule row (id=$id): ${e.message}", e)
+        }
       }
     }
     return result
@@ -284,16 +303,49 @@ class RegimenDatabase(context: Context) :
   fun getAllDoseLogs(includeDeleted: Boolean = false): List<DoseLog> {
     val result = mutableListOf<DoseLog>()
     readableDatabase.rawQuery(
-      "SELECT payload_json FROM dose_logs ${liveOnly(includeDeleted)} ORDER BY action_timestamp DESC",
+      "SELECT id, payload_json FROM dose_logs ${liveOnly(includeDeleted)} ORDER BY action_timestamp DESC",
       null
     ).use { cursor ->
       while (cursor.moveToNext()) {
-        runCatching {
-          json.decodeFromString<DoseLog>(cursor.getString(0))
-        }.getOrNull()?.let { result.add(it) }
+        val id = cursor.getString(0)
+        val payload = cursor.getString(1)
+        try {
+          result.add(json.decodeFromString<DoseLog>(payload))
+        } catch (e: Exception) {
+          Log.e(TAG, "Undecodable dose_log row (id=$id): ${e.message}", e)
+        }
       }
     }
     return result
+  }
+
+  /**
+   * Scans all records across every table to count any rows whose JSON payload cannot be decoded.
+   * Used before backups and sync to prevent exporting incomplete data that would drop corrupted rows.
+   */
+  fun undecodableRowCount(): Int {
+    var count = 0
+    fun countTable(table: String, decode: (String) -> Unit) {
+      readableDatabase.rawQuery("SELECT id, payload_json FROM $table", null).use { cursor ->
+        while (cursor.moveToNext()) {
+          val id = cursor.getString(0)
+          val payload = cursor.getString(1)
+          try {
+            decode(payload)
+          } catch (e: Exception) {
+            Log.e(TAG, "Undecodable row in $table (id=$id): ${e.message}", e)
+            count++
+          }
+        }
+      }
+    }
+    countTable("medications") { json.decodeFromString<Medication>(it) }
+    countTable("providers") { json.decodeFromString<Provider>(it) }
+    countTable("indications") { json.decodeFromString<Indication>(it) }
+    countTable("time_buckets") { json.decodeFromString<TimeOfDayBucket>(it) }
+    countTable("schedules") { json.decodeFromString<MedicationSchedule>(it) }
+    countTable("dose_logs") { json.decodeFromString<DoseLog>(it) }
+    return count
   }
 
   fun upsertDoseLog(log: DoseLog) {
@@ -325,6 +377,7 @@ class RegimenDatabase(context: Context) :
   }
 
   companion object {
+    private const val TAG = "RegimenDatabase"
     private const val DB_NAME = "regimen_store.db"
     private const val DB_VERSION = 5
 

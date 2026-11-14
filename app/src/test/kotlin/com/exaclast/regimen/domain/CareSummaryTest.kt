@@ -181,6 +181,24 @@ class CareSummaryTest {
   }
 
   @Test
+  fun deletedMedication_withRecentLogs_isIncludedInPastSevenDaysSection() {
+    val deletedMed = Medication(id = "del1", formulaName = "Prednisone", strength = "20 mg", deletedAtEpochMillis = now)
+    val summary = build(
+      RegimenSnapshot(
+        medications = listOf(metformin),
+        deletedMedications = listOf(deletedMed),
+        schedules = listOf(scheduled(metformin)),
+        doseLogs = listOf(
+          log(metformin, 1 * day),
+          log(deletedMed, 2 * day),
+        ),
+      ),
+    )
+    val finishedSection = summary.sections.first { it.title.startsWith("Finished or as-needed") }
+    assertTrue(finishedSection.lines.any { it.primary.contains("Prednisone") })
+  }
+
+  @Test
   fun emptyData_givesAnEmptySummary() {
     assertTrue(build(RegimenSnapshot()).isEmpty)
   }

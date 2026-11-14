@@ -405,15 +405,23 @@ object DoseEngine {
 
     val bucketGroups = sortedBuckets.mapNotNull { bucket ->
       val matchingSchedules = activeSchedules.filter { schedule ->
+        val hasLoggedDose = logsForDate.any {
+          logMatchesItem(it, schedule, bucket, activeScheduleIdsByMed[schedule.medicationId].orEmpty())
+        }
+        val windowEnd = DoseAlarmTiming.windowEndMillis(bucket, dateIso)
+        val createdAfterWindow = schedule.startDateOrNull() == targetDate &&
+          schedule.startBucketId == null &&
+          schedule.createdAtEpochMillis > 0 &&
+          windowEnd != null &&
+          schedule.createdAtEpochMillis > windowEnd
+
         schedule.frequencyType != ScheduleFrequencyType.AS_NEEDED &&
           schedule.bucketIds.contains(bucket.id) &&
+          (!createdAfterWindow || hasLoggedDose) &&
           isScheduleDueOnDate(schedule, targetDate, logs) &&
           // Partial first/last day (e.g. started with the evening dose): skip windows outside the
           // range unless that dose was actually logged.
-          (schedule.isWindowInRange(targetDate, bucket, buckets) ||
-            logsForDate.any {
-              logMatchesItem(it, schedule, bucket, activeScheduleIdsByMed[schedule.medicationId].orEmpty())
-            })
+          (schedule.isWindowInRange(targetDate, bucket, buckets) || hasLoggedDose)
       }
 
       val items = matchingSchedules.mapNotNull { schedule ->

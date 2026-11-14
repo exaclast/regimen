@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android Auto Backup (API 30 and below). Everything is backed up except per-install
-     identity and keys: a restored phone must get its own sync device id, and the backup data
-     key is wrapped by a Keystore key that never leaves the original device. -->
+<!-- Android Auto Backup (API 30 and below). Exclude per-install identity, keys, and the
+     unencrypted database (per D-3, Regimen provides its own encrypted backup and restore). -->
 <full-backup-content>
     <exclude domain="sharedpref" path="regimen_device.xml" />
     <exclude domain="sharedpref" path="regimen_backup_keys.xml" />
+    <exclude domain="database" path="regimen_store.db" />
+    <exclude domain="database" path="regimen_store.db-wal" />
+    <exclude domain="database" path="regimen_store.db-shm" />
 </full-backup-content>

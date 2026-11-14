@@ -58,6 +58,12 @@ class DoseActionReceiver : BroadcastReceiver() {
       // comes back (with sound) after the snooze length, instead of reappearing at the next
       // repeat reminder or data refresh.
       ACTION_DISMISSED -> handleDoseAction(context, repo, intent, ACTION_SNOOZE, quiet = true)
+
+      // Dismiss a test reminder/alarm without taking, skipping, or snoozing any doses.
+      ACTION_DISMISS_TEST -> NotificationManagerCompat.from(context).cancel(
+        DoseNotificationManager.TAG_TEST,
+        DoseNotificationManager.NOTIFICATION_ID_TEST,
+      )
     }
   }
 
@@ -231,6 +237,7 @@ class DoseActionReceiver : BroadcastReceiver() {
     const val ACTION_SNOOZE = "com.exaclast.regimen.action.SNOOZE_DOSE"
     const val ACTION_SKIP = "com.exaclast.regimen.action.SKIP_DOSE"
     const val ACTION_DISMISSED = "com.exaclast.regimen.action.DOSE_NOTIFICATION_DISMISSED"
+    const val ACTION_DISMISS_TEST = "com.exaclast.regimen.action.DISMISS_TEST"
     const val ACTION_TRIGGER_WINDOW_START = "com.exaclast.regimen.action.TRIGGER_WINDOW_START"
     const val ACTION_TRIGGER_WINDOW_NUDGE = "com.exaclast.regimen.action.TRIGGER_WINDOW_NUDGE"
     const val ACTION_TRIGGER_WINDOW_END_ALARM = "com.exaclast.regimen.action.TRIGGER_WINDOW_END_ALARM"

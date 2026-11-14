@@ -13,6 +13,88 @@ resolve.
 
 Newest first.
 
+- **T-122** (Settings page categorization and modular screen split; "Complete M1 (v0.8): harden trust, data integrity, and Settings"):
+  - Reworked the monolithic 1,360-line Settings screen into a categorized hub with 6 distinct destination routes:
+    - `Route.SettingsReminders` (`SettingsRemindersScreen.kt`): Dose reminders, end-of-window alarm, snooze interval, repeat interval, confirm before logging, dose windows management, and notification & alarm permissions checklist.
+    - `Route.SettingsMedications` (`SettingsMedicationsScreen.kt`): Providers and indications tracking toggles, discreet notifications, and printed label name.
+    - `Route.SettingsBackup` (`SettingsBackupScreen.kt`): Encrypted export, restore, plain JSON export, passphrase management, and danger zone actions (sample data, delete all data).
+    - `Route.SettingsAppearance` (`SettingsAppearanceScreen.kt`): Theme selection (System, Light, Dark) and dynamic wallpaper colors.
+    - `Route.SettingsScanning` (`SettingsScanningScreen.kt`): On-device Gemini Nano model status/downloading and OpenFDA medication lookup toggle.
+    - `Route.SettingsDiagnostics` (`SettingsDiagnosticsScreen.kt`): Test reminders and test alarms (debug builds only).
+  - Extracted `DoseWindowEditorScreen.kt` (window editor and delete dialog) and `StartupPermissionsDialog.kt` (permissions setup & checklist).
+  - All category screens support deep-linking, standard Navigation 3 navigation with predictive back, and hide the bottom navigation bar (`isFullScreenTask`).
+  Proof: `testDebugUnitTest` (247 tests pass), `lintDebug` passes clean, `assembleDebug` passes, live interactive verification on Android emulator across all 6 categories and back navigation.
+
+- **T-019** (logs for deleted medications display medication name and allow editing; "Complete M1 (v0.8): harden trust, data integrity, and Settings"):
+  - In `RegimenRepository.kt`, updated `readSnapshot` to load tombstoned medications via `db.getAllMedications(includeDeleted = true)` into `RegimenSnapshot.deletedMedications`, providing `snapshot.allMedications` and `snapshot.medication(id)`.
+  - In `TodayScreen.kt`, passed `snapshot.allMedications` to `DayLogList` so logs for deleted medications resolve their primary name and enable tapping to open the log editor instead of falling back to "Medication" and staying read-only.
+  - In `RegimenApp.kt`, routed `Route.DoseLogEditor` through `snapshot.medication(l.medicationId)` to resolve tombstoned medications when opening the dose log editor.
+  - In `CareSummary.kt`, included recently taken deleted medications in the finished/as-needed medications summary section.
+  Proof: `testDebugUnitTest` (247 tests pass, including new `medicationLookup_findsActiveAndDeleted_andAllMedicationsCombinesThem` in `OptionalTrackingTest` and `deletedMedication_withRecentLogs_isIncludedInPastSevenDaysSection` in `CareSummaryTest`), `lintDebug` passes clean.
+
+- **T-012, T-013, T-016** (early take confirmation friction, past day action buttons and timestamps, schedule start dates; "Complete M1 (v0.8): harden trust, data integrity, and Settings"):
+  - **T-012**: In `TodayScreen.kt`, added an explicit confirmation dialog (`earlyPrompt`) when "Take early" is tapped $\ge 1$ hour ahead of a window's start time, warning the user and asking for confirmation. On past days (`isPastDay`), swapped button weights so "Taken on time" is the primary filled `Button` and "Take now" is an `OutlinedButton`.
+  - **T-013**: In `ScheduleEditorScreen` (`MedicationEditorScreen.kt`), if a new schedule is created with dose windows that have all already ended today, the start date defaults to tomorrow (`today.plusDays(1)`); if some have ended, the start window defaults to the next upcoming window today. In `DoseEngine.buildDailyBoard`, doses are not generated for windows that ended before the schedule was created (`createdAtEpochMillis`) on its start date unless already logged.
+  - **T-016**: In `LogTimeDialog.kt`, default `otherTime` to true when viewing or logging for past days (`isPastDay`). In `RegimenViewModel.logPrnOrCustomDose`, logging "Now" (`takenAtMillis == null`) records the dose on today's date rather than stamping current time onto a past date. On `TodayScreen.kt`, logging PRN from a past day opens `LogTimeDialog` with `startWithOtherTime = true`.
+  Proof: `testDebugUnitTest` (245 tests pass, including new `newSchedule_createdAfterWindowEnded_doesNotProduceDoseOnStartDate` in `DoseEngineTest`), `lintDebug` passes clean, verified on Android emulator.
+
+- **T-005, T-006** (alarm screen silencing on notification open, backgrounding, and home press; "Complete M1 (v0.8): harden trust, data integrity, and Settings"):
+  - In `DoseAlarmActivity.handleLaunch`, invoke `silenceAlarmNotifications` on any launch (whether `ACTION_RING` or `ACTION_SHOW`) so tapping the notification from the shade immediately silences the notification's insistent copy and lets the screen own any audio.
+  - Implemented `onStop` in `DoseAlarmActivity` to silence `AlarmRingtonePlayer` when the activity is stopped (e.g. user presses Home button, switches apps, or screen turns off, while preserving ringing across configuration changes like screen rotation).
+  Proof: `testDebugUnitTest` (244 tests pass), `studio_analyze_file` clean, verified on Android emulator.
+
+- **T-052** (privacy text accuracy and Auto Backup database exclusion; "Complete M1 (v0.8): harden trust, data integrity, and Settings"):
+  - Updated patient name descriptions in Settings (`settings_label_name_help`) and Setup (`setup_name_help`) to accurately reflect that the name is stored in app settings and encrypted backups rather than "stays entirely on-device".
+  - Clarified label scanning privacy (`setup_nano_help`) to accurately state that photos and label text are not sent to the cloud, while noting that Google ML Kit may send basic SDK diagnostic metrics.
+  - Excluded the unencrypted database (`regimen_store.db`, `regimen_store.db-wal`, `regimen_store.db-shm`) from Android Auto Backup in `backup_rules.xml` and from cloud backup in `data_extraction_rules.xml`, per decision D-3, protecting medical data with the app's passphrase-based encryption rather than cloud device backups.
+  - Moved D-3 to Made in `DECISIONS.md`.
+  Proof: `testDebugUnitTest` (244 tests pass), `lintDebug` passes clean.
+
+- **T-053** (passphrases in saved state and recovery code `FLAG_SECURE`; "Complete M1 (v0.8): harden trust, data integrity, and Settings"):
+  - In `BackupScreens.kt`, replaced `rememberSaveable` with `remember` for passphrase input fields (`current`, `newPass`, `confirm`) and passphrase visibility toggle to prevent user passphrases from persisting into Android saved instance state bundles.
+  - Added `SecureScreenEffect` which applies `WindowManager.LayoutParams.FLAG_SECURE` to the Activity window while displaying the recovery code, and clears it on disposal. This prevents screenshots, screen recordings, and hides the recovery code from the Android Recents task switcher preview.
+  Proof: `testDebugUnitTest` (244 tests pass), `studio_analyze_file` clean.
+
+- **T-051** (alarm screen discreet mode over lock screen; "Complete M1 (v0.8): harden trust, data integrity, and Settings"):
+  - Tracked keyguard locked state (`KeyguardManager.isKeyguardLocked`) in `DoseAlarmActivity` across creation, resume, and window focus changes.
+  - When discreet mode (`settings.discreetNotifications`) is active and the device is locked, `DoseAlarmScreen` renders a privacy-preserving lock card showing only the window and dose count summary (e.g., "Morning · 2 doses due") and an "Unlock to view and log" button (`requestDismissKeyguard`).
+  - Allows Snooze and Dismiss directly from the lock screen without unlocking, while strictly hiding all medication names, dosages, strengths, injection sites, needle specs, and warnings until authentication succeeds.
+  Proof: `testDebugUnitTest` (244 tests pass), `studio_analyze_file` clean, verified on Android emulator.
+
+- **T-027** (OpenFDA records with no package getting made-up NDCs; "Complete M1 (v0.8): harden trust, data integrity, and Settings"):
+  - Made `FdaDrugLookupResult.ndc11` nullable (`String?`), returning `null` when an OpenFDA drug record has no package NDC instead of fabricating a synthetic `<product>-01` or `00000-0000-00` code.
+  - In `MedicationEditorScreen`, autofill leaves the NDC field blank (`""`) when OpenFDA returns a record without an NDC, and candidate lists display "None" (`value_none`) rather than a fabricated NDC.
+  Proof: `testDebugUnitTest` (244 tests pass, including `parseOpenFdaJson_recordWithNoPackageHasNullNdc` in `FdaNdcLookupServiceTest`).
+
+- **T-084** (CI lint gate and workflow security hardening; "Complete M1 (v0.8): harden trust, data integrity, and Settings"):
+  - Added `lintDebug` to both debug and release CI jobs in `.github/workflows/android-release.yml`.
+  - Scoped top-level workflow permissions down to `contents: read`; granted `contents: write` exclusively to the `build-and-release` job.
+  - Configured release job to fail explicitly if `SIGNING_KEYSTORE_BASE64` is missing rather than publishing unsigned artifacts, and removed unsigned APK packaging.
+  - Passed `inputs.version_name` via environment variable (`INPUT_VERSION_NAME`) rather than inline shell expansion.
+  - Pinned all third-party GitHub Actions (`actions/checkout`, `actions/setup-java`, `gradle/actions/setup-gradle`, `actions/upload-artifact`, `softprops/action-gh-release`) to full immutable commit SHAs.
+  - Disabled legacy V1 signing (`enableV1Signing = false`) in `app/build.gradle.kts` (minSdk 35 uses V2/V3 signing).
+  Proof: `testDebugUnitTest lintDebug assembleDebug` and `assembleRelease bundleRelease` build and verify cleanly.
+
+- **T-068** (text button contrast on tinted cards in dark theme; "Complete M1 (v0.8): harden trust, data integrity, and Settings"):
+  - Styled `TextButton` actions inside tinted containers (`NoticeCard`, `WindowCard` "Take all", and `MedicationDetailScreen` hero "Other time..." / "Extra dose") with their surface's corresponding `onContainer` color (`onTertiaryContainer`, `onContainer`, `onPrimaryContainer`) via `ButtonDefaults.textButtonColors(contentColor = ...)`.
+  - Eliminates unreadable light-on-light contrast where `TextButton`'s default `primary` color washed out against tinted card containers in dark theme.
+  Proof: `testDebugUnitTest` (243 tests pass), verified live on Android emulator with dark theme.
+
+- **T-026** (scan prompt overwriting user dose; "Complete M1 (v0.8): harden trust, data integrity, and Settings"):
+  - Replaced literal `"defaultDoseAmount": 1.0` in `DrugLabelParser.buildLabelExtractionPrompt` with a descriptive placeholder instructing Gemini Nano to extract the numeric dose per administration only when explicitly stated in instructions, and to return null (never defaulting to 1) when unspecified.
+  - Implemented `FlexibleDoubleSerializer` to deserialize numbers, string numbers ("2"), fractions ("1/2"), and nulls into `Double?`, ensuring `ParsedMedicationLabel.defaultDoseAmount` is null when unspecified so scanning never overwrites an existing or user-entered dose with 1.
+  Proof: `testDebugUnitTest` (243 tests pass, including prompt check and dose variation suite in `DrugLabelParserTest`).
+
+- **T-003, T-004** (test notifications and demo data safe isolation; "Complete M1 (v0.8): harden trust, data integrity, and Settings"):
+  - **T-003**: Test reminder and end-of-window alarm actions in Settings Diagnostics (`postTestNotification`) post labelled notifications with tag `"test_notification"` and id `99999` using `ACTION_DISMISS_TEST`. Tapping the notification or swiping it away only cancels the test and never logs or snoozes real doses or arms alarms. Diagnostics testing is enabled even when no active doses are scheduled.
+  - **T-004**: Loading demo data (`resetToSampleData`) cancels active notifications and explicitly turns off `notificationsEnabled` and `alarmsEnabled` in `AppSettings` to prevent sample data from firing real alarms or alerting the user. The "Load demo data" button and confirmation dialog are hidden on release builds (`isDebugBuild`). Dialog confirmation clarifies that sample data replaces existing records and disables reminders/alarms.
+  Proof: `testDebugUnitTest` (241 tests pass), verified live on Android emulator (test reminder and alarm posted to notification shade with "Dismiss" action, verified in `dumpsys notification`, dismissed cleanly without logging or snoozing doses; demo data loaded with reminders/alarms disarmed and disarmed banner displayed).
+
+- **T-057, T-058** (the two P0 data integrity bugs; "Complete M1 (v0.8): harden trust, data integrity, and Settings"):
+  - **T-057**: Backups validated before preview (`BackupFiles.validate`, `InvalidBackupException`) checking required fields, value bounds (bucket hours 0..23, minutes 0..59, non-zero duration), ISO dates, and relational integrity (schedules/logs referencing existing medications and windows, provider and indication links, unique IDs, no self-secondary indications). Plain JSON requires the `"format": "regimen_backup"` marker; `{}` and arbitrary JSON files are rejected. `TimeOfDayBucket` enforces field bounds and non-zero duration in `init`.
+  - **T-058**: Undecodable rows in SQLite are logged with table and row ID and kept untouched. `RegimenDatabase.undecodableRowCount()` scans all tables; `BackupManager.exportEncrypted` and `exportPlainJson` check database integrity and stop exports with a localized user message (`backup_err_unreadable_records`) if any unreadable rows exist, preventing silent data loss.
+  Proof: `testDebugUnitTest` (241 tests pass, including `BackupFilesTest` format and validation suites, and `TimeOfDayBucketTest`), `assembleDebug` passes.
+
 - **T-067** (bottom inset applied twice): the four tab screens' Scaffolds no longer pad for the system navigation bar when the bottom bar is showing (`tabContentInsets`, `LocalBottomBarShown`), so the empty band over the bar is gone and the floating button sits one margin above it. Rails and full-screen tasks keep the inset. Proof: seen on the emulator (Today, Medications). **T-081** and **T-098** are closed too: the UI text is in `strings.xml` (see localization, below), and the health summary's share button covers sharing the list as text (a PDF is T-099).
 
 - **T-118, T-119 (localization, phases 2 and 3)**: nothing the user reads is English-only in code any more. Enums implement `Labeled` (`labelRes`; `label()` in Compose, `Resources.label` elsewhere). Text built outside Compose takes a `Texts` (a `Resources` wrapper in the app, `TestTexts` in tests, which reads `strings.xml`): `CareSummary`, `Adjustments.describe`, `ScheduleText`, `volumeHint`, `PacingEvaluation.warningText`/`nextAllowedText`, `MedicationSection.label`, the notification text. Messages decided before any UI exists (FDA lookup results and errors, label-scan progress, backup errors, field validation) are a `Message` (resource id and arguments) or a `MessageException`, resolved where they're shown. The view model and the notification receiver use the application's resources. The change dialog's sentence is a locale-aware list of part names (`ListFormatter`). Removed the unused `PacingEvaluation.statusSummary`. Also in this change: a severity slider with in-between levels, no severity, suspected or secondary options for preventive indications, and the alarm card's strength under the drug name. Proof: `testDebugUnitTest` and `assembleDebug` pass; the summary, medication list and providers seen on the emulator; `lintDebug` has only the pre-existing `MissingPermission` error (T-120).

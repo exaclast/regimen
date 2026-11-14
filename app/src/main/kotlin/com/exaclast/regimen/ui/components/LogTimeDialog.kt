@@ -45,7 +45,8 @@ fun LogTimeDialog(
   onConfirm: (takenAtMillis: Long?, note: String?) -> Unit,
 ) {
   val initial = remember { LocalDateTime.now() }
-  var otherTime by rememberSaveable { mutableStateOf(startWithOtherTime) }
+  val isPast = defaultDateIso < LocalDate.now().toString()
+  var otherTime by rememberSaveable { mutableStateOf(startWithOtherTime || isPast) }
   var dateIso by rememberSaveable { mutableStateOf(defaultDateIso) }
   var hour by rememberSaveable { mutableIntStateOf(initial.hour) }
   var minute by rememberSaveable { mutableIntStateOf(initial.minute) }

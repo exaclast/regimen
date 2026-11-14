@@ -26,7 +26,7 @@ data class ParsedDrugBarcode(
 )
 
 data class FdaDrugLookupResult(
-  val ndc11: String,
+  val ndc11: String?,
   val formulaName: String,
   val brandName: String?,
   val manufacturer: String?,
@@ -411,7 +411,7 @@ object FdaNdcLookupService {
         if (ndcMatchIsConclusive(scored, criteria)) {
           val withNdcSignal = scored.copy(
             score = scored.score + 100,
-            matchedSignals = listOf(Message(R.string.fda_sig_ndc, ndcResult.ndc11)) + scored.matchedSignals,
+            matchedSignals = listOfNotNull(ndcResult.ndc11?.let { Message(R.string.fda_sig_ndc, it) }) + scored.matchedSignals,
           )
           return@withContext CrossReferenceOutcome.UnambiguousMatch(withNdcSignal)
         }
@@ -781,8 +781,6 @@ object FdaNdcLookupService {
     return response.results.mapNotNull { item ->
       val pkgNdc = item.packaging.firstOrNull()?.packageNdc
       val fallbackNdc = pkgNdc?.let { toCanonicalNdc11(it) }
-        ?: item.productNdc?.let { "${it}-01" }
-        ?: "00000-0000-00"
       mapOpenFdaItemToResult(item, fallbackNdc)
     }
   }
@@ -803,7 +801,7 @@ object FdaNdcLookupService {
       ?: items.firstOrNull { productPartOfItem(it) in requestedProducts }
       ?: items.firstOrNull()
       ?: return null
-    return mapOpenFdaItemToResult(item, requestedNdc11s.firstOrNull() ?: "00000-0000-00", requested)
+    return mapOpenFdaItemToResult(item, requestedNdc11s.firstOrNull(), requested)
   }
 
   /** "45802-0112-22" -> "45802-0112" */
@@ -821,7 +819,7 @@ object FdaNdcLookupService {
 
   private fun mapOpenFdaItemToResult(
     item: OpenFdaDrugItem,
-    fallbackCanonicalNdc11: String,
+    fallbackCanonicalNdc11: String? = null,
     requestedNdc11s: Set<String> = emptySet(),
   ): FdaDrugLookupResult? {
     val rawGeneric = item.genericName?.takeIf { it.isNotBlank() }

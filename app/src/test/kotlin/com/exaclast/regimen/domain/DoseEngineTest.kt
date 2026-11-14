@@ -507,4 +507,49 @@ class DoseEngineTest {
     )
     assertTrue(sched.isWindowInRange(LocalDate.parse("2026-11-03"), morning, listOf(morning)))
   }
+
+  @Test
+  fun newSchedule_createdAfterWindowEnded_doesNotProduceDoseOnStartDate() {
+    val morning = TimeOfDayBucket(id = "m", name = "Morning", hour = 7, endHour = 10)
+    val evening = TimeOfDayBucket(id = "e", name = "Evening", hour = 17, endHour = 20)
+    val med = Medication(id = "med_1", formulaName = "Drug A", strength = "10 mg")
+    // Created at 3 PM (15:00) on 2026-11-03, after Morning ended (10:00)
+    val createdMillis = LocalDate.parse("2026-11-03").atTime(15, 0)
+      .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    val sched = MedicationSchedule(
+      id = "sched_1",
+      medicationId = med.id,
+      frequencyType = ScheduleFrequencyType.DAILY,
+      bucketIds = listOf(morning.id, evening.id),
+      startDateIso = "2026-11-03",
+      createdAtEpochMillis = createdMillis,
+    )
+
+    fun windowsOn(dateIso: String, logs: List<DoseLog> = emptyList()) = DoseEngine.buildDailyBoard(
+      dateIso = dateIso,
+      medications = listOf(med),
+      schedules = listOf(sched),
+      buckets = listOf(morning, evening),
+      logs = logs,
+      indications = emptyList(),
+      providers = emptyList(),
+    ).bucketGroups.filter { it.items.isNotEmpty() }.map { it.bucket.id }
+
+    // Start date (today): morning window already ended before schedule creation, only evening is due
+    assertEquals(listOf(evening.id), windowsOn("2026-11-03"))
+    // Next day: both windows are due
+    assertEquals(listOf(morning.id, evening.id), windowsOn("2026-11-04"))
+
+    // If a dose was explicitly logged for morning anyway, it remains visible
+    val loggedMorning = DoseLog(
+      medicationId = med.id,
+      scheduleId = sched.id,
+      bucketId = morning.id,
+      scheduledDateIso = "2026-11-03",
+      status = DoseStatus.TAKEN,
+      amountTaken = 1.0,
+      amountUnit = DoseUnit.TABLET,
+    )
+    assertEquals(listOf(morning.id, evening.id), windowsOn("2026-11-03", listOf(loggedMorning)))
+  }
 }

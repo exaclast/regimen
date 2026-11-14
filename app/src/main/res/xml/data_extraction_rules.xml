@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Cloud backup and device-to-device transfer (API 31+). Same exclusions as backup_rules.xml:
-     per-install sync identity and the Keystore-wrapped backup key stay on this device. -->
+<!-- Cloud backup and device-to-device transfer (API 31+). Per D-3, unencrypted database is
+     excluded from cloud backup since Regimen provides its own encrypted backups. -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="sharedpref" path="regimen_device.xml" />
         <exclude domain="sharedpref" path="regimen_backup_keys.xml" />
+        <exclude domain="database" path="regimen_store.db" />
+        <exclude domain="database" path="regimen_store.db-wal" />
+        <exclude domain="database" path="regimen_store.db-shm" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="regimen_device.xml" />
