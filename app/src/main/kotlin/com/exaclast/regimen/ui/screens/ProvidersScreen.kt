@@ -83,6 +83,7 @@ import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.ui.components.SwitchRow
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.groupListItemColors
+import com.exaclast.regimen.ui.components.tabContentInsets
 import java.time.LocalDate
 
 @Composable
@@ -100,6 +101,7 @@ fun ProviderListScreen(
   val regularTitle = stringResource(R.string.providers_regular)
   val asNeededTitle = stringResource(R.string.providers_as_needed)
   Scaffold(
+    contentWindowInsets = tabContentInsets(),
     topBar = { TopAppBar(title = { Text(stringResource(R.string.providers_title)) }) },
     floatingActionButton = {
       ExtendedFloatingActionButton(

@@ -130,6 +130,7 @@ import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.model.texts
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.doseText
+import com.exaclast.regimen.ui.components.tabContentInsets
 import com.exaclast.regimen.ui.components.warning
 import com.exaclast.regimen.ui.components.groupListItemColors
 import java.time.LocalDate
@@ -291,6 +292,7 @@ fun TodayScreen(
 
   Scaffold(
     modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+    contentWindowInsets = tabContentInsets(),
     topBar = {
       LargeFlexibleTopAppBar(
         title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },

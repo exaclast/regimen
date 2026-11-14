@@ -10,6 +10,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.exclude
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -37,6 +42,7 @@ import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -75,6 +81,24 @@ val LocalSnackbarHostState = staticCompositionLocalOf { SnackbarHostState() }
 @Composable
 fun AppSnackbarHost() {
   SnackbarHost(LocalSnackbarHostState.current)
+}
+
+/** Whether the bottom navigation bar is showing, so the screens above it don't pad for the system bar again. */
+val LocalBottomBarShown = staticCompositionLocalOf { false }
+
+/**
+ * Insets for a top-level tab's Scaffold. The bottom navigation bar already sits above the system
+ * navigation bar, so with it showing the bottom inset is left out: padding for it a second time left
+ * an empty band over the bar. Everywhere else (rail, full-screen tasks) the screen needs it.
+ */
+@Composable
+fun tabContentInsets(): WindowInsets {
+  val base = ScaffoldDefaults.contentWindowInsets
+  return if (LocalBottomBarShown.current) {
+    base.exclude(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))
+  } else {
+    base
+  }
 }
 
 // region Grouped lists (Material 3 Expressive grouped-list look)

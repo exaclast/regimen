@@ -69,6 +69,7 @@ import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.ListContentPadding
 import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.ui.components.groupListItemColors
+import com.exaclast.regimen.ui.components.tabContentInsets
 import com.exaclast.regimen.ui.components.label
 import java.time.LocalDate
 
@@ -107,6 +108,7 @@ fun MedicationListScreen(
   }
 
   Scaffold(
+    contentWindowInsets = tabContentInsets(),
     topBar = {
       SearchableTopBar(
         title = stringResource(R.string.medications_title),

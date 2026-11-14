@@ -89,6 +89,7 @@ import com.exaclast.regimen.ui.components.SwitchRow
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.groupListItemColors
 import com.exaclast.regimen.ui.components.label
+import com.exaclast.regimen.ui.components.tabContentInsets
 import java.time.LocalDate
 
 /** Short labels that fit a four-way segmented button on a 360 dp phone. */
@@ -172,6 +173,7 @@ fun IndicationListScreen(
   val pastExpanded = showPast || query.isNotBlank()
 
   Scaffold(
+    contentWindowInsets = tabContentInsets(),
     topBar = { TopAppBar(title = { Text(stringResource(R.string.indications_title)) }) },
     floatingActionButton = {
       ExtendedFloatingActionButton(

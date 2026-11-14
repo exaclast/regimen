@@ -40,6 +40,7 @@ import com.exaclast.regimen.model.ThemeMode
 import com.exaclast.regimen.notifications.DoseNotificationStage
 import com.exaclast.regimen.ui.RegimenViewModel
 import com.exaclast.regimen.ui.components.ChangeOrFixDialog
+import com.exaclast.regimen.ui.components.LocalBottomBarShown
 import com.exaclast.regimen.ui.components.LocalSnackbarHostState
 import com.exaclast.regimen.ui.navigation.BackupEncryptionMode
 import com.exaclast.regimen.ui.navigation.Navigator
@@ -129,7 +130,14 @@ fun RegimenApp(
   }
 
   RegimenTheme(darkTheme = useDarkTheme, dynamicColor = settings.dynamicColor) {
-    CompositionLocalProvider(LocalSnackbarHostState provides snackbarHostState) {
+    CompositionLocalProvider(
+      LocalSnackbarHostState provides snackbarHostState,
+      LocalBottomBarShown provides (
+        layoutType == NavigationSuiteType.NavigationBar ||
+          layoutType == NavigationSuiteType.ShortNavigationBarCompact ||
+          layoutType == NavigationSuiteType.ShortNavigationBarMedium
+      ),
+    ) {
       NavigationSuiteScaffold(
         layoutType = layoutType,
         navigationSuiteItems = {
