@@ -326,22 +326,55 @@ enum class IndicationStatus(val displayName: String) {
 enum class IndicationKind(val displayName: String) {
   ACUTE("Acute"),
   CHRONIC("Chronic"),
-  PREVENTIVE("Preventive");
+  PREVENTIVE("Preventive"),
 
-  /** Statuses that make sense for this kind: acute and preventive are either active or over. */
+  /** An immune reaction to a drug, food or something in the environment. Its name is the allergen. */
+  ALLERGY("Allergy"),
+
+  /**
+   * A non-immune bad reaction to a drug, such as a side effect that can't be tolerated. Kept apart from
+   * an allergy, which it is often mistaken for, but listed and edited the same way. Only drug
+   * intolerances are recorded: those are what a provider or first responder needs to know.
+   */
+  INTOLERANCE("Intolerance");
+
+  /** Allergies and intolerances: recorded with a trigger, severity and reaction, and no course. */
+  val isReaction: Boolean
+    get() = this == ALLERGY || this == INTOLERANCE
+
+  /** Statuses that make sense for this kind: acute, preventive and reactions are either active or over. */
   val statuses: List<IndicationStatus>
     get() = when (this) {
-      ACUTE, PREVENTIVE -> listOf(IndicationStatus.ACTIVE, IndicationStatus.RESOLVED)
+      ACUTE, PREVENTIVE, ALLERGY, INTOLERANCE -> listOf(IndicationStatus.ACTIVE, IndicationStatus.RESOLVED)
       CHRONIC -> IndicationStatus.entries
     }
 
   /** With no end date of its own, it ends with its linked medication courses, if they all end. */
   val endsWithCourse: Boolean
-    get() = this != CHRONIC
+    get() = this == ACUTE || this == PREVENTIVE
 
   /** Nothing is "resolved" about prevention, so a preventive course is "Completed" instead. */
   fun statusLabel(status: IndicationStatus): String =
     if (this == PREVENTIVE && status == IndicationStatus.RESOLVED) "Completed" else status.displayName
+}
+
+/** What an allergy or intolerance is to. Declared in display order. */
+@Serializable
+enum class AllergenType(val displayName: String, val sectionTitle: String) {
+  DRUG("Drug", "Drug allergies and intolerances"),
+  FOOD("Food", "Food allergies"),
+  ENVIRONMENTAL("Environmental", "Environmental allergies"),
+}
+
+@Serializable
+enum class Severity(val displayName: String) {
+  MILD("Mild"),
+  MODERATE("Moderate"),
+  SEVERE("Severe"),
+  LIFE_THREATENING("Life-threatening"),
+
+  /** Chosen on purpose, as opposed to null, which means it was never set. */
+  UNSURE("Unsure"),
 }
 
 @Serializable
@@ -351,6 +384,14 @@ data class Indication(
   val details: String? = null,
   val kind: IndicationKind = IndicationKind.CHRONIC,
   val status: IndicationStatus = IndicationStatus.ACTIVE,
+  /** Not formally diagnosed: a suspected condition or a symptom, recorded for reference. */
+  val suspected: Boolean = false,
+  /** Allergies and intolerances only: what it's to. The trigger itself ("Penicillin", "Peanut") is [name]. */
+  val allergenType: AllergenType? = null,
+  /** How serious it is, for any indication. Null = not set; [Severity.UNSURE] = set as not known. */
+  val severity: Severity? = null,
+  /** Allergies and intolerances only: what happens ("Hives", "Nausea"). */
+  val reaction: String? = null,
   /** When it started or was diagnosed. */
   val diagnosedDateIso: String? = null,
   /**

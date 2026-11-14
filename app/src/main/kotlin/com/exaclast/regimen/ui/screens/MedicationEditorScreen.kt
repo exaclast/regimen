@@ -928,9 +928,9 @@ fun MedicationEditorScreen(
           // Indications (any number, grouped by kind + optional notes)
           if (showIndications && indications.isNotEmpty()) {
             Text("Indications", style = MaterialTheme.typography.titleSmall)
-            IndicationTimeline.groupedByKind(indications).forEach { (kind, group) ->
+            IndicationTimeline.sections(indications).forEach { (title, group) ->
               Text(
-                kind.displayName,
+                title,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )

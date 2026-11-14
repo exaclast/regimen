@@ -47,6 +47,7 @@ import com.exaclast.regimen.ui.navigation.isFullScreenTask
 import com.exaclast.regimen.ui.screens.AdjustmentEditorScreen
 import com.exaclast.regimen.ui.screens.BackupEncryptionScreen
 import com.exaclast.regimen.ui.screens.BackupRestoreScreen
+import com.exaclast.regimen.ui.screens.CareSummaryScreen
 import com.exaclast.regimen.ui.screens.IndicationDetailScreen
 import com.exaclast.regimen.ui.screens.IndicationEditorScreen
 import com.exaclast.regimen.ui.screens.IndicationListScreen
@@ -68,6 +69,8 @@ import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 fun RegimenApp(
+  /** Rises each time the launcher shortcut asks for the health summary. */
+  openSummaryRequest: Int = 0,
   viewModel: RegimenViewModel = viewModel(),
 ) {
   val context = LocalContext.current
@@ -79,6 +82,10 @@ fun RegimenApp(
   val backStack = rememberNavBackStack(Route.Today)
   val navigator = remember(backStack) { Navigator(backStack) }
   val snackbarHostState = remember { SnackbarHostState() }
+
+  LaunchedEffect(openSummaryRequest) {
+    if (openSummaryRequest > 0 && navigator.current !is Route.CareSummary) navigator.navigate(Route.CareSummary)
+  }
 
   // One message at a time; a newer message replaces the one on screen.
   LaunchedEffect(viewModel) {
@@ -157,6 +164,7 @@ fun RegimenApp(
                 onNextDay = { viewModel.shiftDateByDays(1) },
                 onGoToToday = viewModel::goToToday,
                 onOpenSettings = { navigator.navigate(Route.Settings) },
+                onOpenSummary = { navigator.navigate(Route.CareSummary) },
                 onTake = viewModel::takeScheduledDose,
                 onSkip = viewModel::skipScheduledDose,
                 onSnooze = { viewModel.snoozeScheduledDose(it) },
@@ -454,6 +462,10 @@ fun RegimenApp(
                   if (existing == null) navigator.replace(Route.IndicationDetail(saved.id)) else navigator.back()
                 },
               )
+            }
+
+            entry<Route.CareSummary> {
+              CareSummaryScreen(snapshot = snapshot, onBack = navigator::back)
             }
 
             entry<Route.Settings> {

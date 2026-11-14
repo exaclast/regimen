@@ -48,7 +48,7 @@
 
 ### 5. Providers & Indications (optional)
 - **Providers**: name, specialty, practice, phone, email, primary-care status, care dates, and linked medications, listed as regular, as needed, or past. A medication's provider is labelled *Prescriber*.
-- **Indications**: why a medication is taken: `ACUTE`, `CHRONIC` or `PREVENTIVE` (such as PrEP or PEP), with dates and notes, listed by kind. Providers and indications are many-to-many, and so are medications and indications; both links are editable from either side. Past indications are archived, and "Had this again" starts a new episode of a past acute or preventive one.
+- **Indications**: why a medication is taken: `ACUTE`, `CHRONIC` or `PREVENTIVE` (such as PrEP or PEP), with dates and notes, listed by kind. Providers and indications are many-to-many, and so are medications and indications; both links are editable from either side. A condition or symptom that isn't formally diagnosed can be marked *Suspected* and sits in its own section. **Allergies** (an immune reaction to a drug, food or something in the environment) and **drug intolerances** (a side effect you can't tolerate, which isn't an allergy) are two separate kinds, kept to what a provider or first responder would need to know. They record the trigger, severity and reaction, list by what they're to (drug allergies and intolerances together), and can link to the medication that treats them (recording only, with no warnings). Past indications are archived, and "Had this again" starts a new episode of a past acute or preventive one.
 - Both are optional: turn off either in Settings to hide its tab and fields. Hiding never deletes data.
 
 ### 6. Encrypted Backup & Sync Groundwork

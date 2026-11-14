@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Regimen</string>
+    <string name="shortcut_summary_short">Health summary</string>
+    <string name="shortcut_summary_long">Open health summary</string>
 </resources>

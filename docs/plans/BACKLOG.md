@@ -243,6 +243,8 @@ Shipped, but never confirmed on a device. Clear these opportunistically; if one 
 |------|-------|----------|------|
 | Snooze with the app killed | While a window is open, snooze, leave the app, `adb shell am kill com.exaclast.regimen`, wait | The reminder alerts with sound | B6 |
 | Alert after boot | With a window open (or just closed) and a dose unlogged, reboot the phone | One alert for that window after boot; a snooze that ended while off alerts too | T-002 |
+| Allergy links and narrow phones | Link an antihistamine to an allergy; open the Type selector on a 360 dp phone | The medication editor offers the allergy under its "Drug/Food/Environmental allergies" heading; the Type chips wrap cleanly with five types. Also add an Intolerance (drug only, e.g. Metformin) and check it lists beside drug allergies, labelled "Intolerance", with no allergen-type selector. (Create, list, detail and the Suspected section were checked on the Fold emulator before the Intolerance type was added, T-116/T-117.) | T-117 |
+| Suspected, switched off | Edit a suspected indication and turn Suspected off | It moves from "Suspected" back under its kind | T-116 |
 | Snooze across reboot | Repeat reminders off, snooze, reboot, wait | The reminder comes back | B5 |
 | As-needed unit | Log an as-needed dose from its card | Log matches the amount and unit on the card | B10 |
 | Swipe to snooze | Swipe a reminder on an unlocked phone | Comes back after the snooze time | B16 |

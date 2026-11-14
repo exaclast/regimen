@@ -1,5 +1,6 @@
 package com.exaclast.regimen.domain
 
+import com.exaclast.regimen.model.AllergenType
 import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.IndicationKind
 import com.exaclast.regimen.model.IndicationStatus
@@ -67,18 +68,43 @@ object IndicationTimeline {
 
   /** Display order for grouped lists, by name within a kind, skipping kinds with nothing in them. */
   fun groupedByKind(indications: List<Indication>): List<Pair<IndicationKind, List<Indication>>> =
-    IndicationKind.entries.mapNotNull { kind ->
+    IndicationKind.entries.filter { !it.isReaction }.mapNotNull { kind ->
       indications.filter { it.kind == kind }
         .sortedBy { it.name.lowercase() }
         .takeIf { it.isNotEmpty() }
         ?.let { kind to it }
     }
 
+  /**
+   * Allergies and intolerances grouped by what they're to (drug, food, environmental), by name within
+   * each. They share a section but stay distinct records, each labelled as one or the other.
+   */
+  fun groupedByAllergen(indications: List<Indication>): List<Pair<AllergenType, List<Indication>>> {
+    val allergies = indications.filter { it.kind.isReaction }
+    return AllergenType.entries.mapNotNull { type ->
+      allergies.filter { (it.allergenType ?: AllergenType.DRUG) == type }
+        .sortedBy { it.name.lowercase() }
+        .takeIf { it.isNotEmpty() }
+        ?.let { type to it }
+    }
+  }
+
+  /**
+   * Titled sections for lists and pickers: the kinds (acute, chronic, preventive), then allergies and
+   * intolerances by what they're to.
+   */
+  fun sections(indications: List<Indication>): List<Pair<String, List<Indication>>> =
+    groupedByKind(indications).map { (kind, group) -> kind.displayName to group } +
+      groupedByAllergen(indications).map { (type, group) -> type.sectionTitle to group }
+
   /** A new episode of a past indication ("had this again"): same name, notes and providers, starting [today]. */
   fun recurrence(previous: Indication, today: LocalDate): Indication = Indication(
     name = previous.name,
     details = previous.details,
     kind = previous.kind,
+    allergenType = previous.allergenType,
+    severity = previous.severity,
+    reaction = previous.reaction,
     status = IndicationStatus.ACTIVE,
     diagnosedDateIso = today.toString(),
     providerIds = previous.providerIds,

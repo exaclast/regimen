@@ -97,7 +97,7 @@ object MedicationGroups {
     today: LocalDate,
   ): List<MedicationSection> {
     val (past, active) = indications.partition { IndicationTimeline.isArchived(it, today, medications, schedules) }
-    fun ordered(group: List<Indication>) = IndicationTimeline.groupedByKind(group).flatMap { it.second }
+    fun ordered(group: List<Indication>) = IndicationTimeline.sections(group).flatMap { it.second }
     fun sectionFor(indication: Indication, title: String) =
       section(indication.id, title, current.filter { indication.id in it.indicationIds })
 

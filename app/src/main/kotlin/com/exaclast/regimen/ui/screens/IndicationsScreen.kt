@@ -64,6 +64,8 @@ import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.IndicationTimeline
 import com.exaclast.regimen.model.Indication
+import com.exaclast.regimen.model.AllergenType
+import com.exaclast.regimen.model.Severity
 import com.exaclast.regimen.model.IndicationKind
 import com.exaclast.regimen.model.IndicationStatus
 import com.exaclast.regimen.ui.components.AppSnackbarHost
@@ -75,6 +77,7 @@ import com.exaclast.regimen.ui.components.GroupedColumn
 import com.exaclast.regimen.ui.components.InfoRow
 import com.exaclast.regimen.ui.components.ListContentPadding
 import com.exaclast.regimen.ui.components.SectionHeader
+import com.exaclast.regimen.ui.components.SwitchRow
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.groupListItemColors
 import java.time.LocalDate
@@ -88,7 +91,16 @@ private fun IndicationKind.shortStatusLabel(status: IndicationStatus): String = 
 
 private fun Indication.matches(query: String): Boolean =
   query.isBlank() || name.contains(query.trim(), ignoreCase = true) ||
-    details?.contains(query.trim(), ignoreCase = true) == true
+    details?.contains(query.trim(), ignoreCase = true) == true ||
+    reaction?.contains(query.trim(), ignoreCase = true) == true
+
+/** "Acute", or "Allergy · Drug" / "Intolerance · Food". */
+private fun Indication.typeLabel(): String =
+  if (kind.isReaction) {
+    listOfNotNull(kind.displayName, (allergenType ?: AllergenType.DRUG).displayName).joinToString(" · ")
+  } else {
+    kind.displayName
+  }
 
 /**
  * One line under an indication: "Acute · Until Nov 15 · 1 medication" / "Acute · Ended Jun 3, 2026".
@@ -104,12 +116,18 @@ internal fun indicationSummary(
   val medCount = snapshot.medications.count { indication.id in it.indicationIds && it.deletedAtEpochMillis == null }
   return if (archived) {
     listOfNotNull(
-      indication.kind.displayName,
+      "Suspected".takeIf { indication.suspected },
+      indication.typeLabel(),
       end?.let { "Ended ${UiFormat.date(it.date, withWeekday = false)}" } ?: indication.kind.statusLabel(indication.status),
     ).joinToString(" · ")
   } else {
     listOfNotNull(
-      indication.kind.displayName.takeIf { showKind },
+      "Suspected".takeIf { indication.suspected && showKind },
+      indication.typeLabel().takeIf { showKind },
+      // Allergies and intolerances share a heading, so each says which it is.
+      indication.kind.displayName.takeIf { !showKind && indication.kind.isReaction },
+      indication.severity?.displayName,
+      indication.reaction?.takeIf { indication.kind.isReaction && it.isNotBlank() },
       indication.status.displayName.takeIf { indication.kind == IndicationKind.CHRONIC },
       end?.let { "Until ${UiFormat.date(it.date, withWeekday = false)}" },
       medicationCount(medCount),
@@ -131,7 +149,9 @@ fun IndicationListScreen(
 
   val (pastAll, currentAll) = snapshot.indications.partition { snapshot.isArchived(it, today) }
   val current = currentAll.filter { it.matches(query) }
-  val currentGroups = IndicationTimeline.groupedByKind(current)
+  // Suspected ones (not formally diagnosed) get a section of their own after the diagnosed ones.
+  val currentGroups = IndicationTimeline.sections(current.filter { !it.suspected })
+  val suspectedCurrent = current.filter { it.suspected }.sortedBy { it.name.lowercase() }
   val past = pastAll.filter { it.matches(query) }
     .sortedByDescending { snapshot.indicationEnd(it)?.date ?: LocalDate.MIN }
   // Searching looks through past indications too.
@@ -188,12 +208,23 @@ fun IndicationListScreen(
           )
         }
       }
-      currentGroups.forEach { (kind, group) ->
-        item(key = "header-$kind") { SectionHeader(kind.displayName) }
+      currentGroups.forEach { (title, group) ->
+        item(key = "header-$title") { SectionHeader(title) }
         itemsIndexed(group, key = { _, c -> c.id }) { index, indication ->
           GroupItem(index = index, count = group.size, onClick = { onOpenIndication(indication.id) }) {
             ListItem(
               supportingContent = { Text(indicationSummary(indication, snapshot, archived = false, showKind = false)) },
+              colors = groupListItemColors(),
+            ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+          }
+        }
+      }
+      if (suspectedCurrent.isNotEmpty()) {
+        item(key = "header-suspected") { SectionHeader("Suspected") }
+        itemsIndexed(suspectedCurrent, key = { _, c -> c.id }) { index, indication ->
+          GroupItem(index = index, count = suspectedCurrent.size, onClick = { onOpenIndication(indication.id) }) {
+            ListItem(
+              supportingContent = { Text(indicationSummary(indication, snapshot, archived = false).removePrefix("Suspected · ")) },
               colors = groupListItemColors(),
             ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
           }
@@ -273,8 +304,11 @@ fun IndicationDetailScreen(
         title = { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         subtitle = {
           Text(
-            listOf(indication.kind.displayName, if (archived) "Past" else indication.kind.statusLabel(indication.status))
-              .joinToString(" · "),
+            listOfNotNull(
+              "Suspected".takeIf { indication.suspected },
+              indication.typeLabel(),
+              if (archived) "Past" else indication.kind.statusLabel(indication.status),
+            ).joinToString(" · "),
           )
         },
         navigationIcon = {
@@ -317,10 +351,13 @@ fun IndicationDetailScreen(
           else -> UiFormat.date(end.date)
         }
         val rows = listOfNotNull(
-          "Type" to indication.kind.displayName,
+          "Type" to indication.typeLabel(),
+          "Diagnosis" to if (indication.suspected) "Suspected, not formally diagnosed" else "Diagnosed",
+          indication.severity?.let { "Severity" to it.displayName },
+          indication.reaction?.takeIf { it.isNotBlank() }?.let { "Reaction" to it },
           "Status" to indication.kind.statusLabel(indication.status),
           "Started" to (UiFormat.dateIso(indication.diagnosedDateIso) ?: "Not set"),
-          endLabel to endValue,
+          (endLabel to endValue).takeIf { !indication.kind.isReaction || end != null },
           indication.details?.takeIf { it.isNotBlank() }?.let { "Notes" to it },
         )
         GroupedColumn {
@@ -479,6 +516,11 @@ fun IndicationEditorScreen(
   var details by rememberSaveable { mutableStateOf(source?.details.orEmpty()) }
   var kind by rememberSaveable { mutableStateOf(source?.kind ?: IndicationKind.CHRONIC) }
   var status by rememberSaveable { mutableStateOf(source?.status ?: IndicationStatus.ACTIVE) }
+  var suspected by rememberSaveable { mutableStateOf(source?.suspected ?: false) }
+  var allergenType by rememberSaveable { mutableStateOf(source?.allergenType ?: AllergenType.DRUG) }
+  var severity by rememberSaveable { mutableStateOf(source?.severity) }
+  var reaction by rememberSaveable { mutableStateOf(source?.reaction.orEmpty()) }
+  val isAllergy = kind.isReaction
   var startDateIso by rememberSaveable { mutableStateOf(source?.diagnosedDateIso.orEmpty()) }
   var endDateIso by rememberSaveable { mutableStateOf(source?.endDateIso.orEmpty()) }
   var providerIds by rememberSaveable { mutableStateOf(source?.providerIds.orEmpty()) }
@@ -505,6 +547,11 @@ fun IndicationEditorScreen(
           details = details.trim().takeIf { it.isNotBlank() },
           kind = kind,
           status = status,
+          suspected = suspected,
+          // Only drug intolerances are recorded, so there's nothing to choose for one.
+          allergenType = (if (kind == IndicationKind.INTOLERANCE) AllergenType.DRUG else allergenType).takeIf { isAllergy },
+          severity = severity,
+          reaction = reaction.trim().takeIf { isAllergy && it.isNotEmpty() },
           diagnosedDateIso = startDateIso.takeIf { it.isNotBlank() },
           endDateIso = endDateIso.takeIf { it.isNotBlank() },
           providerIds = providerIds.filter { id -> snapshot.providers.any { it.id == id } },
@@ -516,13 +563,27 @@ fun IndicationEditorScreen(
     OutlinedTextField(
       value = name,
       onValueChange = { name = it },
-      label = { Text("Name *") },
+      label = {
+        Text(
+          when (kind) {
+            IndicationKind.ALLERGY -> "Allergen *"
+            IndicationKind.INTOLERANCE -> "Trigger *"
+            else -> "Name *"
+          },
+        )
+      },
       placeholder = {
         Text(
           when (kind) {
             IndicationKind.ACUTE -> "e.g. Sinus infection"
             IndicationKind.CHRONIC -> "e.g. ADHD"
             IndicationKind.PREVENTIVE -> "e.g. HIV PrEP"
+            IndicationKind.ALLERGY -> when (allergenType) {
+              AllergenType.DRUG -> "e.g. Penicillin"
+              AllergenType.FOOD -> "e.g. Peanuts"
+              AllergenType.ENVIRONMENTAL -> "e.g. Birch pollen"
+            }
+            IndicationKind.INTOLERANCE -> "e.g. Metformin"
           },
         )
       },
@@ -530,16 +591,14 @@ fun IndicationEditorScreen(
       modifier = Modifier.fillMaxWidth(),
     )
     Text("Type", style = MaterialTheme.typography.titleSmall)
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-      IndicationKind.entries.forEachIndexed { i, k ->
-        SegmentedButton(
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+      IndicationKind.entries.forEach { k ->
+        FilterChip(
           selected = kind == k,
           onClick = {
             kind = k
             if (status !in k.statuses) status = IndicationStatus.ACTIVE
           },
-          shape = SegmentedButtonDefaults.itemShape(index = i, count = IndicationKind.entries.size),
-          icon = {},
           label = { Text(k.displayName) },
         )
       }
@@ -549,10 +608,45 @@ fun IndicationEditorScreen(
         IndicationKind.ACUTE -> "Short-term, like an infection or injury. Moves to past indications when it ends."
         IndicationKind.CHRONIC -> "Ongoing, like diabetes or high blood pressure."
         IndicationKind.PREVENTIVE -> "Taken to prevent something, like PrEP or PEP. Stays current unless its course ends."
+        IndicationKind.ALLERGY -> "An immune reaction, like hives or anaphylaxis. Medications you link are the ones that treat it."
+        IndicationKind.INTOLERANCE -> "A drug you can't tolerate, like severe nausea or another side effect. Not an immune reaction, so not an allergy."
       },
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+    if (isAllergy) {
+      if (kind == IndicationKind.ALLERGY) {
+        Text("Allergic to", style = MaterialTheme.typography.titleSmall)
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+          AllergenType.entries.forEachIndexed { i, type ->
+            SegmentedButton(
+              selected = allergenType == type,
+              onClick = { allergenType = type },
+              shape = SegmentedButtonDefaults.itemShape(index = i, count = AllergenType.entries.size),
+              icon = {},
+              label = { Text(type.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            )
+          }
+        }
+      }
+      OutlinedTextField(
+        value = reaction,
+        onValueChange = { reaction = it },
+        label = { Text("Reaction") },
+        placeholder = { Text("e.g. Hives, swelling") },
+        modifier = Modifier.fillMaxWidth(),
+      )
+    }
+    Text("Severity", style = MaterialTheme.typography.titleSmall)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+      Severity.entries.forEach { level ->
+        FilterChip(
+          selected = severity == level,
+          onClick = { severity = if (severity == level) null else level },
+          label = { Text(level.displayName) },
+        )
+      }
+    }
     Text("Status", style = MaterialTheme.typography.titleSmall)
     val statuses = kind.statuses
     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -566,12 +660,22 @@ fun IndicationEditorScreen(
         )
       }
     }
+    SwitchRow(
+      title = "Suspected",
+      subtitle = "Not formally diagnosed, such as a symptom or a condition under investigation",
+      checked = suspected,
+      onCheckedChange = { suspected = it },
+    )
     DatePickerField(
-      label = if (kind == IndicationKind.CHRONIC) "Diagnosed" else "Started",
+      label = when {
+        isAllergy -> "First reaction"
+        kind == IndicationKind.CHRONIC && !suspected -> "Diagnosed"
+        else -> "Started"
+      },
       valueIso = startDateIso,
       onValueChange = { startDateIso = it },
     )
-    DatePickerField(
+    if (!isAllergy) DatePickerField(
       label = "End date",
       valueIso = endDateIso,
       onValueChange = { endDateIso = it },

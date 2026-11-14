@@ -13,6 +13,12 @@ resolve.
 
 Newest first.
 
+- **Health summary** (uncommitted): a screen (Today's top bar, document icon) showing drug allergies and intolerances first, then other allergies, the current regimen, finished or as-needed medications taken in the past 90 days (last dose and when), indications, suspected conditions and providers. The share button sends the same content as plain text (`CareSummary.build` / `toText`). Proof: 5 unit tests pass, builds; not yet seen on a device.
+
+- **T-117** (uncommitted): allergies and intolerances as two separate kinds, `IndicationKind.ALLERGY` and `INTOLERANCE`, so one is never labelled as the other: the name is the trigger, plus `allergenType` (drug, food, environmental), `severity` and `reaction`. Listed together under "Drug / Food / Environmental allergies and intolerances" (`IndicationTimeline.sections`, also used by the pickers), each labelled with its own kind; the Type selector is now wrapping chips, can be Suspected, resolved, linked to providers and to the medications that treat them. Recording only; no match warning. Stored in the JSON payload with defaults, so no migration. Proof: unit tests pass (grouping, status, no course end); device check added.
+
+- **T-116** (uncommitted): `Indication.suspected` for conditions and symptoms not formally diagnosed. Editor switch, own "Suspected" section on the Indications tab, noted in summaries and the detail page; older records read as diagnosed (no migration needed, it's a JSON default). Proof: unit tests pass (default, new episode); device check added.
+
 - **T-002** (see this session's commit): after boot, `alertOverdueAfterBoot` alerts once per window whose latest occurrence still has doses needing the user, open or closed, including snoozes that ended while off. Leftover: an unlogged dose from an older occurrence (not the latest) isn't re-alerted. Proof: builds, unit tests pass; device check added.
 
 - **T-038** (uncommitted): schedule windows, weekdays, specific dates and the label photo URI, captured photos and their dialog now survive rotation (`rememberSavableList`, `rememberSaveable`). Proof: unit tests pass; device check added.

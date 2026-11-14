@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material.icons.filled.Today
@@ -133,6 +134,7 @@ fun TodayScreen(
   onNextDay: () -> Unit,
   onGoToToday: () -> Unit,
   onOpenSettings: () -> Unit,
+  onOpenSummary: () -> Unit,
   onTake: (item: ScheduledDoseItem, site: String?, takenAtMillis: Long?) -> Unit,
   onSkip: (ScheduledDoseItem) -> Unit,
   onSnooze: (ScheduledDoseItem) -> Unit,
@@ -305,6 +307,7 @@ fun TodayScreen(
           ) {
             Icon(Icons.Default.Today, contentDescription = "Go to today")
           }
+          IconButton(onClick = onOpenSummary) { Icon(Icons.Default.Description, contentDescription = "Health summary") }
           IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
         },
         scrollBehavior = scrollBehavior,

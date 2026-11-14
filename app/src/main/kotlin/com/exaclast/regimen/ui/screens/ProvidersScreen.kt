@@ -369,7 +369,7 @@ private fun ProviderIndicationsDialog(
 ) {
   var selection by remember { mutableStateOf(initialSelection) }
   val (past, current) = snapshot.indications.partition { snapshot.isArchived(it) }
-  val sections = IndicationTimeline.groupedByKind(current).map { (kind, group) -> kind.displayName to group } +
+  val sections = IndicationTimeline.sections(current) +
     listOfNotNull(past.sortedBy { it.name.lowercase() }.takeIf { it.isNotEmpty() }?.let { "Past" to it })
   AlertDialog(
     onDismissRequest = onDismiss,

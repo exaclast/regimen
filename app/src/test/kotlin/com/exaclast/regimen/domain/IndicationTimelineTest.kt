@@ -1,5 +1,6 @@
 package com.exaclast.regimen.domain
 
+import com.exaclast.regimen.model.AllergenType
 import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.IndicationKind
 import com.exaclast.regimen.model.IndicationStatus
@@ -15,6 +16,58 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class IndicationTimelineTest {
+  @Test
+  fun suspected_defaultsToDiagnosedForOlderRecords() {
+    val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+    val old = json.decodeFromString<Indication>("""{"id":"i1","name":"ADHD"}""")
+    assertFalse(old.suspected)
+    val suspected = json.decodeFromString<Indication>(json.encodeToString(Indication.serializer(), old.copy(suspected = true)))
+    assertTrue(suspected.suspected)
+  }
+
+  @Test
+  fun allergies_groupByAllergenTypeAfterTheKinds() {
+    val adhd = Indication(name = "ADHD", kind = IndicationKind.CHRONIC)
+    val penicillin = Indication(name = "Penicillin", kind = IndicationKind.ALLERGY, allergenType = AllergenType.DRUG)
+    val peanut = Indication(name = "Peanut", kind = IndicationKind.ALLERGY, allergenType = AllergenType.FOOD)
+    val birch = Indication(name = "Birch pollen", kind = IndicationKind.ALLERGY, allergenType = AllergenType.ENVIRONMENTAL)
+    val sulfa = Indication(name = "Sulfa", kind = IndicationKind.ALLERGY, allergenType = null)
+    val metformin = Indication(name = "Metformin", kind = IndicationKind.INTOLERANCE, allergenType = AllergenType.DRUG)
+    val sections = IndicationTimeline.sections(listOf(birch, peanut, adhd, sulfa, penicillin, metformin))
+    assertEquals(
+      listOf(
+        "Chronic",
+        "Drug allergies and intolerances",
+        "Food allergies",
+        "Environmental allergies",
+      ),
+      sections.map { it.first },
+    )
+    // An allergy with no type recorded counts as a drug allergy.
+    assertEquals(listOf("Metformin", "Penicillin", "Sulfa"), sections[1].second.map { it.name })
+    assertEquals(listOf("Peanut"), sections[2].second.map { it.name })
+    // A drug intolerance shares the drug section with allergies but stays its own kind.
+    assertEquals(IndicationKind.INTOLERANCE, sections[1].second.first().kind)
+    assertTrue(IndicationKind.INTOLERANCE.isReaction && IndicationKind.ALLERGY.isReaction)
+    assertFalse(IndicationKind.CHRONIC.isReaction)
+    assertTrue(IndicationTimeline.groupedByKind(listOf(penicillin)).isEmpty())
+  }
+
+  @Test
+  fun allergy_hasNoCourseEndButCanBeResolved() {
+    val allergy = Indication(name = "Egg", kind = IndicationKind.ALLERGY, allergenType = AllergenType.FOOD)
+    assertNull(IndicationTimeline.end(allergy, emptyList(), emptyList()))
+    assertEquals(listOf(IndicationStatus.ACTIVE, IndicationStatus.RESOLVED), IndicationKind.ALLERGY.statuses)
+    assertTrue(IndicationTimeline.isArchived(allergy.copy(status = IndicationStatus.RESOLVED), LocalDate.now(), emptyList(), emptyList()))
+    assertFalse(IndicationTimeline.isArchived(allergy, LocalDate.now(), emptyList(), emptyList()))
+  }
+
+  @Test
+  fun newEpisode_startsAsDiagnosed() {
+    val previous = Indication(name = "Rash", suspected = true)
+    assertFalse(IndicationTimeline.recurrence(previous, LocalDate.of(2026, 1, 1)).suspected)
+  }
+
 
   private val today = LocalDate.of(2026, 11, 6)
   private val sinusitis = Indication(id = "c1", name = "Sinusitis", kind = IndicationKind.ACUTE, diagnosedDateIso = "2026-11-04")
