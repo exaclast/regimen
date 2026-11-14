@@ -2,6 +2,7 @@
 
 package com.exaclast.regimen.ui.screens
 
+import android.content.res.Resources
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -87,6 +88,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -97,6 +101,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.exaclast.regimen.R
 import com.exaclast.regimen.domain.BucketDoseGroup
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.DoseTimeline
@@ -246,12 +251,12 @@ fun TodayScreen(
     requestTake(TakeRequest.Prn(item.copy(pacing = pacing), takenAtMillis, note))
   }
 
-  val title = if (uiState.isToday) "Today" else UiFormat.date(selectedDate)
+  val title = if (uiState.isToday) stringResource(R.string.today_title) else UiFormat.date(selectedDate)
   val progress = when {
-    board.totalScheduledCount == 0 -> "Nothing scheduled"
-    else -> "${board.totalTakenCount} of ${board.totalScheduledCount} taken"
+    board.totalScheduledCount == 0 -> stringResource(R.string.today_nothing_scheduled)
+    else -> stringResource(R.string.today_progress, board.totalTakenCount, board.totalScheduledCount)
   }
-  val subtitle = if (uiState.isToday) "${UiFormat.date(selectedDate)} · $progress" else progress
+  val subtitle = if (uiState.isToday) stringResource(R.string.today_subtitle, UiFormat.date(selectedDate), progress) else progress
 
   @Composable
   fun DoseWindow(group: BucketDoseGroup, dateIso: String, occurrenceLabel: String? = null) {
@@ -289,10 +294,10 @@ fun TodayScreen(
         subtitle = { Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         actions = {
           IconButton(onClick = onPreviousDay) {
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Previous day")
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = stringResource(R.string.today_previous_day))
           }
           IconButton(onClick = onNextDay) {
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Next day")
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = stringResource(R.string.today_next_day))
           }
           // "Go to today" keeps its slot even when hidden, so showing it never shifts the day
           // arrows under the user's finger. Hidden = transparent, disabled, and out of a11y.
@@ -305,10 +310,10 @@ fun TodayScreen(
               .graphicsLayer { alpha = goToTodayAlpha }
               .then(if (showGoToToday) Modifier else Modifier.clearAndSetSemantics {}),
           ) {
-            Icon(Icons.Default.Today, contentDescription = "Go to today")
+            Icon(Icons.Default.Today, contentDescription = stringResource(R.string.today_go_to_today))
           }
-          IconButton(onClick = onOpenSummary) { Icon(Icons.Default.Description, contentDescription = "Health summary") }
-          IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
+          IconButton(onClick = onOpenSummary) { Icon(Icons.Default.Description, contentDescription = stringResource(R.string.summary_title)) }
+          IconButton(onClick = onOpenSettings) { Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings_title)) }
         },
         scrollBehavior = scrollBehavior,
       )
@@ -319,7 +324,7 @@ fun TodayScreen(
           onClick = { pickingExtraDose = true },
           expanded = fabExpanded,
           icon = { Icon(Icons.Default.Add, contentDescription = null) },
-          text = { Text("Log extra dose") },
+          text = { Text(stringResource(R.string.today_log_extra_dose)) },
         )
       }
     },
@@ -337,8 +342,8 @@ fun TodayScreen(
       if (!settings.notificationsEnabled) {
         item(key = "reminders-off") {
           NoticeCard(
-            text = "Reminders are turned off. Doses won't notify you.",
-            actionLabel = "Settings",
+            text = stringResource(R.string.today_reminders_off),
+            actionLabel = stringResource(R.string.settings_title),
             onAction = onOpenSettings,
           )
         }
@@ -349,7 +354,7 @@ fun TodayScreen(
           NoticeCard(
             icon = Icons.Default.Warning,
             text = problem.message,
-            actionLabel = "Fix",
+            actionLabel = stringResource(R.string.action_fix),
             onAction = { DoseNotificationManager.openSettingsFor(context, problem) },
           )
         }
@@ -361,11 +366,11 @@ fun TodayScreen(
           NoticeCard(
             icon = Icons.Default.Warning,
             text = if (count == 1) {
-              "${first.primaryName} has no dose window, so it won't appear here or remind you."
+              stringResource(R.string.today_no_window_one, first.primaryName)
             } else {
-              "$count medications have no dose window, so they won't appear here or remind you."
+              pluralStringResource(R.plurals.today_no_window_many, count, count)
             },
-            actionLabel = "Fix",
+            actionLabel = stringResource(R.string.action_fix),
             onAction = { onOpenMedication(first.id) },
           )
         }
@@ -376,8 +381,8 @@ fun TodayScreen(
           val count = uiState.yesterdayMissedCount
           NoticeCard(
             icon = Icons.Default.Warning,
-            text = if (count == 1) "1 dose from yesterday wasn't logged." else "$count doses from yesterday weren't logged.",
-            actionLabel = "Review",
+            text = pluralStringResource(R.plurals.today_yesterday_missed, count, count),
+            actionLabel = stringResource(R.string.action_review),
             onAction = onReviewYesterday,
           )
         }
@@ -385,7 +390,7 @@ fun TodayScreen(
 
       if (uiState.isToday) {
         items(uiState.carriedOver, key = { "carried-${it.bucket.id}" }) { group ->
-          DoseWindow(group, uiState.yesterdayIso, occurrenceLabel = "From last night")
+          DoseWindow(group, uiState.yesterdayIso, occurrenceLabel = stringResource(R.string.today_from_last_night))
         }
       }
 
@@ -405,7 +410,7 @@ fun TodayScreen(
       }
 
       if (board.prnItems.isNotEmpty()) {
-        item(key = "prn-header") { SectionHeader("As needed") }
+        item(key = "prn-header") { SectionHeader(stringResource(R.string.providers_as_needed)) }
         items(board.prnItems, key = { "prn-${it.medication.id}" }) { prn ->
           PrnCard(
             item = prn,
@@ -422,7 +427,7 @@ fun TodayScreen(
         .filter { it.scheduledDateIso == uiState.selectedDateIso && it.status != DoseStatus.SNOOZED }
         .sortedByDescending { it.actionTimestampMillis }
       if (dayLogs.isNotEmpty()) {
-        item(key = "log-header") { SectionHeader(if (uiState.isToday) "Logged today" else "Logged this day") }
+        item(key = "log-header") { SectionHeader(stringResource(if (uiState.isToday) R.string.today_logged_today else R.string.today_logged_this_day)) }
         item(key = "log-list") {
           DayLogList(
             logs = dayLogs,
@@ -448,7 +453,7 @@ fun TodayScreen(
 
   timePrompt?.let { request ->
     LogTimeDialog(
-      title = "Log ${request.item.medication.primaryName}",
+      title = stringResource(R.string.today_log_named, request.item.medication.primaryName),
       doseLabel = "${formatNum(request.item.doseAmount)} ${request.item.doseUnit.symbol}",
       defaultDateIso = uiState.selectedDateIso,
       startWithOtherTime = request.startWithOtherTime,
@@ -464,15 +469,15 @@ fun TodayScreen(
     AlertDialog(
       onDismissRequest = { pacingPrompt = null },
       icon = { Icon(Icons.Default.Warning, contentDescription = null) },
-      title = { Text("Take ${request.medication.primaryName} anyway?") },
-      text = { Text(pacingExplanation(request.pacing, request.medication)) },
+      title = { Text(stringResource(R.string.today_take_anyway_title, request.medication.primaryName)) },
+      text = { Text(pacingExplanation(LocalResources.current, request.pacing, request.medication)) },
       confirmButton = {
         Button(onClick = {
           pacingPrompt = null
           afterPacing(request, alreadyConfirmed = true)
-        }) { Text("Take anyway") }
+        }) { Text(stringResource(R.string.today_take_anyway)) }
       },
-      dismissButton = { TextButton(onClick = { pacingPrompt = null }) { Text("Cancel") } },
+      dismissButton = { TextButton(onClick = { pacingPrompt = null }) { Text(stringResource(R.string.action_cancel)) } },
     )
   }
 
@@ -480,15 +485,15 @@ fun TodayScreen(
     val item = (request as TakeRequest.Scheduled).item
     AlertDialog(
       onDismissRequest = { confirmPrompt = null },
-      title = { Text("Log ${item.medication.primaryName}?") },
+      title = { Text(stringResource(R.string.today_log_named_question, item.medication.primaryName)) },
       text = { Text("${item.formattedDoseInstruction()} · ${item.bucket.name}") },
       confirmButton = {
         Button(onClick = {
           confirmPrompt = null
           commit(request, item.suggestedSite)
-        }) { Text("Log dose") }
+        }) { Text(stringResource(R.string.action_log_dose)) }
       },
-      dismissButton = { TextButton(onClick = { confirmPrompt = null }) { Text("Cancel") } },
+      dismissButton = { TextButton(onClick = { confirmPrompt = null }) { Text(stringResource(R.string.action_cancel)) } },
     )
   }
 
@@ -510,15 +515,15 @@ fun TodayScreen(
     AlertDialog(
       onDismissRequest = { takeAllPrompt = null },
       icon = { Icon(Icons.Default.Warning, contentDescription = null) },
-      title = { Text("Take all ${pending.size} anyway?") },
-      text = { Text("Pacing limits apply to $limited.") },
+      title = { Text(pluralStringResource(R.plurals.today_take_all_anyway_title, pending.size, pending.size)) },
+      text = { Text(stringResource(R.string.today_pacing_limits_apply, limited)) },
       confirmButton = {
         Button(onClick = {
           takeAllPrompt = null
           onTakeAll(pending)
-        }) { Text("Take all") }
+        }) { Text(stringResource(R.string.today_take_all)) }
       },
-      dismissButton = { TextButton(onClick = { takeAllPrompt = null }) { Text("Cancel") } },
+      dismissButton = { TextButton(onClick = { takeAllPrompt = null }) { Text(stringResource(R.string.action_cancel)) } },
     )
   }
 }
@@ -541,14 +546,14 @@ private fun ExtraDosePickerDialog(
   }
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("Log extra dose") },
+    title = { Text(stringResource(R.string.today_log_extra_dose)) },
     text = {
       Column {
         if (medications.size > 6) {
           OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            placeholder = { Text("Search medications") },
+            placeholder = { Text(stringResource(R.string.medications_search)) },
             singleLine = true,
             modifier = Modifier
               .fillMaxWidth()
@@ -556,7 +561,7 @@ private fun ExtraDosePickerDialog(
           )
         }
         if (matches.isEmpty()) {
-          Text("No matches for \"$query\"", modifier = Modifier.padding(vertical = 8.dp))
+          Text(stringResource(R.string.list_no_matches, query), modifier = Modifier.padding(vertical = 8.dp))
         }
         LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
           items(matches, key = { it.id }) { med ->
@@ -577,7 +582,7 @@ private fun ExtraDosePickerDialog(
       }
     },
     confirmButton = {},
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
 }
 
@@ -609,20 +614,20 @@ private sealed interface TakeRequest {
   }
 }
 
-private fun pacingExplanation(pacing: PacingEvaluation, medication: Medication): String {
+private fun pacingExplanation(res: Resources, pacing: PacingEvaluation, medication: Medication): String {
   val parts = mutableListOf<String>()
-  pacing.nextAllowedText()?.let { parts.add("The next dose isn't due until $it.") }
+  pacing.nextAllowedText()?.let { parts.add(res.getString(R.string.pacing_next_dose, it)) }
   if (pacing.isDailyLimitReached) {
     val limit = pacing.maxDailyDoses?.let { formatNum(it) }
     parts.add(
       if (limit != null) {
-        "You've reached the daily limit (${pacing.dosesTakenToday} of $limit)."
+        res.getString(R.string.pacing_daily_limit, pacing.dosesTakenToday, limit)
       } else {
-        "You've reached the daily amount limit for ${medication.primaryName}."
+        res.getString(R.string.pacing_daily_amount_limit, medication.primaryName)
       }
     )
   }
-  parts.add("These limits come from this medication's settings.")
+  parts.add(res.getString(R.string.pacing_from_settings))
   return parts.joinToString(" ")
 }
 
@@ -645,6 +650,7 @@ private fun WindowSection(
   onOpenWindow: () -> Unit,
 ) {
   val bucket = group.bucket
+  val res = LocalResources.current
   var expanded by remember(bucket.id) { mutableStateOf(false) }
   val colors = MaterialTheme.colorScheme
   val (container, onContainer) = when {
@@ -684,7 +690,7 @@ private fun WindowSection(
             PhaseLabel(phase = phase, isFutureDate = isFutureDate)
           }
           Text(
-            text = listOfNotNull(occurrenceLabel, windowTimeLabel(bucket)).joinToString(" · "),
+            text = listOfNotNull(occurrenceLabel, windowTimeLabel(res, bucket)).joinToString(" · "),
             style = MaterialTheme.typography.bodyMedium,
             color = onContainer.copy(alpha = 0.8f),
           )
@@ -694,7 +700,7 @@ private fun WindowSection(
           IconButton(onClick = { expanded = !expanded }) {
             Icon(
               if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-              contentDescription = if (expanded) "Hide doses" else "Show doses",
+              contentDescription = stringResource(if (expanded) R.string.today_hide_doses else R.string.today_show_doses),
             )
           }
         }
@@ -702,7 +708,7 @@ private fun WindowSection(
 
       if (phase == WindowPhase.DONE && !expanded) {
         Text(
-          text = doneSummary(group),
+          text = doneSummary(res, group),
           style = MaterialTheme.typography.bodyMedium,
           modifier = Modifier.padding(top = 4.dp, end = 12.dp),
         )
@@ -733,7 +739,7 @@ private fun WindowSection(
         }
         if (pending.size > 1 && !isFutureDate && (phase == WindowPhase.NOW || phase == WindowPhase.MISSED)) {
           TextButton(onClick = { onTakeAll(pending) }, modifier = Modifier.align(Alignment.End)) {
-            Text("Take all ${pending.size}")
+            Text(stringResource(R.string.today_take_all_n, pending.size))
           }
         }
       }
@@ -741,17 +747,17 @@ private fun WindowSection(
   }
 }
 
-private fun windowTimeLabel(bucket: TimeOfDayBucket): String =
-  if (bucket.crossesMidnight) "${bucket.formattedTime()} (overnight)" else bucket.formattedTime()
+private fun windowTimeLabel(res: Resources, bucket: TimeOfDayBucket): String =
+  if (bucket.crossesMidnight) res.getString(R.string.today_window_overnight, bucket.formattedTime()) else bucket.formattedTime()
 
-private fun doneSummary(group: BucketDoseGroup): String {
+private fun doneSummary(res: Resources, group: BucketDoseGroup): String {
   val taken = group.takenCount
   val skipped = group.items.count { it.isSkipped }
   val last = group.items.mapNotNull { it.existingLog?.actionTimestampMillis }.maxOrNull()
   val parts = buildList {
-    if (taken > 0) add("$taken taken")
-    if (skipped > 0) add("$skipped skipped")
-    last?.let { add("last at ${UiFormat.time(it)}") }
+    if (taken > 0) add(res.getQuantityString(R.plurals.today_done_taken, taken, taken))
+    if (skipped > 0) add(res.getQuantityString(R.plurals.today_done_skipped, skipped, skipped))
+    last?.let { add(res.getString(R.string.today_done_last_at, UiFormat.time(it))) }
   }
   return parts.joinToString(" · ")
 }
@@ -759,11 +765,11 @@ private fun doneSummary(group: BucketDoseGroup): String {
 @Composable
 private fun PhaseLabel(phase: WindowPhase, isFutureDate: Boolean) {
   val text = when {
-    isFutureDate -> "Scheduled"
-    phase == WindowPhase.NOW -> "Now"
-    phase == WindowPhase.UPCOMING -> "Upcoming"
-    phase == WindowPhase.MISSED -> "Missed"
-    else -> "Done"
+    isFutureDate -> stringResource(R.string.phase_scheduled)
+    phase == WindowPhase.NOW -> stringResource(R.string.phase_now)
+    phase == WindowPhase.UPCOMING -> stringResource(R.string.phase_upcoming)
+    phase == WindowPhase.MISSED -> stringResource(R.string.phase_missed)
+    else -> stringResource(R.string.phase_done)
   }
   val colors = MaterialTheme.colorScheme
   val (bg, fg) = when {
@@ -787,9 +793,11 @@ private fun ReminderStatusButton(bucket: TimeOfDayBucket, settings: AppSettings,
   val remindersOn = settings.notificationsEnabled && bucket.notificationsEnabled
   val alarmOn = remindersOn && settings.alarmsEnabled && bucket.alarmAtWindowEnd
   val (icon, description) = when {
-    !remindersOn -> Icons.Default.NotificationsOff to "${bucket.name} reminders off"
-    alarmOn -> Icons.Default.Alarm to "${bucket.name}: reminder at ${bucket.formattedStartTime()}, alarm at ${bucket.formattedEndTime()}"
-    else -> Icons.Default.Notifications to "${bucket.name}: reminder at ${bucket.formattedStartTime()}"
+    !remindersOn -> Icons.Default.NotificationsOff to stringResource(R.string.reminder_off, bucket.name)
+    alarmOn -> Icons.Default.Alarm to stringResource(
+      R.string.reminder_and_alarm, bucket.name, bucket.formattedStartTime(), bucket.formattedEndTime(),
+    )
+    else -> Icons.Default.Notifications to stringResource(R.string.reminder_at, bucket.name, bucket.formattedStartTime())
   }
   IconButton(onClick = onClick) { Icon(icon, contentDescription = description) }
 }
@@ -819,18 +827,18 @@ private fun DoseCard(
   var menuOpen by remember { mutableStateOf(false) }
 
   val statusText = when {
-    item.isTaken -> "Taken at ${UiFormat.time(item.existingLog!!.actionTimestampMillis)}" +
+    item.isTaken -> stringResource(R.string.status_taken_at, UiFormat.time(item.existingLog!!.actionTimestampMillis)) +
       (item.existingLog.siteUsed?.let { " · $it" } ?: "")
-    item.isSkipped -> "Skipped"
-    snoozedUntil != null -> "Snoozed until ${UiFormat.time(snoozedUntil)}"
-    missed -> "Missed"
+    item.isSkipped -> stringResource(R.string.status_skipped)
+    snoozedUntil != null -> stringResource(R.string.status_snoozed_until, UiFormat.time(snoozedUntil))
+    missed -> stringResource(R.string.phase_missed)
     else -> null
   }
   val takeLabel = when {
-    !item.pacing.canTakeNow -> "Take anyway…"
-    missed -> "Take now"
-    phase == WindowPhase.UPCOMING -> "Take early"
-    else -> "Take"
+    !item.pacing.canTakeNow -> stringResource(R.string.take_anyway_ellipsis)
+    missed -> stringResource(R.string.take_now)
+    phase == WindowPhase.UPCOMING -> stringResource(R.string.take_early)
+    else -> stringResource(R.string.take)
   }
   // Overdue: either taking it late (now) or it was taken on time and just not logged, which is
   // recorded at the window's end.
@@ -847,29 +855,30 @@ private fun DoseCard(
   val a11yActions = buildList {
     if (canAct) add(CustomAccessibilityAction(takeLabel.removeSuffix("…")) { onTake(); true })
     if (canLogOnTime) {
-      add(CustomAccessibilityAction("Taken on time, at ${UiFormat.time(windowEnd!!)}") { onTakenOnTime(); true })
+      add(CustomAccessibilityAction(stringResource(R.string.a11y_taken_on_time, UiFormat.time(windowEnd!!))) { onTakenOnTime(); true })
     }
-    if (canSnooze) add(CustomAccessibilityAction("Snooze $snoozeMinutes minutes") { onSnooze(); true })
-    if (canAct) add(CustomAccessibilityAction("Skip") { onSkip(); true })
+    if (canSnooze) add(CustomAccessibilityAction(pluralStringResource(R.plurals.a11y_snooze_minutes, snoozeMinutes, snoozeMinutes)) { onSnooze(); true })
+    if (canAct) add(CustomAccessibilityAction(stringResource(R.string.action_skip)) { onSkip(); true })
     if (canMarkTaken) {
       if (markTakenOnTimeAt != null) {
-        add(CustomAccessibilityAction("Mark as taken on time, at ${UiFormat.time(markTakenOnTimeAt)}") { onTakenOnTime(); true })
-        add(CustomAccessibilityAction("Mark as taken now") { onTake(); true })
+        add(CustomAccessibilityAction(stringResource(R.string.a11y_mark_taken_on_time, UiFormat.time(markTakenOnTimeAt))) { onTakenOnTime(); true })
+        add(CustomAccessibilityAction(stringResource(R.string.mark_taken_now)) { onTake(); true })
       } else {
-        add(CustomAccessibilityAction("Mark as taken") { onTake(); true })
+        add(CustomAccessibilityAction(stringResource(R.string.mark_taken)) { onTake(); true })
       }
     }
-    if (canMarkSkipped) add(CustomAccessibilityAction("Mark as skipped") { onSkip(); true })
-    if (item.existingLog != null) add(CustomAccessibilityAction("Mark as not taken") { onClearLog(); true })
+    if (canMarkSkipped) add(CustomAccessibilityAction(stringResource(R.string.mark_skipped)) { onSkip(); true })
+    if (item.existingLog != null) add(CustomAccessibilityAction(stringResource(R.string.mark_not_taken)) { onClearLog(); true })
   }
+  val openMedicationLabel = stringResource(R.string.a11y_open_medication)
   val a11yDescription = listOfNotNull(
     med.primaryName,
     med.secondaryName,
     item.formattedDoseInstruction(),
-    if (item.isNewDose && !item.isCompleted) "New dose from today" else null,
+    if (item.isNewDose && !item.isCompleted) stringResource(R.string.dose_new_from_today) else null,
     statusText,
     warning,
-    if (tracksSites && !item.isCompleted) item.suggestedSite?.let { "Site $it" } else null,
+    if (tracksSites && !item.isCompleted) item.suggestedSite?.let { stringResource(R.string.dose_site, it) } else null,
   ).joinToString(", ")
 
   Surface(
@@ -880,7 +889,7 @@ private fun DoseCard(
       .clearAndSetSemantics {
         contentDescription = a11yDescription
         customActions = a11yActions
-        onClick(label = "Open medication") { onOpenMedication(); true }
+        onClick(label = openMedicationLabel) { onOpenMedication(); true }
       },
     onClick = onOpenMedication,
   ) {
@@ -909,18 +918,18 @@ private fun DoseCard(
           )
         }
         Box {
-          IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More") }
+          IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.action_more)) }
           DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             if (canAct) {
               DropdownMenuItem(
-                text = { Text("Skip") },
+                text = { Text(stringResource(R.string.action_skip)) },
                 leadingIcon = { Icon(Icons.Default.Close, contentDescription = null) },
                 onClick = { menuOpen = false; onSkip() },
               )
             }
             if (canAct && med.activeSites.size > 1) {
               DropdownMenuItem(
-                text = { Text("Take at a different site…") },
+                text = { Text(stringResource(R.string.take_different_site)) },
                 leadingIcon = { Icon(Icons.Default.Autorenew, contentDescription = null) },
                 onClick = { menuOpen = false; onChangeSite() },
               )
@@ -928,18 +937,18 @@ private fun DoseCard(
             if (canMarkTaken) {
               if (markTakenOnTimeAt != null) {
                 DropdownMenuItem(
-                  text = { Text("Mark as taken on time (${UiFormat.time(markTakenOnTimeAt)})") },
+                  text = { Text(stringResource(R.string.mark_taken_on_time, UiFormat.time(markTakenOnTimeAt))) },
                   leadingIcon = { Icon(Icons.Default.Check, contentDescription = null) },
                   onClick = { menuOpen = false; onTakenOnTime() },
                 )
                 DropdownMenuItem(
-                  text = { Text("Mark as taken now") },
+                  text = { Text(stringResource(R.string.mark_taken_now)) },
                   leadingIcon = { Icon(Icons.Default.Check, contentDescription = null) },
                   onClick = { menuOpen = false; onTake() },
                 )
               } else {
                 DropdownMenuItem(
-                  text = { Text("Mark as taken") },
+                  text = { Text(stringResource(R.string.mark_taken)) },
                   leadingIcon = { Icon(Icons.Default.Check, contentDescription = null) },
                   onClick = { menuOpen = false; onTake() },
                 )
@@ -947,18 +956,18 @@ private fun DoseCard(
             }
             if (canMarkSkipped) {
               DropdownMenuItem(
-                text = { Text("Mark as skipped") },
+                text = { Text(stringResource(R.string.mark_skipped)) },
                 leadingIcon = { Icon(Icons.Default.Close, contentDescription = null) },
                 onClick = { menuOpen = false; onSkip() },
               )
             }
             if (item.existingLog != null) {
               DropdownMenuItem(
-                text = { Text("Mark as not taken") },
+                text = { Text(stringResource(R.string.mark_not_taken)) },
                 onClick = { menuOpen = false; onClearLog() },
               )
             }
-            DropdownMenuItem(text = { Text("View medication") }, onClick = { menuOpen = false; onOpenMedication() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.view_medication)) }, onClick = { menuOpen = false; onOpenMedication() })
           }
         }
       }
@@ -966,12 +975,12 @@ private fun DoseCard(
       Column(modifier = Modifier.padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         // A titration step starts today: worth a second look before taking the usual amount.
         if (item.isNewDose && !item.isCompleted) {
-          StatusLine(icon = Icons.Default.Info, text = "New dose from today", color = MaterialTheme.colorScheme.primary)
+          StatusLine(icon = Icons.Default.Info, text = stringResource(R.string.dose_new_from_today), color = MaterialTheme.colorScheme.primary)
         }
         if (tracksSites && !item.isCompleted && item.suggestedSite != null) {
           StatusLine(
             icon = if (med.rotatesSites) Icons.Default.Autorenew else Icons.Default.Place,
-            text = "Site: ${item.suggestedSite}",
+            text = stringResource(R.string.dose_site_line, item.suggestedSite),
           )
         }
         statusText?.let { text ->
@@ -1000,7 +1009,7 @@ private fun DoseCard(
                   Text(takeLabel, maxLines = 1)
                 }
                 OutlinedButton(onClick = onTakenOnTime, modifier = Modifier.weight(1f)) {
-                  Text("Taken on time", maxLines = 1)
+                  Text(stringResource(R.string.taken_on_time), maxLines = 1)
                 }
               }
               !item.pacing.canTakeNow || phase == WindowPhase.UPCOMING ->
@@ -1015,7 +1024,7 @@ private fun DoseCard(
               FilledTonalButton(onClick = onSnooze) {
                 Icon(Icons.Default.Snooze, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Snooze")
+                Text(stringResource(R.string.action_snooze))
               }
             }
           }
@@ -1049,9 +1058,17 @@ private fun PrnCard(
 ) {
   val med = item.medication
   val warning = item.pacing.warningText()
-  val dayWord = if (isToday) "today" else "that day"
-  val dailyNote = item.pacing.maxDailyDoses?.let { "${item.pacing.dosesTakenToday} of ${formatNum(it)} $dayWord" }
-  val logLabel = "Log ${formatNum(item.doseAmount)} ${item.doseUnit.symbol}"
+  val dailyNote = item.pacing.maxDailyDoses?.let {
+    stringResource(
+      if (isToday) R.string.prn_daily_note_today else R.string.prn_daily_note_that_day,
+      item.pacing.dosesTakenToday,
+      formatNum(it),
+    )
+  }
+  val logLabel = stringResource(R.string.prn_log_label, formatNum(item.doseAmount), item.doseUnit.symbol)
+  val logOtherTimeLabel = stringResource(R.string.prn_log_other_time_label, logLabel)
+  val readyLabel = stringResource(R.string.status_ready)
+  val openMedicationLabel = stringResource(R.string.a11y_open_medication)
   Surface(
     color = MaterialTheme.colorScheme.surfaceContainerLow,
     shape = MaterialTheme.shapes.extraLarge,
@@ -1059,13 +1076,13 @@ private fun PrnCard(
     modifier = Modifier
       .fillMaxWidth()
       .clearAndSetSemantics {
-        contentDescription = listOfNotNull(med.primaryName, med.secondaryName, med.strength, warning ?: "Ready", dailyNote)
+        contentDescription = listOfNotNull(med.primaryName, med.secondaryName, med.strength, warning ?: readyLabel, dailyNote)
           .joinToString(", ")
-        onClick(label = "Open medication") { onOpenMedication(); true }
+        onClick(label = openMedicationLabel) { onOpenMedication(); true }
         if (enabled) {
           customActions = listOf(
             CustomAccessibilityAction(logLabel) { onLog(); true },
-            CustomAccessibilityAction("$logLabel at another time") { onLogAtOtherTime(); true },
+            CustomAccessibilityAction(logOtherTimeLabel) { onLogAtOtherTime(); true },
           )
         }
       },
@@ -1086,7 +1103,7 @@ private fun PrnCard(
       if (warning != null) {
         StatusLine(icon = Icons.Default.Warning, text = warning, color = MaterialTheme.colorScheme.error)
       } else {
-        StatusLine(icon = Icons.Default.Check, text = listOfNotNull("Ready", dailyNote).joinToString(" · "))
+        StatusLine(icon = Icons.Default.Check, text = listOfNotNull(readyLabel, dailyNote).joinToString(" · "))
       }
       if (enabled) {
         Row(
@@ -1094,10 +1111,10 @@ private fun PrnCard(
           horizontalArrangement = Arrangement.End,
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          TextButton(onClick = onLogAtOtherTime) { Text("Other time") }
+          TextButton(onClick = onLogAtOtherTime) { Text(stringResource(R.string.log_time_other)) }
           Spacer(Modifier.width(4.dp))
           if (warning != null) {
-            OutlinedButton(onClick = onLog) { Text("$logLabel anyway…") }
+            OutlinedButton(onClick = onLog) { Text(stringResource(R.string.prn_log_anyway, logLabel)) }
           } else {
             FilledTonalButton(onClick = onLog) { Text(logLabel) }
           }
@@ -1118,15 +1135,18 @@ private fun DayLogList(
   GroupedColumn {
     logs.forEachIndexed { index, log ->
       val med = medMap[log.medicationId]
-      val name = med?.primaryName ?: "Medication"
-      val verb = if (log.status == DoseStatus.SKIPPED) "Skipped" else "Taken"
+      val name = med?.primaryName ?: stringResource(R.string.label_medication)
+      val loggedAt = stringResource(
+        if (log.status == DoseStatus.SKIPPED) R.string.log_skipped_at else R.string.log_taken_at,
+        UiFormat.time(log.actionTimestampMillis),
+      )
       // The editor needs the medication, so a log whose medication was deleted stays read-only.
       GroupItem(index = index, count = logs.size, onClick = if (med != null) ({ onEdit(log) }) else null) {
         ListItem(
           supportingContent = {
             Text(
               listOfNotNull(
-                "$verb ${UiFormat.time(log.actionTimestampMillis)}",
+                loggedAt,
                 log.siteUsed,
                 log.notes?.takeIf { it.isNotBlank() },
               ).joinToString(" · "),
@@ -1136,7 +1156,7 @@ private fun DayLogList(
           },
           trailingContent = {
             IconButton(onClick = { onDelete(log) }) {
-              Icon(Icons.Default.Delete, contentDescription = "Delete $name log entry")
+              Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.today_delete_log_entry, name))
             }
           },
           colors = groupListItemColors(),
@@ -1195,16 +1215,12 @@ private fun EmptyDayCard(
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
       Text(
-        text = if (hasAnyMedications) "Nothing scheduled" else "No medications yet",
+        text = stringResource(if (hasAnyMedications) R.string.today_nothing_scheduled else R.string.today_no_medications),
         style = MaterialTheme.typography.titleMedium,
       )
       Spacer(Modifier.height(4.dp))
       Text(
-        text = if (hasAnyMedications) {
-          "Add a medication and give it a schedule to see doses here."
-        } else {
-          "Add your medications and schedules to start tracking doses, restore a backup, or load demo data to explore."
-        },
+        text = stringResource(if (hasAnyMedications) R.string.today_empty_with_meds else R.string.today_empty_first_run),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,
@@ -1215,12 +1231,12 @@ private fun EmptyDayCard(
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalArrangement = Arrangement.spacedBy(8.dp),
       ) {
-        Button(onClick = onAddMedication) { Text("Add medication") }
+        Button(onClick = onAddMedication) { Text(stringResource(R.string.medications_add)) }
         if (isFirstRun && onRestoreBackup != null) {
-          OutlinedButton(onClick = { restoreLauncher.launch(arrayOf("*/*")) }) { Text("Restore backup") }
+          OutlinedButton(onClick = { restoreLauncher.launch(arrayOf("*/*")) }) { Text(stringResource(R.string.backup_restore_title)) }
         }
         if (isFirstRun && onLoadDemoData != null) {
-          OutlinedButton(onClick = { confirmDemo = true }) { Text("Load demo data") }
+          OutlinedButton(onClick = { confirmDemo = true }) { Text(stringResource(R.string.demo_load)) }
         }
       }
     }
@@ -1228,9 +1244,9 @@ private fun EmptyDayCard(
 
   if (confirmDemo && onLoadDemoData != null) {
     ConfirmDialog(
-      title = "Load demo data?",
-      text = "This populates sample medications, indications, providers, and schedules.",
-      confirmLabel = "Load demo data",
+      title = stringResource(R.string.demo_load_title),
+      text = stringResource(R.string.demo_load_text),
+      confirmLabel = stringResource(R.string.demo_load),
       onConfirm = {
         confirmDemo = false
         onLoadDemoData()
@@ -1251,16 +1267,16 @@ fun SiteSelectionDialog(
   var selected by remember(suggestedSite, medication.id) {
     mutableStateOf(suggestedSite ?: medication.activeSites.firstOrNull().orEmpty())
   }
-  val suggestionLabel = if (medication.rotatesSites) "Next in rotation" else "Same as last time"
+  val suggestionLabel = stringResource(if (medication.rotatesSites) R.string.site_next_in_rotation else R.string.site_same_as_last)
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("Choose a site") },
+    title = { Text(stringResource(R.string.site_choose)) },
     text = {
       // Scrolls: a long site list would otherwise push the buttons off a short window.
       Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
         lastSiteUsed?.takeIf { it.isNotBlank() }?.let {
           Text(
-            "Last used: $it",
+            stringResource(R.string.site_last_used, it),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 8.dp),
@@ -1291,8 +1307,8 @@ fun SiteSelectionDialog(
       }
     },
     confirmButton = {
-      Button(onClick = { onConfirm(selected) }, enabled = selected.isNotBlank()) { Text("Log dose") }
+      Button(onClick = { onConfirm(selected) }, enabled = selected.isNotBlank()) { Text(stringResource(R.string.action_log_dose)) }
     },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
 }

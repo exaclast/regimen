@@ -70,12 +70,12 @@ object CareSummary {
           takenLine(m, takenByMedication.getValue(m.id), formatTaken, label = course.displayName.lowercase())
         },
       ),
-      Section("Indications", diagnosed.sortedBy { it.kind }.map(::indicationLine)),
-      Section("Suspected, not diagnosed", suspected.map(::indicationLine)),
+      Section("Indications", diagnosed.sortedBy { it.kind }.map { indicationLine(it, snapshot.indications) }),
+      Section("Suspected, not diagnosed", suspected.map { indicationLine(it, snapshot.indications) }),
       Section(
         "Indications ended in the past $RECENT_DAYS days",
         recentlyEnded.map { (i, date) ->
-          indicationLine(i).let { it.copy(secondary = listOfNotNull(it.secondary, "ended ${formatDate(date)}").joinToString(", ")) }
+          indicationLine(i, snapshot.indications).let { it.copy(secondary = listOfNotNull(it.secondary, "ended ${formatDate(date)}").joinToString(", ")) }
         },
       ),
       Section("Providers", providers.sortedByDescending { it.isRegular }.map(::providerLine)),
@@ -118,15 +118,18 @@ object CareSummary {
       )
     }
 
-  private fun indicationLine(i: Indication): Line =
-    Line(
+  private fun indicationLine(i: Indication, all: List<Indication>): Line {
+    val primaries = IndicationTimeline.primariesOf(i, all)
+    return Line(
       i.name,
       listOfNotNull(
         i.kind.displayName,
         i.status.displayName.takeIf { i.kind.statuses.size > 2 },
         i.severity?.let { "${it.displayName.lowercase()} severity" },
+        primaries.takeIf { it.isNotEmpty() }?.let { "secondary to ${it.joinToString { p -> p.name }}" },
       ).joinToString(", "),
     )
+  }
 
   private fun providerLine(p: Provider): Line =
     Line(

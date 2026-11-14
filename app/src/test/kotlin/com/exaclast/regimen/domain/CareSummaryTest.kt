@@ -152,6 +152,18 @@ class CareSummaryTest {
   }
 
   @Test
+  fun secondaryIndications_nameWhatTheyFollowFrom_andIgnoreDeletedOnes() {
+    val diabetes = Indication(name = "Diabetes", kind = IndicationKind.CHRONIC)
+    val neuropathy = Indication(name = "Neuropathy", kind = IndicationKind.CHRONIC, primaryIds = listOf(diabetes.id, "gone"))
+    val snapshot = RegimenSnapshot(indications = listOf(diabetes, neuropathy))
+    val lines = build(snapshot).sections.single { it.title == "Indications" }.lines
+    assertEquals("Chronic, Active", lines.single { it.primary == "Diabetes" }.secondary)
+    assertEquals("Chronic, Active, secondary to Diabetes", lines.single { it.primary == "Neuropathy" }.secondary)
+    assertEquals(listOf(neuropathy), IndicationTimeline.secondariesOf(diabetes, snapshot.indications))
+    assertEquals(listOf(diabetes), IndicationTimeline.primariesOf(neuropathy, snapshot.indications))
+  }
+
+  @Test
   fun text_namesThePatientAndListsEverySection() {
     val summary = build(
       RegimenSnapshot(

@@ -84,7 +84,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
@@ -92,6 +96,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.exaclast.regimen.R
 import com.exaclast.regimen.data.CrossReferenceOutcome
 import com.exaclast.regimen.data.CrossReferencedFdaCandidate
 import com.exaclast.regimen.data.DrugBarcodeScanner
@@ -126,9 +131,11 @@ import com.exaclast.regimen.ui.checkOptionalPositiveDecimal
 import com.exaclast.regimen.ui.checkOptionalPositiveInt
 import com.exaclast.regimen.ui.checkRequiredPositiveDecimal
 import com.exaclast.regimen.ui.checkRequiredPositiveInt
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -258,7 +265,7 @@ private fun CollapsibleFormSection(
         }
         Icon(
           imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-          contentDescription = if (expanded) "Collapse" else "Expand",
+          contentDescription = stringResource(if (expanded) R.string.action_collapse else R.string.action_expand),
           tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
@@ -387,6 +394,7 @@ fun MedicationEditorScreen(
 
   // Gemini Nano (AICore) Label Scanner & Cross-Reference lookup state
   val context = LocalContext.current
+  val resources = LocalResources.current
   val coroutineScope = rememberCoroutineScope()
   var isGeminiNanoSupported by remember { mutableStateOf(false) }
   var isLookingUpNdc by remember { mutableStateOf(false) }
@@ -418,16 +426,16 @@ fun MedicationEditorScreen(
     fda.route?.let { route = it }
     fda.vialVolumeMl?.let { vialVolumeText = formatExact(it) }
     val metaParts = mutableListOf<String>()
-    fda.lotNumber?.let { metaParts.add("Lot: $it") }
-    fda.expirationDateIso?.let { metaParts.add("Exp: $it") }
+    fda.lotNumber?.let { metaParts.add(resources.getString(R.string.label_lot, it)) }
+    fda.expirationDateIso?.let { metaParts.add(resources.getString(R.string.label_exp, it)) }
     if (metaParts.isNotEmpty()) {
       val metaLine = metaParts.joinToString(" • ")
-      ndcStatusText = statusSummary ?: "Autofilled (${fda.ndc11} • $metaLine)"
+      ndcStatusText = statusSummary ?: resources.getString(R.string.editor_autofilled_meta, fda.ndc11, metaLine)
       if (!notes.contains(metaLine)) {
         notes = if (notes.isBlank()) metaLine else "$notes\n$metaLine"
       }
     } else {
-      ndcStatusText = statusSummary ?: "Autofilled from FDA NDC (${fda.ndc11})"
+      ndcStatusText = statusSummary ?: resources.getString(R.string.editor_autofilled, fda.ndc11)
     }
     ndcErrorText = null
     ndcMatched = true
@@ -446,7 +454,7 @@ fun MedicationEditorScreen(
           val signals = cand.matchedSignals.joinToString(", ")
           applyFdaResultToForm(
             fda = cand.result,
-            statusSummary = "Verified via OpenFDA (${cand.result.ndc11} • Matched: $signals)",
+            statusSummary = resources.getString(R.string.editor_verified, cand.result.ndc11, signals),
           )
         }
         is CrossReferenceOutcome.NeedsUserSelection -> {
@@ -465,7 +473,7 @@ fun MedicationEditorScreen(
 
   fun applyParsedMedicationLabel(parsedLabel: ParsedMedicationLabel) {
     if (!parsedLabel.hasAnyClinicalSignal) {
-      ndcErrorText = "Could not detect medication name or NDC on the label. Try moving closer or check lighting."
+      ndcErrorText = resources.getString(R.string.editor_label_not_detected)
       return
     }
     ndcErrorText = null
@@ -493,9 +501,9 @@ fun MedicationEditorScreen(
     val noteAdditions = mutableListOf<String>()
     parsedLabel.instructions?.let { noteAdditions.add(it) }
     val lotExp = listOfNotNull(
-      parsedLabel.lotNumber?.let { "Lot: $it" },
-      parsedLabel.expirationDateIso?.let { "Exp: $it" },
-      parsedLabel.prescriberName?.takeIf { selectedPrescriberId == null }?.let { "Prescriber: $it" },
+      parsedLabel.lotNumber?.let { resources.getString(R.string.label_lot, it) },
+      parsedLabel.expirationDateIso?.let { resources.getString(R.string.label_exp, it) },
+      parsedLabel.prescriberName?.takeIf { selectedPrescriberId == null }?.let { resources.getString(R.string.label_prescriber, it) },
     ).joinToString(" • ")
     if (lotExp.isNotEmpty()) {
       noteAdditions.add(lotExp)
@@ -508,9 +516,9 @@ fun MedicationEditorScreen(
 
     if (parsedLabel.isCompound) {
       ndcMatched = true
-      ndcStatusText = "Parsed compounded medication label (no FDA NDC applicable)"
+      ndcStatusText = resources.getString(R.string.editor_parsed_compound)
     } else if (allowFdaLookup) {
-      ndcStatusText = "Parsed label text — cross-referencing OpenFDA..."
+      ndcStatusText = resources.getString(R.string.editor_parsed_cross_referencing)
       runCrossReferenceLookup(
         DrugCrossReferenceCriteria(
           ndc = parsedLabel.extractedNdc ?: ndc11.takeIf { it.isNotBlank() },
@@ -522,14 +530,14 @@ fun MedicationEditorScreen(
         )
       )
     } else {
-      ndcStatusText = "Parsed label text on-device"
+      ndcStatusText = resources.getString(R.string.editor_parsed_on_device)
     }
   }
 
   fun runLabelPhotoAnalysis(imageUris: List<Uri>) {
     isLookingUpNdc = true
     ndcErrorText = null
-    ndcStatusText = "Reading label text..."
+    ndcStatusText = resources.getString(R.string.editor_reading_label)
     coroutineScope.launch {
       val res = DrugBarcodeScanner.analyzeLabelFromPhotos(
         context = context,
@@ -541,7 +549,7 @@ fun MedicationEditorScreen(
       isLookingUpNdc = false
       res.fold(
         onSuccess = { parsed -> applyParsedMedicationLabel(parsed) },
-        onFailure = { err -> ndcErrorText = err.localizedMessage ?: "Failed to analyze label." },
+        onFailure = { err -> ndcErrorText = err.localizedMessage ?: resources.getString(R.string.editor_analyze_failed) },
       )
     }
   }
@@ -549,7 +557,7 @@ fun MedicationEditorScreen(
   fun runGeminiLabelTextAnalysis(rawText: String) {
     isLookingUpNdc = true
     ndcErrorText = null
-    ndcStatusText = "Analyzing label text with on-device Gemini Nano..."
+    ndcStatusText = resources.getString(R.string.editor_analyzing_text)
     coroutineScope.launch {
       val res = DrugBarcodeScanner.analyzeLabelFromText(
         rawLabelText = rawText,
@@ -559,7 +567,7 @@ fun MedicationEditorScreen(
       isLookingUpNdc = false
       res.fold(
         onSuccess = { parsed -> applyParsedMedicationLabel(parsed) },
-        onFailure = { err -> ndcErrorText = err.localizedMessage ?: "Failed to analyze label text." },
+        onFailure = { err -> ndcErrorText = err.localizedMessage ?: resources.getString(R.string.editor_analyze_text_failed) },
       )
     }
   }
@@ -605,7 +613,7 @@ fun MedicationEditorScreen(
         },
         onFailure = { err ->
           ndcMatched = false
-          ndcErrorText = err.message ?: "NDC not found"
+          ndcErrorText = err.message ?: resources.getString(R.string.editor_ndc_not_found)
         },
       )
     }
@@ -637,23 +645,23 @@ fun MedicationEditorScreen(
   val maxDailyAmountCheck = checkOptionalPositiveDecimal(maxDailyAmountText)
 
   val invalidFieldLabels = buildList {
-    if (!doseCheck.isValid) add("Default Dose")
+    if (!doseCheck.isValid) add(stringResource(R.string.editor_default_dose))
     if (form.isInjectable) {
       val pen = form.isPrefilledInjector
-      if (!vialVolumeCheck.isValid) add(if (pen) "Device Volume" else "Vial Size")
+      if (!vialVolumeCheck.isValid) add(stringResource(if (pen) R.string.editor_device_volume else R.string.editor_vial_size))
       // Syringe and draw-needle fields are hidden for prefilled devices, so they can't block Save.
       if (!pen) {
-        if (!syringeVolumeCheck.isValid) add("Syringe")
-        if (!needleAttached && !drawGaugeCheck.isValid) add("Draw Gauge")
-        if (!needleAttached && !drawLengthCheck.isValid) add("Draw Length")
+        if (!syringeVolumeCheck.isValid) add(stringResource(R.string.med_syringe))
+        if (!needleAttached && !drawGaugeCheck.isValid) add(stringResource(R.string.editor_draw_gauge))
+        if (!needleAttached && !drawLengthCheck.isValid) add(stringResource(R.string.editor_draw_length))
       }
-      if (!injectGaugeCheck.isValid) add(if (pen) "Needle Gauge" else "Inject Gauge")
-      if (!injectLengthCheck.isValid) add(if (pen) "Needle Length" else "Inject Length")
+      if (!injectGaugeCheck.isValid) add(stringResource(if (pen) R.string.editor_needle_gauge else R.string.editor_inject_gauge))
+      if (!injectLengthCheck.isValid) add(stringResource(if (pen) R.string.editor_needle_length else R.string.editor_inject_length))
     }
-    if (form.hasSites && siteMode != SiteMode.OFF && sites.isEmpty()) add("Sites")
-    if (!minIntervalCheck.isValid) add("Min Interval")
-    if (!maxDailyDosesCheck.isValid) add("Max Daily Doses")
-    if (!maxDailyAmountCheck.isValid) add("Max Daily Amount")
+    if (form.hasSites && siteMode != SiteMode.OFF && sites.isEmpty()) add(stringResource(R.string.med_sites))
+    if (!minIntervalCheck.isValid) add(stringResource(R.string.editor_min_interval))
+    if (!maxDailyDosesCheck.isValid) add(stringResource(R.string.editor_max_daily_doses))
+    if (!maxDailyAmountCheck.isValid) add(stringResource(R.string.editor_max_daily_amount))
   }
 
   fun saveMedication() {
@@ -704,14 +712,14 @@ fun MedicationEditorScreen(
   }
 
   EditorScaffold(
-    title = if (initialMedication == null) "Add medication" else "Edit medication",
+    title = stringResource(if (initialMedication == null) R.string.medications_add else R.string.med_edit),
     onClose = onDismiss,
     onSave = { saveMedication() },
     saveEnabled = formulaName.isNotBlank() && strength.isNotBlank() && invalidFieldLabels.isEmpty(),
     banner = if (invalidFieldLabels.isNotEmpty()) {
       {
         Text(
-          text = "Fix to save: ${invalidFieldLabels.joinToString(", ")}",
+          text = stringResource(R.string.editor_fix_to_save, invalidFieldLabels.joinToString(", ")),
           style = MaterialTheme.typography.labelLarge,
           color = MaterialTheme.colorScheme.error,
           modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -766,7 +774,7 @@ fun MedicationEditorScreen(
                           modifier = Modifier.size(16.dp),
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Scan Label")
+                        Text(stringResource(R.string.editor_scan_label))
                       }
                       OutlinedButton(
                         onClick = { showLabelScanDialog = true },
@@ -779,7 +787,7 @@ fun MedicationEditorScreen(
                           modifier = Modifier.size(16.dp),
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Label Photo")
+                        Text(stringResource(R.string.editor_label_photo))
                       }
                     }
                     if (allowFdaLookup) {
@@ -811,7 +819,7 @@ fun MedicationEditorScreen(
                           )
                         }
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Match FDA")
+                        Text(stringResource(R.string.editor_match_fda))
                       }
                     }
                   }
@@ -819,7 +827,7 @@ fun MedicationEditorScreen(
 
                 if (isGeminiNanoSupported) {
                   Text(
-                    text = "Scanning reads the label on this device. A small bottle may need a few photos. Check the results against your bottle.",
+                    text = stringResource(R.string.editor_scanning_help),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                   )
@@ -843,8 +851,8 @@ fun MedicationEditorScreen(
           OutlinedTextField(
             value = brandName,
             onValueChange = { brandName = it },
-            label = { Text("Brand Name (Optional)") },
-            placeholder = { Text("e.g. Augmentin, Tylenol, Advil") },
+            label = { Text(stringResource(R.string.editor_brand_name)) },
+            placeholder = { Text(stringResource(R.string.editor_brand_name_hint)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
           )
@@ -852,8 +860,8 @@ fun MedicationEditorScreen(
           OutlinedTextField(
             value = formulaName,
             onValueChange = { formulaName = it },
-            label = { Text("Formula / Generic Name *") },
-            placeholder = { Text("e.g. Amoxicillin / Clavulanate, Acetaminophen") },
+            label = { Text(stringResource(R.string.editor_formula_name)) },
+            placeholder = { Text(stringResource(R.string.editor_formula_name_hint)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
           )
@@ -866,13 +874,13 @@ fun MedicationEditorScreen(
             OutlinedTextField(
               value = strength,
               onValueChange = { strength = it },
-              label = { Text("Strength *") },
-              placeholder = { Text("e.g. 200 mg/mL") },
+              label = { Text(stringResource(R.string.editor_strength)) },
+              placeholder = { Text(stringResource(R.string.editor_strength_hint)) },
               singleLine = true,
               modifier = Modifier.weight(0.45f),
             )
             DropdownSelectorField(
-              label = "Form",
+              label = stringResource(R.string.editor_form),
               selectedText = form.displayName,
               options = MedicationForm.entries,
               optionLabel = { it.displayName },
@@ -900,12 +908,12 @@ fun MedicationEditorScreen(
               keyboardType = KeyboardType.Decimal,
               value = defaultDoseAmountText,
               onValueChange = { defaultDoseAmountText = it },
-              label = { Text("Default Dose") },
+              label = { Text(stringResource(R.string.editor_default_dose)) },
               singleLine = true,
               modifier = Modifier.weight(0.45f),
             )
             DropdownSelectorField(
-              label = "Unit",
+              label = stringResource(R.string.editor_unit),
               selectedText = "${defaultDoseUnit.symbol} (${defaultDoseUnit.displayName})",
               options = DoseUnit.entries,
               optionLabel = { "${it.symbol} — ${it.displayName}" },
@@ -927,7 +935,7 @@ fun MedicationEditorScreen(
 
           // Indications (any number, grouped by kind + optional notes)
           if (showIndications && indications.isNotEmpty()) {
-            Text("Indications", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.indications_title), style = MaterialTheme.typography.titleSmall)
             IndicationTimeline.sections(indications).forEach { (title, group) ->
               Text(
                 title,
@@ -961,6 +969,7 @@ fun MedicationEditorScreen(
           // syringe and draw-needle fields are hidden; their stored values are kept.
           if (form.isInjectable) {
             val pen = form.isPrefilledInjector
+            val notSetLabel = stringResource(R.string.value_not_set)
             Surface(
               shape = MaterialTheme.shapes.medium,
               color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -971,14 +980,14 @@ fun MedicationEditorScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
               ) {
                 Text(
-                  text = if (pen) "Pen / Auto-injector Details" else "Vial, Syringe & Needle Details",
+                  text = stringResource(if (pen) R.string.editor_pen_details else R.string.editor_vial_details),
                   style = MaterialTheme.typography.titleSmall,
                   fontWeight = FontWeight.Bold,
                   color = MaterialTheme.colorScheme.primary,
                 )
 
                 DropdownSelectorField(
-                  label = "Administration Route (IM vs SC)",
+                  label = stringResource(R.string.editor_route),
                   selectedText = route.displayName,
                   options = InjectionRoute.entries,
                   optionLabel = { it.displayName },
@@ -991,7 +1000,7 @@ fun MedicationEditorScreen(
                   keyboardType = KeyboardType.Decimal,
                   value = vialVolumeText,
                   onValueChange = { vialVolumeText = it },
-                  label = { Text(if (pen) "Device Volume (mL)" else "Vial Size (mL)") },
+                  label = { Text(stringResource(if (pen) R.string.editor_device_volume_ml else R.string.editor_vial_size_ml)) },
                   placeholder = { Text(if (pen) "3" else "10") },
                   singleLine = true,
                   modifier = Modifier.fillMaxWidth(),
@@ -1000,10 +1009,10 @@ fun MedicationEditorScreen(
                 // Syringe: a type, then one of its usual sizes. Only an unlisted type takes free text.
                 if (!pen) {
                   DropdownSelectorField(
-                    label = "Syringe",
-                    selectedText = syringeType?.displayName ?: "Not set",
+                    label = stringResource(R.string.med_syringe),
+                    selectedText = syringeType?.displayName ?: stringResource(R.string.value_not_set),
                     options = listOf<SyringeType?>(null) + SyringeType.entries,
-                    optionLabel = { it?.displayName ?: "Not set" },
+                    optionLabel = { it?.displayName ?: notSetLabel },
                     onOptionSelected = { type ->
                       syringeType = type
                       val sizes = type?.volumesMl.orEmpty()
@@ -1033,7 +1042,7 @@ fun MedicationEditorScreen(
                         keyboardType = KeyboardType.Decimal,
                         value = syringeVolumeText,
                         onValueChange = { syringeVolumeText = it },
-                        label = { Text("Size (mL)") },
+                        label = { Text(stringResource(R.string.editor_size_ml)) },
                         placeholder = { Text("1.0") },
                         singleLine = true,
                         modifier = Modifier.weight(0.4f),
@@ -1041,8 +1050,8 @@ fun MedicationEditorScreen(
                       OutlinedTextField(
                         value = syringeDesc,
                         onValueChange = { syringeDesc = it },
-                        label = { Text("What kind") },
-                        placeholder = { Text("Glass syringe") },
+                        label = { Text(stringResource(R.string.editor_what_kind)) },
+                        placeholder = { Text(stringResource(R.string.editor_what_kind_hint)) },
                         singleLine = true,
                         modifier = Modifier.weight(0.6f),
                       )
@@ -1057,7 +1066,7 @@ fun MedicationEditorScreen(
                     keyboardType = KeyboardType.Number,
                     value = drawGaugeText,
                     onValueChange = { drawGaugeText = it },
-                    label = { Text("Draw Gauge (G)") },
+                    label = { Text(stringResource(R.string.editor_draw_gauge_label)) },
                     placeholder = { Text("18") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
@@ -1067,7 +1076,7 @@ fun MedicationEditorScreen(
                     keyboardType = KeyboardType.Decimal,
                     value = drawLengthText,
                     onValueChange = { drawLengthText = it },
-                    label = { Text("Draw Length (in)") },
+                    label = { Text(stringResource(R.string.editor_draw_length_label)) },
                     placeholder = { Text("1.0") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
@@ -1078,14 +1087,13 @@ fun MedicationEditorScreen(
 
                 if (pen) {
                   Text(
-                    text = "Pen needle — only for multi-dose pens with screw-on needles (e.g. insulin). " +
-                      "Leave blank for auto-injectors.",
+                    text = stringResource(R.string.editor_pen_needle_help),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                   )
                 } else if (needleAttached) {
                   Text(
-                    text = "The needle is attached to this syringe.",
+                    text = stringResource(R.string.editor_needle_attached_help),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                   )
@@ -1096,7 +1104,7 @@ fun MedicationEditorScreen(
                     keyboardType = KeyboardType.Number,
                     value = injectGaugeText,
                     onValueChange = { injectGaugeText = it },
-                    label = { Text(if (pen || needleAttached) "Needle Gauge (G)" else "Inject Gauge (G)") },
+                    label = { Text(stringResource(if (pen || needleAttached) R.string.editor_needle_gauge_label else R.string.editor_inject_gauge_label)) },
                     placeholder = { Text(if (pen) "32" else "25") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
@@ -1106,7 +1114,7 @@ fun MedicationEditorScreen(
                     keyboardType = KeyboardType.Decimal,
                     value = injectLengthText,
                     onValueChange = { injectLengthText = it },
-                    label = { Text(if (pen || needleAttached) "Needle Length (in)" else "Inject Length (in)") },
+                    label = { Text(stringResource(if (pen || needleAttached) R.string.editor_needle_length_label else R.string.editor_inject_length_label)) },
                     placeholder = { Text(if (pen) "0.16" else "1.0") },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
@@ -1130,7 +1138,7 @@ fun MedicationEditorScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
               ) {
                 Text(
-                  text = "Sites",
+                  text = stringResource(R.string.med_sites),
                   style = MaterialTheme.typography.titleSmall,
                   fontWeight = FontWeight.Bold,
                   color = MaterialTheme.colorScheme.primary,
@@ -1158,17 +1166,17 @@ fun MedicationEditorScreen(
                 if (siteMode != SiteMode.OFF) {
                   if (sites.isEmpty()) {
                     Text(
-                      text = "Add at least one site, or turn sites off.",
+                      text = stringResource(R.string.editor_sites_required),
                       style = MaterialTheme.typography.bodySmall,
                       color = MaterialTheme.colorScheme.error,
                     )
                   }
                   DropdownSelectorField(
-                    label = "Load Site Preset",
-                    selectedText = when (sites.size) {
-                      0 -> "No sites yet"
-                      1 -> "1 site"
-                      else -> "${sites.size} sites"
+                    label = stringResource(R.string.editor_site_preset),
+                    selectedText = if (sites.isEmpty()) {
+                      stringResource(R.string.editor_no_sites)
+                    } else {
+                      pluralStringResource(R.plurals.editor_site_count, sites.size, sites.size)
                     },
                     options = Medication.sitePresets(form),
                     optionLabel = { it.first },
@@ -1188,7 +1196,7 @@ fun MedicationEditorScreen(
                       ) {
                         // Order only matters when rotating.
                         Text(
-                          text = if (rotating) "${idx + 1}. $site" else site,
+                          text = if (rotating) stringResource(R.string.editor_site_numbered, idx + 1, site) else site,
                           style = MaterialTheme.typography.bodyMedium,
                           modifier = Modifier.weight(1f),
                         )
@@ -1204,7 +1212,7 @@ fun MedicationEditorScreen(
                             enabled = idx > 0,
                             modifier = Modifier.size(32.dp),
                           ) {
-                            Icon(Icons.Default.ArrowUpward, contentDescription = "Move up", modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.ArrowUpward, contentDescription = stringResource(R.string.editor_move_up), modifier = Modifier.size(16.dp))
                           }
                           IconButton(
                             onClick = {
@@ -1217,7 +1225,7 @@ fun MedicationEditorScreen(
                             enabled = idx < sites.lastIndex,
                             modifier = Modifier.size(32.dp),
                           ) {
-                            Icon(Icons.Default.ArrowDownward, contentDescription = "Move down", modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.ArrowDownward, contentDescription = stringResource(R.string.editor_move_down), modifier = Modifier.size(16.dp))
                           }
                         }
                         IconButton(
@@ -1227,7 +1235,7 @@ fun MedicationEditorScreen(
                           },
                           modifier = Modifier.size(32.dp),
                         ) {
-                          Icon(Icons.Default.Close, contentDescription = "Remove site", modifier = Modifier.size(16.dp))
+                          Icon(Icons.Default.Close, contentDescription = stringResource(R.string.editor_remove_site), modifier = Modifier.size(16.dp))
                         }
                       }
                     }
@@ -1240,7 +1248,7 @@ fun MedicationEditorScreen(
                     OutlinedTextField(
                       value = newCustomSite,
                       onValueChange = { newCustomSite = it },
-                      label = { Text("Add Custom Site") },
+                      label = { Text(stringResource(R.string.editor_add_custom_site)) },
                       singleLine = true,
                       modifier = Modifier.weight(1f),
                     )
@@ -1253,7 +1261,7 @@ fun MedicationEditorScreen(
                         }
                       },
                     ) {
-                      Text("Add")
+                      Text(stringResource(R.string.action_add))
                     }
                   }
                 }
@@ -1263,12 +1271,12 @@ fun MedicationEditorScreen(
 
           // 4. Collapsible Pacing & Daily Limits Section
           val pacingSummary = listOfNotNull(
-            minIntervalHoursText.takeIf { it.isNotBlank() }?.let { "Min ${it}h interval" },
-            maxDailyDosesText.takeIf { it.isNotBlank() }?.let { "Max $it doses/day" },
-          ).joinToString(" • ").ifEmpty { "Minimum time between doses & daily limits" }
+            minIntervalHoursText.takeIf { it.isNotBlank() }?.let { stringResource(R.string.editor_summary_interval, it) },
+            maxDailyDosesText.takeIf { it.isNotBlank() }?.let { stringResource(R.string.editor_summary_max_doses, it) },
+          ).joinToString(" • ").ifEmpty { stringResource(R.string.editor_pacing_summary_empty) }
 
           CollapsibleFormSection(
-            title = "Pacing & Daily Limits (Optional)",
+            title = stringResource(R.string.editor_pacing_title),
             subtitle = pacingSummary,
             initiallyExpanded = hasInitialPacing,
           ) {
@@ -1278,8 +1286,8 @@ fun MedicationEditorScreen(
                 keyboardType = KeyboardType.Decimal,
                 value = minIntervalHoursText,
                 onValueChange = { minIntervalHoursText = it },
-                label = { Text("Min Interval (Hours)") },
-                placeholder = { Text("e.g. 4") },
+                label = { Text(stringResource(R.string.editor_min_interval_hours)) },
+                placeholder = { Text(stringResource(R.string.editor_min_interval_hint)) },
                 singleLine = true,
                 modifier = Modifier.weight(1f),
               )
@@ -1288,8 +1296,8 @@ fun MedicationEditorScreen(
                 keyboardType = KeyboardType.Decimal,
                 value = maxDailyDosesText,
                 onValueChange = { maxDailyDosesText = it },
-                label = { Text("Max Daily Doses") },
-                placeholder = { Text("e.g. 2") },
+                label = { Text(stringResource(R.string.editor_max_daily_doses)) },
+                placeholder = { Text(stringResource(R.string.editor_max_daily_doses_hint)) },
                 singleLine = true,
                 modifier = Modifier.weight(1f),
               )
@@ -1299,8 +1307,8 @@ fun MedicationEditorScreen(
               keyboardType = KeyboardType.Decimal,
               value = maxDailyAmountText,
               onValueChange = { maxDailyAmountText = it },
-              label = { Text("Max Daily Amount (${defaultDoseUnit.symbol})") },
-              placeholder = { Text("Optional total daily limit") },
+              label = { Text(stringResource(R.string.editor_max_daily_amount_unit, defaultDoseUnit.symbol)) },
+              placeholder = { Text(stringResource(R.string.editor_max_daily_amount_hint)) },
               singleLine = true,
               modifier = Modifier.fillMaxWidth(),
             )
@@ -1308,16 +1316,15 @@ fun MedicationEditorScreen(
 
           // 5. Collapsible Optional Rx & Drug Details Section (NDC-11, Manufacturer, Provider, Notes)
           val optionalSummary = listOfNotNull(
-            ndc11.takeIf { it.isNotBlank() }?.let { "NDC $it" },
+            ndc11.takeIf { it.isNotBlank() }?.let { stringResource(R.string.editor_summary_ndc, it) },
             manufacturer.takeIf { it.isNotBlank() },
             providers.find { it.id == selectedPrescriberId }?.name?.takeIf { showProviders },
           ).joinToString(" • ").ifEmpty {
-            if (showProviders) "NDC-11, manufacturer, prescriber, prescribed date & notes"
-            else "NDC-11, manufacturer, prescribed date & notes"
+            stringResource(if (showProviders) R.string.editor_optional_summary_providers else R.string.editor_optional_summary)
           }
 
           CollapsibleFormSection(
-            title = "Optional Rx & Drug Details",
+            title = stringResource(R.string.editor_optional_title),
             subtitle = optionalSummary,
             initiallyExpanded = hasInitialOptionalDetails,
           ) {
@@ -1329,8 +1336,8 @@ fun MedicationEditorScreen(
                 ndcStatusText = null
                 ndcMatched = false
               },
-              label = { Text("NDC-11 (Optional)") },
-              placeholder = { Text("e.g. 00781-1852-20") },
+              label = { Text(stringResource(R.string.adjust_ndc_label)) },
+              placeholder = { Text(stringResource(R.string.editor_ndc_hint)) },
               singleLine = true,
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
               trailingIcon = {
@@ -1346,7 +1353,7 @@ fun MedicationEditorScreen(
                       )
                       Spacer(modifier = Modifier.width(4.dp))
                     }
-                    Text("Lookup")
+                    Text(stringResource(R.string.editor_lookup))
                   }
                 }
               },
@@ -1356,19 +1363,20 @@ fun MedicationEditorScreen(
             OutlinedTextField(
               value = manufacturer,
               onValueChange = { manufacturer = it },
-              label = { Text("Manufacturer") },
+              label = { Text(stringResource(R.string.med_manufacturer)) },
               singleLine = true,
               modifier = Modifier.fillMaxWidth(),
             )
 
             if (showProviders) {
               val selectedDoc = providers.find { it.id == selectedPrescriberId }
+              val noneSelected = stringResource(R.string.editor_none_selected)
               DropdownSelectorField(
-                label = "Prescriber",
-                selectedText = selectedDoc?.let { if (it.isPcp) "${it.name} (PCP)" else it.name } ?: "None selected",
+                label = stringResource(R.string.med_prescriber),
+                selectedText = selectedDoc?.let { if (it.isPcp) resources.getString(R.string.med_name_pcp, it.name) else it.name } ?: noneSelected,
                 options = listOf<Provider?>(null) + providers,
                 optionLabel = { doc ->
-                  doc?.let { if (it.isPcp) "${it.name} (PCP)" else it.name } ?: "None selected"
+                  doc?.let { if (it.isPcp) resources.getString(R.string.med_name_pcp, it.name) else it.name } ?: noneSelected
                 },
                 onOptionSelected = { selectedPrescriberId = it?.id },
                 modifier = Modifier.fillMaxWidth(),
@@ -1376,7 +1384,7 @@ fun MedicationEditorScreen(
             }
 
             DatePickerField(
-              label = "Prescribed date",
+              label = stringResource(R.string.editor_prescribed_date),
               valueIso = prescribedDateIso,
               onValueChange = { prescribedDateIso = it },
               modifier = Modifier.fillMaxWidth(),
@@ -1385,8 +1393,8 @@ fun MedicationEditorScreen(
             OutlinedTextField(
               value = indicationText,
               onValueChange = { indicationText = it },
-              label = { Text("Indication Notes") },
-              placeholder = { Text("Supplemental indication details") },
+              label = { Text(stringResource(R.string.editor_indication_notes)) },
+              placeholder = { Text(stringResource(R.string.editor_indication_notes_hint)) },
               singleLine = true,
               modifier = Modifier.fillMaxWidth(),
             )
@@ -1394,7 +1402,7 @@ fun MedicationEditorScreen(
             OutlinedTextField(
               value = notes,
               onValueChange = { notes = it },
-              label = { Text("Instructions / Notes") },
+              label = { Text(stringResource(R.string.editor_instructions)) },
               modifier = Modifier.fillMaxWidth(),
             )
           }
@@ -1405,13 +1413,10 @@ fun MedicationEditorScreen(
     AlertDialog(
       onDismissRequest = {},
       title = {
-        Text(if (capturedLabelPhotos.size == 1) "1 photo taken" else "${capturedLabelPhotos.size} photos taken")
+        Text(pluralStringResource(R.plurals.editor_photos_taken, capturedLabelPhotos.size, capturedLabelPhotos.size))
       },
       text = {
-        Text(
-          "If the label wraps around the bottle, turn it a little and add another photo. Overlap " +
-            "generously: each line, especially the drug name, should appear whole in at least one photo.",
-        )
+        Text(stringResource(R.string.editor_photos_help))
       },
       confirmButton = {
         Button(
@@ -1422,7 +1427,7 @@ fun MedicationEditorScreen(
             runLabelPhotoAnalysis(photos)
           },
         ) {
-          Text("Read label")
+          Text(stringResource(R.string.editor_read_label))
         }
       },
       dismissButton = {
@@ -1434,7 +1439,7 @@ fun MedicationEditorScreen(
               showCapturedPhotosDialog = false
             },
           ) {
-            Text("Discard")
+            Text(stringResource(R.string.action_discard))
           }
           TextButton(
             onClick = {
@@ -1442,7 +1447,7 @@ fun MedicationEditorScreen(
               captureLabelPhoto()
             },
           ) {
-            Text("Add another")
+            Text(stringResource(R.string.editor_add_another))
           }
         }
       },
@@ -1453,14 +1458,14 @@ fun MedicationEditorScreen(
   if (isGeminiNanoSupported && showLabelScanDialog) {
     AlertDialog(
       onDismissRequest = { showLabelScanDialog = false },
-      title = { Text("Scan or Paste Medication Label Text") },
+      title = { Text(stringResource(R.string.editor_scan_title)) },
       text = {
         Column(
           modifier = Modifier.verticalScroll(rememberScrollState()),
           verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
           Text(
-            text = "Pharmacy prescription vials, compounded bottles, and OTC containers print drug name, strength, manufacturer (MFG), NDC, and prescriber in text rather than an FDA barcode.",
+            text = stringResource(R.string.editor_scan_help),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
@@ -1481,7 +1486,7 @@ fun MedicationEditorScreen(
             ) {
               Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
               Spacer(modifier = Modifier.width(6.dp))
-              Text("Camera")
+              Text(stringResource(R.string.editor_camera))
             }
             OutlinedButton(
               onClick = {
@@ -1492,16 +1497,16 @@ fun MedicationEditorScreen(
             ) {
               Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
               Spacer(modifier = Modifier.width(6.dp))
-              Text("Photos")
+              Text(stringResource(R.string.editor_photos))
             }
           }
           HorizontalDivider()
           OutlinedTextField(
             value = manualLabelInput,
             onValueChange = { manualLabelInput = it },
-            label = { Text("Or Paste Printed Label Text") },
+            label = { Text(stringResource(R.string.editor_paste_label)) },
             placeholder = {
-              Text("Paste text copied from a prescription label or pharmacy portal...")
+              Text(stringResource(R.string.editor_paste_hint))
             },
             minLines = 3,
             maxLines = 6,
@@ -1520,12 +1525,12 @@ fun MedicationEditorScreen(
           },
           enabled = manualLabelInput.isNotBlank(),
         ) {
-          Text("Parse & Cross-Reference")
+          Text(stringResource(R.string.editor_parse))
         }
       },
       dismissButton = {
         TextButton(onClick = { showLabelScanDialog = false }) {
-          Text("Cancel")
+          Text(stringResource(R.string.action_cancel))
         }
       },
     )
@@ -1541,12 +1546,12 @@ fun MedicationEditorScreen(
         val signals = chosen.matchedSignals.joinToString(", ")
         applyFdaResultToForm(
           fda = chosen.result,
-          statusSummary = "Selected FDA match (${chosen.result.ndc11} • $signals)",
+          statusSummary = resources.getString(R.string.editor_selected_match, chosen.result.ndc11, signals),
         )
       },
       onKeepWithoutNdc = {
         disambiguationPrompt = null
-        ndcStatusText = "Kept entered/scanned fields without assigning a specific manufacturer NDC"
+        ndcStatusText = resources.getString(R.string.editor_kept_fields)
       },
     )
   }
@@ -1562,7 +1567,7 @@ private fun CrossReferenceDisambiguationDialog(
 ) {
   AlertDialog(
     onDismissRequest = onKeepWithoutNdc,
-    title = { Text("Confirm Exact Medication Match") },
+    title = { Text(stringResource(R.string.editor_confirm_match)) },
     text = {
       Column(
         modifier = Modifier
@@ -1610,20 +1615,20 @@ private fun CrossReferenceDisambiguationDialog(
                 fontWeight = FontWeight.SemiBold,
               )
               Text(
-                text = "${res.form.displayName} • Mfg: ${res.manufacturer ?: "Unspecified"} • NDC: ${res.ndc11}",
+                text = stringResource(R.string.editor_candidate_line, res.form.displayName, res.manufacturer ?: stringResource(R.string.editor_unspecified), res.ndc11),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
               if (cand.matchedSignals.isNotEmpty()) {
                 Text(
-                  text = "Matched: ${cand.matchedSignals.joinToString(" • ")}",
+                  text = stringResource(R.string.editor_matched, cand.matchedSignals.joinToString(" • ")),
                   style = MaterialTheme.typography.labelSmall,
                   color = MaterialTheme.colorScheme.primary,
                 )
               }
               if (cand.missingOrDifferentSignals.isNotEmpty()) {
                 Text(
-                  text = "Note: ${cand.missingOrDifferentSignals.joinToString(" • ")}",
+                  text = stringResource(R.string.editor_note, cand.missingOrDifferentSignals.joinToString(" • ")),
                   style = MaterialTheme.typography.labelSmall,
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1635,7 +1640,7 @@ private fun CrossReferenceDisambiguationDialog(
     },
     confirmButton = {
       TextButton(onClick = onKeepWithoutNdc) {
-        Text("Keep Fields Only (No Specific NDC)")
+        Text(stringResource(R.string.editor_keep_fields))
       }
     },
   )
@@ -1662,7 +1667,7 @@ fun SpecificDatesPicker(
     ) {
       Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = { displayedYearMonth = displayedYearMonth.minusMonths(1) }) {
-          Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous month")
+          Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.editor_previous_month))
         }
         val monthTitle = remember(displayedYearMonth) {
           displayedYearMonth.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()))
@@ -1673,19 +1678,21 @@ fun SpecificDatesPicker(
           modifier = Modifier.padding(horizontal = 4.dp),
         )
         IconButton(onClick = { displayedYearMonth = displayedYearMonth.plusMonths(1) }) {
-          Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next month")
+          Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = stringResource(R.string.editor_next_month))
         }
       }
 
       TextButton(onClick = { showRangePicker = true }) {
         Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(4.dp))
-        Text("Add range")
+        Text(stringResource(R.string.action_add_range))
       }
     }
 
-    // Weekday headers: S M T W T F S
-    val daysOfWeekLabels = remember { listOf("S", "M", "T", "W", "T", "F", "S") }
+    // Weekday headers, Sunday first, in the device language.
+    val daysOfWeekLabels = remember {
+      (0L..6L).map { DayOfWeek.SUNDAY.plus(it).getDisplayName(TextStyle.NARROW, Locale.getDefault()) }
+    }
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
       daysOfWeekLabels.forEach { label ->
         Text(
@@ -1770,13 +1777,17 @@ fun SpecificDatesPicker(
       verticalAlignment = Alignment.CenterVertically,
     ) {
       Text(
-        text = if (sortedDates.isEmpty()) "No dates selected" else "${sortedDates.size} date${if (sortedDates.size == 1) "" else "s"} selected",
+        text = if (sortedDates.isEmpty()) {
+          stringResource(R.string.editor_no_dates)
+        } else {
+          pluralStringResource(R.plurals.editor_dates_selected, sortedDates.size, sortedDates.size)
+        },
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
       if (sortedDates.isNotEmpty()) {
         TextButton(onClick = { selectedDates.clear() }) {
-          Text("Clear all")
+          Text(stringResource(R.string.editor_clear_all))
         }
       }
     }
@@ -1794,13 +1805,13 @@ fun SpecificDatesPicker(
             onClick = { selectedDates.remove(iso) },
             label = { Text(UiFormat.dateIso(iso, withWeekday = false) ?: iso) },
             trailingIcon = {
-              Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp))
+              Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_remove), modifier = Modifier.size(16.dp))
             },
           )
         }
         if (sortedDates.size > displayLimit) {
           Text(
-            text = "+${sortedDates.size - displayLimit} more",
+            text = pluralStringResource(R.plurals.editor_more_dates, sortedDates.size - displayLimit, sortedDates.size - displayLimit),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.align(Alignment.CenterVertically).padding(start = 4.dp),
@@ -1887,9 +1898,9 @@ fun ScheduleEditorScreen(
     frequencyType != ScheduleFrequencyType.AS_NEEDED
   val startDate = NumberInput.parseIsoDate(startDateIso)
   val endDate = NumberInput.parseIsoDate(endDateIso)
-  val startError = if (startDate == null) "Pick a start date" else null
+  val startError = if (startDate == null) stringResource(R.string.schedule_pick_start) else null
   val endError = if (startDate != null && endDate != null && endDate.isBefore(startDate)) {
-    "End date can't be before the start date"
+    stringResource(R.string.schedule_end_before_start)
   } else {
     null
   }
@@ -1903,22 +1914,22 @@ fun ScheduleEditorScreen(
     firstWindow != null && lastWindow != null &&
     chosenWindows.indexOf(lastWindow) < chosenWindows.indexOf(firstWindow)
   ) {
-    "On a single-day schedule the last dose can't come before the first"
+    stringResource(R.string.schedule_last_before_first)
   } else {
     null
   }
   val bucketError = if (frequencyType != ScheduleFrequencyType.AS_NEEDED && validBucketIds.isEmpty()) {
-    "Select at least one dose window"
+    stringResource(R.string.schedule_select_window)
   } else {
     null
   }
   val daysError = if (frequencyType == ScheduleFrequencyType.DAYS_OF_WEEK && selectedDaysOfWeek.isEmpty()) {
-    "Select at least one day"
+    stringResource(R.string.schedule_select_day)
   } else {
     null
   }
   val specificDatesError = if (frequencyType == ScheduleFrequencyType.SPECIFIC_DATES && selectedSpecificDates.isEmpty()) {
-    "Select at least one date"
+    stringResource(R.string.schedule_select_date)
   } else {
     null
   }
@@ -1958,8 +1969,12 @@ fun ScheduleEditorScreen(
     )
   }
 
+  val resources = LocalResources.current
+  fun windowStartLabel(b: TimeOfDayBucket) =
+    resources.getString(R.string.window_name_time, b.name, b.formattedStartTime())
+
   EditorScaffold(
-    title = if (initialSchedule == null) "Add schedule" else "Edit schedule",
+    title = stringResource(if (initialSchedule == null) R.string.med_add_schedule else R.string.schedule_edit),
     onClose = onDismiss,
     onSave = { save() },
     saveEnabled = canSave,
@@ -1971,7 +1986,7 @@ fun ScheduleEditorScreen(
     )
 
     DropdownSelectorField(
-      label = "How often",
+      label = stringResource(R.string.schedule_how_often),
       selectedText = frequencyType.displayName,
       options = ScheduleFrequencyType.entries,
       optionLabel = { it.displayName },
@@ -1984,12 +1999,12 @@ fun ScheduleEditorScreen(
         check = doseCheck,
         value = doseAmountText,
         onValueChange = { doseAmountText = it },
-        label = { Text("Dose") },
+        label = { Text(stringResource(R.string.schedule_dose)) },
         singleLine = true,
         modifier = Modifier.weight(1f),
       )
       DropdownSelectorField(
-        label = "Unit",
+        label = stringResource(R.string.editor_unit),
         selectedText = doseUnit.symbol,
         options = DoseUnit.entries,
         optionLabel = { "${it.symbol} — ${it.displayName}" },
@@ -2000,7 +2015,7 @@ fun ScheduleEditorScreen(
 
     if (medication.maxDailyAmount != null && doseUnit != medication.defaultDoseUnit) {
       Text(
-        "The daily amount limit is in ${medication.defaultDoseUnit.symbol}, so doses in ${doseUnit.symbol} won't count toward it.",
+        stringResource(R.string.schedule_unit_mismatch, medication.defaultDoseUnit.symbol, doseUnit.symbol),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.error,
       )
@@ -2012,7 +2027,7 @@ fun ScheduleEditorScreen(
         keyboardType = KeyboardType.Number,
         value = intervalDaysText,
         onValueChange = { intervalDaysText = it },
-        label = { Text("Every how many days") },
+        label = { Text(stringResource(R.string.schedule_every_days)) },
         placeholder = { Text("7") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
@@ -2022,26 +2037,27 @@ fun ScheduleEditorScreen(
     if (usesDateRange) {
       Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         DatePickerField(
-          label = "Start date",
+          label = stringResource(R.string.schedule_start_date),
           valueIso = startDateIso,
           onValueChange = { startDateIso = it },
           allowClear = false,
-          supportingText = startError ?: if (usesInterval) "First dose of the cycle" else null,
+          supportingText = startError ?: if (usesInterval) stringResource(R.string.schedule_first_dose_cycle) else null,
           modifier = Modifier.weight(1f),
         )
         DatePickerField(
-          label = "End date",
+          label = stringResource(R.string.indication_end_date),
           valueIso = endDateIso,
           onValueChange = { endDateIso = it },
-          supportingText = endError ?: if (endDateIso.isBlank()) "Ongoing" else "Last day, inclusive",
+          supportingText = endError ?: stringResource(if (endDateIso.isBlank()) R.string.value_ongoing else R.string.schedule_last_day_inclusive),
           modifier = Modifier.weight(1f),
         )
       }
     }
 
     if (frequencyType == ScheduleFrequencyType.DAYS_OF_WEEK) {
-      Text("Days", style = MaterialTheme.typography.titleSmall)
-      val dayNames = listOf(1 to "Mon", 2 to "Tue", 3 to "Wed", 4 to "Thu", 5 to "Fri", 6 to "Sat", 7 to "Sun")
+      Text(stringResource(R.string.schedule_days), style = MaterialTheme.typography.titleSmall)
+      val locale = LocalConfiguration.current.locales[0]
+      val dayNames = (1..7).map { it to DayOfWeek.of(it).getDisplayName(TextStyle.SHORT, locale) }
       FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         dayNames.forEach { (dayNum, label) ->
           val isSelected = selectedDaysOfWeek.contains(dayNum)
@@ -2056,7 +2072,7 @@ fun ScheduleEditorScreen(
     }
 
     if (frequencyType == ScheduleFrequencyType.SPECIFIC_DATES) {
-      Text("Dates", style = MaterialTheme.typography.titleSmall)
+      Text(stringResource(R.string.schedule_dates), style = MaterialTheme.typography.titleSmall)
       SpecificDatesPicker(
         selectedDates = selectedSpecificDates,
         modifier = Modifier.fillMaxWidth(),
@@ -2065,14 +2081,14 @@ fun ScheduleEditorScreen(
     }
 
     if (frequencyType != ScheduleFrequencyType.AS_NEEDED) {
-      Text("Dose windows", style = MaterialTheme.typography.titleSmall)
+      Text(stringResource(R.string.settings_windows), style = MaterialTheme.typography.titleSmall)
       Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         orderedBuckets.forEach { b ->
           val isSelected = selectedBucketIds.contains(b.id)
           FilterChip(
             selected = isSelected,
             onClick = { if (isSelected) selectedBucketIds.remove(b.id) else selectedBucketIds.add(b.id) },
-            label = { Text("${b.name} · ${b.formattedTime()}") },
+            label = { Text(stringResource(R.string.window_name_time, b.name, b.formattedTime())) },
             modifier = Modifier.fillMaxWidth(),
           )
         }
@@ -2081,27 +2097,27 @@ fun ScheduleEditorScreen(
     }
 
     if (showBoundaryWindows && firstWindow != null && lastWindow != null) {
-      Text("First and last day", style = MaterialTheme.typography.titleSmall)
+      Text(stringResource(R.string.schedule_first_last_day), style = MaterialTheme.typography.titleSmall)
       Text(
-        "For courses that start or finish partway through a day, like an antibiotic picked up in the evening.",
+        stringResource(R.string.schedule_first_last_help),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
       Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         DropdownSelectorField(
-          label = "First dose (start date)",
+          label = stringResource(R.string.schedule_first_dose),
           selectedText = firstWindow.name,
           options = chosenWindows,
-          optionLabel = { "${it.name} · ${it.formattedStartTime()}" },
+          optionLabel = { windowStartLabel(it) },
           onOptionSelected = { startBucketId = it.id },
           modifier = Modifier.weight(1f),
         )
         if (endDate != null) {
           DropdownSelectorField(
-            label = "Last dose (end date)",
+            label = stringResource(R.string.schedule_last_dose),
             selectedText = lastWindow.name,
             options = chosenWindows,
-            optionLabel = { "${it.name} · ${it.formattedStartTime()}" },
+            optionLabel = { windowStartLabel(it) },
             onOptionSelected = { endBucketId = it.id },
             modifier = Modifier.weight(1f),
           )

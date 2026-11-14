@@ -3,6 +3,7 @@
 package com.exaclast.regimen.ui.screens
 
 import android.content.Intent
+import android.content.res.Resources
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,10 +59,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.exaclast.regimen.R
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.IndicationTimeline
 import com.exaclast.regimen.model.Indication
@@ -93,20 +97,22 @@ fun ProviderListScreen(
   val (past, providers) = snapshot.providers.partition { IndicationTimeline.isPast(it, today) }
   val (regular, asNeeded) = providers.partition { it.isRegular }
   var showPast by rememberSaveable { mutableStateOf(false) }
+  val regularTitle = stringResource(R.string.providers_regular)
+  val asNeededTitle = stringResource(R.string.providers_as_needed)
   Scaffold(
-    topBar = { TopAppBar(title = { Text("Providers") }) },
+    topBar = { TopAppBar(title = { Text(stringResource(R.string.providers_title)) }) },
     floatingActionButton = {
       ExtendedFloatingActionButton(
         onClick = onAddProvider,
         expanded = fabExpanded,
         icon = { Icon(Icons.Default.Add, contentDescription = null) },
-        text = { Text("Add provider") },
+        text = { Text(stringResource(R.string.providers_add)) },
       )
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
     if (snapshot.providers.isEmpty()) {
-      EmptyListMessage("No providers yet.", Modifier.padding(padding))
+      EmptyListMessage(stringResource(R.string.providers_empty), Modifier.padding(padding))
       return@Scaffold
     }
     LazyColumn(
@@ -117,7 +123,7 @@ fun ProviderListScreen(
       contentPadding = ListContentPadding,
       verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-      listOf("Regular" to regular, "As needed" to asNeeded).filter { it.second.isNotEmpty() }.forEach { (title, group) ->
+      listOf(regularTitle to regular, asNeededTitle to asNeeded).filter { it.second.isNotEmpty() }.forEach { (title, group) ->
         item(key = "header-$title") { SectionHeader(title) }
         itemsIndexed(group, key = { _, p -> p.id }) { index, doc ->
           GroupItem(index = index, count = group.size, onClick = { onOpenProvider(doc.id) }) {
@@ -128,8 +134,8 @@ fun ProviderListScreen(
       if (past.isNotEmpty()) {
         item(key = "past-header") {
           SectionHeader(
-            title = "Past providers (${past.size})",
-            action = { TextButton(onClick = { showPast = !showPast }) { Text(if (showPast) "Hide" else "Show") } },
+            title = stringResource(R.string.providers_past, past.size),
+            action = { TextButton(onClick = { showPast = !showPast }) { Text(stringResource(if (showPast) R.string.action_hide else R.string.action_show)) } },
           )
         }
         if (showPast) {
@@ -148,28 +154,29 @@ fun ProviderListScreen(
 private fun ProviderListItem(doc: Provider, snapshot: RegimenSnapshot, past: Boolean) {
   val medCount = snapshot.medications.count { it.prescriberId == doc.id }
   val indicationCount = snapshot.indications.count { doc.id in it.providerIds }
+  val res = LocalResources.current
   ListItem(
     supportingContent = {
       Text(
         listOfNotNull(
           doc.specialty?.takeIf { it.isNotBlank() },
           doc.practice?.takeIf { it.isNotBlank() },
-          if (past) UiFormat.dateIso(doc.careEndDateIso)?.let { "Care ended $it" } else null,
-          medicationCount(medCount).takeIf { medCount > 0 },
-          indicationCount(indicationCount).takeIf { indicationCount > 0 && snapshot.tracksIndications },
+          if (past) UiFormat.dateIso(doc.careEndDateIso)?.let { res.getString(R.string.providers_care_ended, it) } else null,
+          medicationCount(res, medCount).takeIf { medCount > 0 },
+          indicationCount(res, indicationCount).takeIf { indicationCount > 0 && snapshot.tracksIndications },
         ).joinToString(" · "),
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
       )
     },
-    trailingContent = if (doc.isPcp && !past) ({ Tag("PCP") }) else null,
+    trailingContent = if (doc.isPcp && !past) ({ Tag(stringResource(R.string.provider_pcp)) }) else null,
     colors = groupListItemColors(),
   ) { Text(doc.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 }
 
-internal fun indicationCount(n: Int): String = if (n == 1) "1 indication" else "$n indications"
+internal fun indicationCount(res: Resources, n: Int): String = res.getQuantityString(R.plurals.indication_count, n, n)
 
-internal fun medicationCount(n: Int): String = if (n == 1) "1 medication" else "$n medications"
+internal fun medicationCount(res: Resources, n: Int): String = res.getQuantityString(R.plurals.medication_count, n, n)
 
 @Composable
 internal fun Tag(text: String) {
@@ -217,25 +224,25 @@ fun ProviderDetailScreen(
           Text(
             listOfNotNull(
               when {
-                provider.isPcp -> "Primary care"
-                provider.seenRegularly -> "Seen regularly"
+                provider.isPcp -> stringResource(R.string.provider_primary_care)
+                provider.seenRegularly -> stringResource(R.string.provider_seen_regularly)
                 else -> null
               },
               provider.specialty?.takeIf { it.isNotBlank() },
-            ).joinToString(" · ").ifEmpty { "Provider" },
+            ).joinToString(" · ").ifEmpty { stringResource(R.string.provider_label) },
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
         },
         navigationIcon = {
-          IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+          IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
         },
         actions = {
-          IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit provider") }
+          IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.provider_edit)) }
           OverflowDeleteMenu(
             expanded = menuOpen,
             onExpandedChange = { menuOpen = it },
-            label = "Delete provider",
+            label = stringResource(R.string.provider_delete),
             onDelete = { confirmDelete = true },
           )
         },
@@ -251,31 +258,34 @@ fun ProviderDetailScreen(
       contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
     ) {
       item(key = "contact") {
-        SectionHeader("Contact")
+        SectionHeader(stringResource(R.string.provider_contact))
+        val practiceLabel = stringResource(R.string.field_practice)
+        val phoneLabel = stringResource(R.string.field_phone)
+        val emailLabel = stringResource(R.string.field_email)
         val phone = provider.phone?.takeIf { it.isNotBlank() }
         val email = provider.email?.takeIf { it.isNotBlank() }
         val rows = buildList<Triple<String, String, (() -> Unit)?>> {
-          provider.practice?.takeIf { it.isNotBlank() }?.let { add(Triple("Practice", it, null)) }
+          provider.practice?.takeIf { it.isNotBlank() }?.let { add(Triple(practiceLabel, it, null)) }
           phone?.let {
-            add(Triple("Phone", it) { context.startActivityOrIgnore(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$it"))) })
+            add(Triple(phoneLabel, it) { context.startActivityOrIgnore(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$it"))) })
           }
           email?.let {
-            add(Triple("Email", it) { context.startActivityOrIgnore(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$it"))) })
+            add(Triple(emailLabel, it) { context.startActivityOrIgnore(Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$it"))) })
           }
         }
         GroupedColumn {
           if (rows.isEmpty()) {
             GroupItem(0, 1) { ListItem(
    colors = groupListItemColors(),
- ) { Text("No contact details") } }
+ ) { Text(stringResource(R.string.provider_no_contact)) } }
           }
           rows.forEachIndexed { i, (label, value, click) ->
             GroupItem(index = i, count = rows.size, onClick = click) {
               ListItem(
                 overlineContent = { Text(label) },
                 trailingContent = when (label) {
-                  "Phone" -> ({ Icon(Icons.Default.Call, contentDescription = "Call") })
-                  "Email" -> ({ Icon(Icons.Default.Email, contentDescription = "Send email") })
+                  phoneLabel -> ({ Icon(Icons.Default.Call, contentDescription = stringResource(R.string.provider_call)) })
+                  emailLabel -> ({ Icon(Icons.Default.Email, contentDescription = stringResource(R.string.provider_send_email)) })
                   else -> null
                 },
                 colors = groupListItemColors(),
@@ -286,11 +296,11 @@ fun ProviderDetailScreen(
       }
 
       item(key = "care") {
-        SectionHeader("Care")
+        SectionHeader(stringResource(R.string.provider_care))
         val rows = listOfNotNull(
-          "Started" to (UiFormat.dateIso(provider.careStartDateIso) ?: "Not set"),
-          "Ended" to (UiFormat.dateIso(provider.careEndDateIso) ?: "Ongoing"),
-          provider.notes?.takeIf { it.isNotBlank() }?.let { "Notes" to it },
+          stringResource(R.string.field_started) to (UiFormat.dateIso(provider.careStartDateIso) ?: stringResource(R.string.value_not_set)),
+          stringResource(R.string.field_ended) to (UiFormat.dateIso(provider.careEndDateIso) ?: stringResource(R.string.value_ongoing)),
+          provider.notes?.takeIf { it.isNotBlank() }?.let { stringResource(R.string.field_notes) to it },
         )
         GroupedColumn {
           rows.forEachIndexed { i, (label, value) -> GroupItem(index = i, count = rows.size) { InfoRow(label, value) } }
@@ -300,19 +310,19 @@ fun ProviderDetailScreen(
       if (snapshot.tracksIndications) {
         item(key = "indications") {
           SectionHeader(
-            title = "Indications they manage",
+            title = stringResource(R.string.provider_indications),
             action = if (snapshot.indications.isNotEmpty()) {
-              { TextButton(onClick = { editIndications = true }) { Text("Edit") } }
+              { TextButton(onClick = { editIndications = true }) { Text(stringResource(R.string.action_edit)) } }
             } else null,
           )
           GroupedColumn {
             if (linkedIndications.isEmpty()) {
-              GroupItem(0, 1) { ListItem(colors = groupListItemColors()) { Text("No indications linked") } }
+              GroupItem(0, 1) { ListItem(colors = groupListItemColors()) { Text(stringResource(R.string.provider_no_indications)) } }
             }
             linkedIndications.forEachIndexed { i, indication ->
               GroupItem(index = i, count = linkedIndications.size, onClick = { onOpenIndication(indication.id) }) {
                 ListItem(
-                  supportingContent = { Text(indicationSummary(indication, snapshot, snapshot.isArchived(indication))) },
+                  supportingContent = { Text(indicationSummary(LocalResources.current, indication, snapshot, snapshot.isArchived(indication))) },
                   colors = groupListItemColors(),
                 ) { Text(indication.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
               }
@@ -322,8 +332,8 @@ fun ProviderDetailScreen(
       }
 
       item(key = "meds") {
-        SectionHeader("Medications they prescribed")
-        LinkedMedicationGroup(linkedMeds, emptyText = "No medications linked", onOpenMedication = onOpenMedication)
+        SectionHeader(stringResource(R.string.provider_medications))
+        LinkedMedicationGroup(linkedMeds, emptyText = stringResource(R.string.provider_no_medications), onOpenMedication = onOpenMedication)
       }
     }
   }
@@ -342,13 +352,13 @@ fun ProviderDetailScreen(
 
   if (confirmDelete) {
     ConfirmDialog(
-      title = "Delete ${provider.name}?",
+      title = stringResource(R.string.provider_delete_title, provider.name),
       text = if (linkedMeds.isEmpty()) {
-        "This removes the provider."
+        stringResource(R.string.provider_delete_text)
       } else {
-        "This removes the provider and unlinks ${medicationCount(linkedMeds.size)}."
+        stringResource(R.string.provider_delete_text_linked, medicationCount(LocalResources.current, linkedMeds.size))
       },
-      confirmLabel = "Delete",
+      confirmLabel = stringResource(R.string.action_delete),
       destructive = true,
       onConfirm = {
         confirmDelete = false
@@ -368,12 +378,14 @@ private fun ProviderIndicationsDialog(
   onDismiss: () -> Unit,
 ) {
   var selection by remember { mutableStateOf(initialSelection) }
+  val pastLabel = stringResource(R.string.label_past)
+  val resources = LocalResources.current
   val (past, current) = snapshot.indications.partition { snapshot.isArchived(it) }
   val sections = IndicationTimeline.sections(current) +
-    listOfNotNull(past.sortedBy { it.name.lowercase() }.takeIf { it.isNotEmpty() }?.let { "Past" to it })
+    listOfNotNull(past.sortedBy { it.name.lowercase() }.takeIf { it.isNotEmpty() }?.let { pastLabel to it })
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("Indications they manage") },
+    title = { Text(stringResource(R.string.provider_indications)) },
     text = {
       Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
         sections.forEach { (title, group) ->
@@ -395,7 +407,7 @@ private fun ProviderIndicationsDialog(
               Column(modifier = Modifier.padding(start = 12.dp)) {
                 Text(indication.name, style = MaterialTheme.typography.bodyLarge)
                 Text(
-                  indicationSummary(indication, snapshot, snapshot.isArchived(indication)),
+                  indicationSummary(resources, indication, snapshot, snapshot.isArchived(indication)),
                   style = MaterialTheme.typography.bodySmall,
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -405,8 +417,8 @@ private fun ProviderIndicationsDialog(
         }
       }
     },
-    confirmButton = { TextButton(onClick = { onConfirm(selection) }) { Text("Save") } },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    confirmButton = { TextButton(onClick = { onConfirm(selection) }) { Text(stringResource(R.string.action_save)) } },
+    dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
 }
 
@@ -418,7 +430,7 @@ internal fun OverflowDeleteMenu(
   onDelete: () -> Unit,
 ) {
   Box {
-    IconButton(onClick = { onExpandedChange(true) }) { Icon(Icons.Default.MoreVert, contentDescription = "More") }
+    IconButton(onClick = { onExpandedChange(true) }) { Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.action_more)) }
     DropdownMenu(expanded = expanded, onDismissRequest = { onExpandedChange(false) }) {
       DropdownMenuItem(
         text = { Text(label) },
@@ -478,7 +490,7 @@ fun ProviderEditorScreen(
   var notes by rememberSaveable { mutableStateOf(initialProvider?.notes.orEmpty()) }
 
   EditorScaffold(
-    title = if (initialProvider == null) "Add provider" else "Edit provider",
+    title = stringResource(if (initialProvider == null) R.string.providers_add else R.string.provider_edit),
     onClose = onClose,
     saveEnabled = name.isNotBlank(),
     onSave = {
@@ -503,29 +515,29 @@ fun ProviderEditorScreen(
     OutlinedTextField(
       value = name,
       onValueChange = { name = it },
-      label = { Text("Name *") },
+      label = { Text(stringResource(R.string.field_name_required)) },
       singleLine = true,
       modifier = Modifier.fillMaxWidth(),
     )
     OutlinedTextField(
       value = specialty,
       onValueChange = { specialty = it },
-      label = { Text("Specialty") },
-      placeholder = { Text("e.g. Psychiatry") },
+      label = { Text(stringResource(R.string.field_specialty)) },
+      placeholder = { Text(stringResource(R.string.field_specialty_hint)) },
       singleLine = true,
       modifier = Modifier.fillMaxWidth(),
     )
     OutlinedTextField(
       value = practice,
       onValueChange = { practice = it },
-      label = { Text("Practice or hospital") },
+      label = { Text(stringResource(R.string.field_practice_or_hospital)) },
       singleLine = true,
       modifier = Modifier.fillMaxWidth(),
     )
     OutlinedTextField(
       value = phone,
       onValueChange = { phone = it },
-      label = { Text("Phone") },
+      label = { Text(stringResource(R.string.field_phone)) },
       singleLine = true,
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
       modifier = Modifier.fillMaxWidth(),
@@ -533,33 +545,33 @@ fun ProviderEditorScreen(
     OutlinedTextField(
       value = email,
       onValueChange = { email = it },
-      label = { Text("Email") },
+      label = { Text(stringResource(R.string.field_email)) },
       singleLine = true,
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
       modifier = Modifier.fillMaxWidth(),
     )
     GroupedColumn {
       GroupItem(0, if (isPcp) 1 else 2) {
-        SwitchRow(title = "Primary care provider", checked = isPcp, onCheckedChange = { isPcp = it })
+        SwitchRow(title = stringResource(R.string.provider_pcp_switch), checked = isPcp, onCheckedChange = { isPcp = it })
       }
       // A primary care provider always counts as regular.
       if (!isPcp) {
         GroupItem(1, 2) {
           SwitchRow(
-            title = "See regularly",
-            subtitle = "Off for specialists you only see when needed",
+            title = stringResource(R.string.provider_regular_switch),
+            subtitle = stringResource(R.string.provider_regular_switch_help),
             checked = seenRegularly,
             onCheckedChange = { seenRegularly = it },
           )
         }
       }
     }
-    DatePickerField(label = "Care started", valueIso = startDate, onValueChange = { startDate = it })
-    DatePickerField(label = "Care ended", valueIso = endDate, onValueChange = { endDate = it })
+    DatePickerField(label = stringResource(R.string.provider_care_started), valueIso = startDate, onValueChange = { startDate = it })
+    DatePickerField(label = stringResource(R.string.provider_care_ended), valueIso = endDate, onValueChange = { endDate = it })
     OutlinedTextField(
       value = notes,
       onValueChange = { notes = it },
-      label = { Text("Notes") },
+      label = { Text(stringResource(R.string.field_notes)) },
       minLines = 2,
       modifier = Modifier.fillMaxWidth(),
     )

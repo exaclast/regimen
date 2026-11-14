@@ -399,6 +399,12 @@ data class Indication(
    * one without an end date ends with its linked medication courses (see `IndicationTimeline`).
    */
   val endDateIso: String? = null,
+  /**
+   * The indications this one is secondary to (a cause or the underlying condition, such as neuropathy
+   * secondary to diabetes). Any entry makes this a secondary indication. Ids of deleted records are
+   * ignored wherever this is read.
+   */
+  val primaryIds: List<String> = emptyList(),
   /** Providers helping manage it. A provider can manage many indications and vice versa. */
   val providerIds: List<String> = emptyList(),
   val createdAtEpochMillis: Long = System.currentTimeMillis(),

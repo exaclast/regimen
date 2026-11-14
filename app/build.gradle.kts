@@ -86,6 +86,12 @@ android {
   testOptions {
     unitTests.isReturnDefaultValues = true
   }
+  androidResources {
+    // English is the only language for now. The locale list is generated from the res/values-* folders
+    // (the default folder's language is set in res/resources.properties), so adding a translation is
+    // a new values-xx/strings.xml and nothing else; it then appears in the system's per-app language picker.
+    generateLocaleConfig = true
+  }
 
   packaging {
     resources {

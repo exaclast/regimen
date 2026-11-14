@@ -2,6 +2,7 @@
 
 package com.exaclast.regimen.ui.screens
 
+import android.content.res.Resources
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -57,10 +58,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.exaclast.regimen.R
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.IndicationTimeline
 import com.exaclast.regimen.model.Indication
@@ -83,9 +87,9 @@ import com.exaclast.regimen.ui.components.groupListItemColors
 import java.time.LocalDate
 
 /** Short labels that fit a four-way segmented button on a 360 dp phone. */
-private fun IndicationKind.shortStatusLabel(status: IndicationStatus): String = when (status) {
-  IndicationStatus.MANAGED -> "Managed"
-  IndicationStatus.REMISSION -> "Remission"
+private fun IndicationKind.shortStatusLabel(res: Resources, status: IndicationStatus): String = when (status) {
+  IndicationStatus.MANAGED -> res.getString(R.string.status_managed_short)
+  IndicationStatus.REMISSION -> res.getString(R.string.status_remission_short)
   else -> statusLabel(status)
 }
 
@@ -107,30 +111,34 @@ private fun Indication.typeLabel(): String =
  * [showKind] is off under a heading that already names the kind.
  */
 internal fun indicationSummary(
+  res: Resources,
   indication: Indication,
   snapshot: RegimenSnapshot,
   archived: Boolean,
   showKind: Boolean = true,
+  showSuspected: Boolean = true,
 ): String {
   val end = snapshot.indicationEnd(indication)
   val medCount = snapshot.medications.count { indication.id in it.indicationIds && it.deletedAtEpochMillis == null }
   return if (archived) {
     listOfNotNull(
-      "Suspected".takeIf { indication.suspected },
+      res.getString(R.string.indication_suspected).takeIf { indication.suspected },
       indication.typeLabel(),
-      end?.let { "Ended ${UiFormat.date(it.date, withWeekday = false)}" } ?: indication.kind.statusLabel(indication.status),
+      end?.let { res.getString(R.string.indication_ended_on, UiFormat.date(it.date, withWeekday = false)) } ?: indication.kind.statusLabel(indication.status),
     ).joinToString(" · ")
   } else {
     listOfNotNull(
-      "Suspected".takeIf { indication.suspected && showKind },
+      res.getString(R.string.indication_suspected).takeIf { indication.suspected && showKind && showSuspected },
       indication.typeLabel().takeIf { showKind },
       // Allergies and intolerances share a heading, so each says which it is.
       indication.kind.displayName.takeIf { !showKind && indication.kind.isReaction },
       indication.severity?.displayName,
+      IndicationTimeline.primariesOf(indication, snapshot.indications).takeIf { it.isNotEmpty() }
+        ?.let { res.getString(R.string.indication_secondary_to_names, it.joinToString { p -> p.name }) },
       indication.reaction?.takeIf { indication.kind.isReaction && it.isNotBlank() },
       indication.status.displayName.takeIf { indication.kind == IndicationKind.CHRONIC },
-      end?.let { "Until ${UiFormat.date(it.date, withWeekday = false)}" },
-      medicationCount(medCount),
+      end?.let { res.getString(R.string.indication_until, UiFormat.date(it.date, withWeekday = false)) },
+      medicationCount(res, medCount),
     ).joinToString(" · ")
   }
 }
@@ -144,6 +152,7 @@ fun IndicationListScreen(
   val listState = rememberLazyListState()
   val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
   val today = LocalDate.now()
+  val res = LocalResources.current
   var query by rememberSaveable { mutableStateOf("") }
   var showPast by rememberSaveable { mutableStateOf(false) }
 
@@ -158,19 +167,19 @@ fun IndicationListScreen(
   val pastExpanded = showPast || query.isNotBlank()
 
   Scaffold(
-    topBar = { TopAppBar(title = { Text("Indications") }) },
+    topBar = { TopAppBar(title = { Text(stringResource(R.string.indications_title)) }) },
     floatingActionButton = {
       ExtendedFloatingActionButton(
         onClick = onAddIndication,
         expanded = fabExpanded,
         icon = { Icon(Icons.Default.Add, contentDescription = null) },
-        text = { Text("Add indication") },
+        text = { Text(stringResource(R.string.indications_add)) },
       )
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
     if (snapshot.indications.isEmpty()) {
-      EmptyListMessage("No indications yet.", Modifier.padding(padding))
+      EmptyListMessage(stringResource(R.string.indications_empty), Modifier.padding(padding))
       return@Scaffold
     }
     LazyColumn(
@@ -186,10 +195,10 @@ fun IndicationListScreen(
           OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            placeholder = { Text("Search indications") },
+            placeholder = { Text(stringResource(R.string.indications_search)) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
             trailingIcon = if (query.isNotEmpty()) {
-              { IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, contentDescription = "Clear search") } }
+              { IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.search_clear)) } }
             } else null,
             singleLine = true,
             modifier = Modifier
@@ -201,7 +210,7 @@ fun IndicationListScreen(
       if (current.isEmpty() && query.isBlank()) {
         item(key = "no-current") {
           Text(
-            "No current indications.",
+            stringResource(R.string.indications_none_current),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
@@ -213,18 +222,18 @@ fun IndicationListScreen(
         itemsIndexed(group, key = { _, c -> c.id }) { index, indication ->
           GroupItem(index = index, count = group.size, onClick = { onOpenIndication(indication.id) }) {
             ListItem(
-              supportingContent = { Text(indicationSummary(indication, snapshot, archived = false, showKind = false)) },
+              supportingContent = { Text(indicationSummary(res, indication, snapshot, archived = false, showKind = false)) },
               colors = groupListItemColors(),
             ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
           }
         }
       }
       if (suspectedCurrent.isNotEmpty()) {
-        item(key = "header-suspected") { SectionHeader("Suspected") }
+        item(key = "header-suspected") { SectionHeader(stringResource(R.string.indication_suspected)) }
         itemsIndexed(suspectedCurrent, key = { _, c -> c.id }) { index, indication ->
           GroupItem(index = index, count = suspectedCurrent.size, onClick = { onOpenIndication(indication.id) }) {
             ListItem(
-              supportingContent = { Text(indicationSummary(indication, snapshot, archived = false).removePrefix("Suspected · ")) },
+              supportingContent = { Text(indicationSummary(res, indication, snapshot, archived = false, showSuspected = false)) },
               colors = groupListItemColors(),
             ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
           }
@@ -233,10 +242,10 @@ fun IndicationListScreen(
       if (pastAll.isNotEmpty()) {
         item(key = "past-header") {
           SectionHeader(
-            title = "Past indications (${if (query.isBlank()) pastAll.size else past.size})",
+            title = stringResource(R.string.indications_past, if (query.isBlank()) pastAll.size else past.size),
             action = if (query.isBlank()) {
               {
-                TextButton(onClick = { showPast = !showPast }) { Text(if (showPast) "Hide" else "Show") }
+                TextButton(onClick = { showPast = !showPast }) { Text(stringResource(if (showPast) R.string.action_hide else R.string.action_show)) }
               }
             } else null,
           )
@@ -245,7 +254,7 @@ fun IndicationListScreen(
           itemsIndexed(past, key = { _, c -> c.id }) { index, indication ->
             GroupItem(index = index, count = past.size, onClick = { onOpenIndication(indication.id) }) {
               ListItem(
-                supportingContent = { Text(indicationSummary(indication, snapshot, archived = true)) },
+                supportingContent = { Text(indicationSummary(res, indication, snapshot, archived = true)) },
                 colors = groupListItemColors(),
               ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
@@ -255,7 +264,7 @@ fun IndicationListScreen(
       if (query.isNotBlank() && current.isEmpty() && past.isEmpty()) {
         item(key = "no-results") {
           Text(
-            "No indications match \"${query.trim()}\".",
+            stringResource(R.string.indications_no_match, query.trim()),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
@@ -288,6 +297,8 @@ fun IndicationDetailScreen(
   val linkedProviders = snapshot.providers.filter { it.id in indication.providerIds }
   val archived = snapshot.isArchived(indication)
   val end = snapshot.indicationEnd(indication)
+  val primaries = IndicationTimeline.primariesOf(indication, snapshot.indications)
+  val secondaries = IndicationTimeline.secondariesOf(indication, snapshot.indications)
   // Past providers stay listed only if already linked.
   val providerOptions = snapshot.providers
     .filter { !IndicationTimeline.isPast(it, LocalDate.now()) || it.id in indication.providerIds }
@@ -305,21 +316,21 @@ fun IndicationDetailScreen(
         subtitle = {
           Text(
             listOfNotNull(
-              "Suspected".takeIf { indication.suspected },
+              stringResource(R.string.indication_suspected).takeIf { indication.suspected },
               indication.typeLabel(),
-              if (archived) "Past" else indication.kind.statusLabel(indication.status),
+              if (archived) stringResource(R.string.label_past) else indication.kind.statusLabel(indication.status),
             ).joinToString(" · "),
           )
         },
         navigationIcon = {
-          IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+          IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
         },
         actions = {
-          IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit indication") }
+          IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.indication_edit)) }
           OverflowDeleteMenu(
             expanded = menuOpen,
             onExpandedChange = { menuOpen = it },
-            label = "Delete indication",
+            label = stringResource(R.string.indication_delete),
             onDelete = { confirmDelete = true },
           )
         },
@@ -338,27 +349,35 @@ fun IndicationDetailScreen(
         item(key = "again") {
           FilledTonalButton(onClick = onHadAgain, modifier = Modifier.padding(top = 8.dp)) {
             Icon(Icons.Default.Replay, contentDescription = null, modifier = Modifier.size(18.dp))
-            Text("Had this again", modifier = Modifier.padding(start = 8.dp))
+            Text(stringResource(R.string.indication_had_again), modifier = Modifier.padding(start = 8.dp))
           }
         }
       }
       item(key = "details") {
-        SectionHeader("Details")
-        val endLabel = if (end != null && !end.date.isAfter(LocalDate.now()) || archived) "Ended" else "Ends"
+        SectionHeader(stringResource(R.string.indication_details))
+        val endLabel = stringResource(
+          if (end != null && !end.date.isAfter(LocalDate.now()) || archived) R.string.field_ended else R.string.field_ends,
+        )
         val endValue = when {
-          end == null -> if (indication.kind == IndicationKind.ACUTE) "When its medication course ends" else "Ongoing"
+          end == null -> stringResource(if (indication.kind == IndicationKind.ACUTE) R.string.indication_ends_with_course else R.string.value_ongoing)
           end.fromCourse -> "${UiFormat.date(end.date)} (end of medication course)"
           else -> UiFormat.date(end.date)
         }
         val rows = listOfNotNull(
-          "Type" to indication.typeLabel(),
-          "Diagnosis" to if (indication.suspected) "Suspected, not formally diagnosed" else "Diagnosed",
-          indication.severity?.let { "Severity" to it.displayName },
-          indication.reaction?.takeIf { it.isNotBlank() }?.let { "Reaction" to it },
-          "Status" to indication.kind.statusLabel(indication.status),
-          "Started" to (UiFormat.dateIso(indication.diagnosedDateIso) ?: "Not set"),
+          stringResource(R.string.field_type) to indication.typeLabel(),
+          stringResource(R.string.field_diagnosis) to stringResource(
+            if (indication.suspected) R.string.indication_diagnosis_suspected else R.string.indication_diagnosis_diagnosed,
+          ),
+          indication.severity?.let { stringResource(R.string.field_severity) to it.displayName },
+          primaries.takeIf { it.isNotEmpty() }
+            ?.let { stringResource(R.string.indication_secondary_to) to it.joinToString { p -> p.name } },
+          secondaries.takeIf { it.isNotEmpty() }
+            ?.let { stringResource(R.string.indication_has_secondary) to it.joinToString { s -> s.name } },
+          indication.reaction?.takeIf { it.isNotBlank() }?.let { stringResource(R.string.field_reaction) to it },
+          stringResource(R.string.field_status) to indication.kind.statusLabel(indication.status),
+          stringResource(R.string.field_started) to (UiFormat.dateIso(indication.diagnosedDateIso) ?: stringResource(R.string.value_not_set)),
           (endLabel to endValue).takeIf { !indication.kind.isReaction || end != null },
-          indication.details?.takeIf { it.isNotBlank() }?.let { "Notes" to it },
+          indication.details?.takeIf { it.isNotBlank() }?.let { stringResource(R.string.field_notes) to it },
         )
         GroupedColumn {
           rows.forEachIndexed { i, (label, value) -> GroupItem(index = i, count = rows.size) { InfoRow(label, value) } }
@@ -367,14 +386,14 @@ fun IndicationDetailScreen(
       if (snapshot.tracksProviders) {
         item(key = "providers") {
           SectionHeader(
-            title = "Providers",
+            title = stringResource(R.string.providers_title),
             action = if (providerOptions.isNotEmpty()) {
-              { TextButton(onClick = { editProviders = true }) { Text("Edit") } }
+              { TextButton(onClick = { editProviders = true }) { Text(stringResource(R.string.action_edit)) } }
             } else null,
           )
           GroupedColumn {
             if (linkedProviders.isEmpty()) {
-              GroupItem(0, 1) { ListItem(colors = groupListItemColors()) { Text("No providers linked") } }
+              GroupItem(0, 1) { ListItem(colors = groupListItemColors()) { Text(stringResource(R.string.indication_no_providers)) } }
             }
             linkedProviders.forEachIndexed { i, provider ->
               GroupItem(index = i, count = linkedProviders.size, onClick = { onOpenProvider(provider.id) }) {
@@ -389,19 +408,19 @@ fun IndicationDetailScreen(
       }
       item(key = "meds") {
         SectionHeader(
-          title = "Medications for this indication",
+          title = stringResource(R.string.indication_medications),
           action = if (snapshot.medications.any { it.deletedAtEpochMillis == null }) {
-            { TextButton(onClick = { editMedications = true }) { Text("Edit") } }
+            { TextButton(onClick = { editMedications = true }) { Text(stringResource(R.string.action_edit)) } }
           } else null,
         )
-        LinkedMedicationGroup(linkedMeds, emptyText = "No medications linked", onOpenMedication = onOpenMedication)
+        LinkedMedicationGroup(linkedMeds, emptyText = stringResource(R.string.provider_no_medications), onOpenMedication = onOpenMedication)
       }
     }
   }
 
   if (editProviders) {
     IndicationLinksDialog(
-      title = "Providers helping manage it",
+      title = stringResource(R.string.indication_providers_dialog),
       options = providerOptions
         .sortedBy { it.name.lowercase() }
         .map { LinkOption(it.id, it.name, it.specialty?.takeIf { s -> s.isNotBlank() }) },
@@ -416,7 +435,7 @@ fun IndicationDetailScreen(
 
   if (editMedications) {
     IndicationLinksDialog(
-      title = "Medications for this indication",
+      title = stringResource(R.string.indication_medications),
       options = snapshot.medications
         .filter { it.deletedAtEpochMillis == null }
         .sortedBy { it.primaryName.lowercase() }
@@ -432,13 +451,13 @@ fun IndicationDetailScreen(
 
   if (confirmDelete) {
     ConfirmDialog(
-      title = "Delete ${indication.name}?",
+      title = stringResource(R.string.provider_delete_title, indication.name),
       text = if (linkedMeds.isEmpty()) {
-        "This removes the indication."
+        stringResource(R.string.indication_delete_text)
       } else {
-        "This removes the indication and unlinks ${medicationCount(linkedMeds.size)}."
+        stringResource(R.string.indication_delete_text_linked, medicationCount(LocalResources.current, linkedMeds.size))
       },
-      confirmLabel = "Delete",
+      confirmLabel = stringResource(R.string.action_delete),
       destructive = true,
       onConfirm = {
         confirmDelete = false
@@ -494,8 +513,8 @@ private fun IndicationLinksDialog(
         }
       }
     },
-    confirmButton = { TextButton(onClick = { onConfirm(selection) }) { Text("Save") } },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    confirmButton = { TextButton(onClick = { onConfirm(selection) }) { Text(stringResource(R.string.action_save)) } },
+    dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
 }
 
@@ -524,8 +543,15 @@ fun IndicationEditorScreen(
   var startDateIso by rememberSaveable { mutableStateOf(source?.diagnosedDateIso.orEmpty()) }
   var endDateIso by rememberSaveable { mutableStateOf(source?.endDateIso.orEmpty()) }
   var providerIds by rememberSaveable { mutableStateOf(source?.providerIds.orEmpty()) }
+  var primaryIds by rememberSaveable { mutableStateOf(source?.primaryIds.orEmpty()) }
 
   val today = LocalDate.now()
+  // What this could be secondary to: not itself, not something already secondary to it, and past ones
+  // only if already linked.
+  val primaryOptions = snapshot.indications
+    .filter { it.id != initialIndication?.id && initialIndication?.id !in it.primaryIds }
+    .filter { !snapshot.isArchived(it, today) || it.id in primaryIds }
+    .sortedBy { it.name.lowercase() }
   // Past providers stay listed only if already linked.
   val providerOptions = snapshot.providers.filter { !IndicationTimeline.isPast(it, today) || it.id in providerIds }
   val courseEnd = initialIndication?.let { IndicationTimeline.courseEnd(it, snapshot.medications, snapshot.schedules) }
@@ -533,9 +559,9 @@ fun IndicationEditorScreen(
 
   EditorScaffold(
     title = when {
-      initialIndication != null -> "Edit indication"
-      template != null -> "New episode"
-      else -> "Add indication"
+      initialIndication != null -> stringResource(R.string.indication_edit)
+      template != null -> stringResource(R.string.indication_new_episode)
+      else -> stringResource(R.string.indications_add)
     },
     onClose = onClose,
     saveEnabled = name.isNotBlank() && !endBeforeStart,
@@ -555,6 +581,7 @@ fun IndicationEditorScreen(
           diagnosedDateIso = startDateIso.takeIf { it.isNotBlank() },
           endDateIso = endDateIso.takeIf { it.isNotBlank() },
           providerIds = providerIds.filter { id -> snapshot.providers.any { it.id == id } },
+          primaryIds = primaryIds.filter { id -> snapshot.indications.any { it.id == id } },
           createdAtEpochMillis = initialIndication?.createdAtEpochMillis ?: System.currentTimeMillis(),
         )
       )
@@ -566,31 +593,31 @@ fun IndicationEditorScreen(
       label = {
         Text(
           when (kind) {
-            IndicationKind.ALLERGY -> "Allergen *"
-            IndicationKind.INTOLERANCE -> "Trigger *"
-            else -> "Name *"
+            IndicationKind.ALLERGY -> stringResource(R.string.indication_allergen_required)
+            IndicationKind.INTOLERANCE -> stringResource(R.string.indication_trigger_required)
+            else -> stringResource(R.string.field_name_required)
           },
         )
       },
       placeholder = {
         Text(
           when (kind) {
-            IndicationKind.ACUTE -> "e.g. Sinus infection"
-            IndicationKind.CHRONIC -> "e.g. ADHD"
-            IndicationKind.PREVENTIVE -> "e.g. HIV PrEP"
+            IndicationKind.ACUTE -> stringResource(R.string.indication_hint_acute)
+            IndicationKind.CHRONIC -> stringResource(R.string.indication_hint_chronic)
+            IndicationKind.PREVENTIVE -> stringResource(R.string.indication_hint_preventive)
             IndicationKind.ALLERGY -> when (allergenType) {
-              AllergenType.DRUG -> "e.g. Penicillin"
-              AllergenType.FOOD -> "e.g. Peanuts"
-              AllergenType.ENVIRONMENTAL -> "e.g. Birch pollen"
+              AllergenType.DRUG -> stringResource(R.string.indication_hint_drug_allergy)
+              AllergenType.FOOD -> stringResource(R.string.indication_hint_food_allergy)
+              AllergenType.ENVIRONMENTAL -> stringResource(R.string.indication_hint_environmental_allergy)
             }
-            IndicationKind.INTOLERANCE -> "e.g. Metformin"
+            IndicationKind.INTOLERANCE -> stringResource(R.string.indication_hint_intolerance)
           },
         )
       },
       singleLine = true,
       modifier = Modifier.fillMaxWidth(),
     )
-    Text("Type", style = MaterialTheme.typography.titleSmall)
+    Text(stringResource(R.string.field_type), style = MaterialTheme.typography.titleSmall)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
       IndicationKind.entries.forEach { k ->
         FilterChip(
@@ -605,18 +632,18 @@ fun IndicationEditorScreen(
     }
     Text(
       when (kind) {
-        IndicationKind.ACUTE -> "Short-term, like an infection or injury. Moves to past indications when it ends."
-        IndicationKind.CHRONIC -> "Ongoing, like diabetes or high blood pressure."
-        IndicationKind.PREVENTIVE -> "Taken to prevent something, like PrEP or PEP. Stays current unless its course ends."
-        IndicationKind.ALLERGY -> "An immune reaction, like hives or anaphylaxis. Medications you link are the ones that treat it."
-        IndicationKind.INTOLERANCE -> "A drug you can't tolerate, like severe nausea or another side effect. Not an immune reaction, so not an allergy."
+        IndicationKind.ACUTE -> stringResource(R.string.indication_kind_acute_help)
+        IndicationKind.CHRONIC -> stringResource(R.string.indication_kind_chronic_help)
+        IndicationKind.PREVENTIVE -> stringResource(R.string.indication_kind_preventive_help)
+        IndicationKind.ALLERGY -> stringResource(R.string.indication_kind_allergy_help)
+        IndicationKind.INTOLERANCE -> stringResource(R.string.indication_kind_intolerance_help)
       },
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     if (isAllergy) {
       if (kind == IndicationKind.ALLERGY) {
-        Text("Allergic to", style = MaterialTheme.typography.titleSmall)
+        Text(stringResource(R.string.indication_allergic_to), style = MaterialTheme.typography.titleSmall)
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
           AllergenType.entries.forEachIndexed { i, type ->
             SegmentedButton(
@@ -632,12 +659,12 @@ fun IndicationEditorScreen(
       OutlinedTextField(
         value = reaction,
         onValueChange = { reaction = it },
-        label = { Text("Reaction") },
-        placeholder = { Text("e.g. Hives, swelling") },
+        label = { Text(stringResource(R.string.field_reaction)) },
+        placeholder = { Text(stringResource(R.string.indication_reaction_hint)) },
         modifier = Modifier.fillMaxWidth(),
       )
     }
-    Text("Severity", style = MaterialTheme.typography.titleSmall)
+    Text(stringResource(R.string.field_severity), style = MaterialTheme.typography.titleSmall)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
       Severity.entries.forEach { level ->
         FilterChip(
@@ -647,7 +674,7 @@ fun IndicationEditorScreen(
         )
       }
     }
-    Text("Status", style = MaterialTheme.typography.titleSmall)
+    Text(stringResource(R.string.field_status), style = MaterialTheme.typography.titleSmall)
     val statuses = kind.statuses
     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
       statuses.forEachIndexed { i, s ->
@@ -656,41 +683,59 @@ fun IndicationEditorScreen(
           onClick = { status = s },
           shape = SegmentedButtonDefaults.itemShape(index = i, count = statuses.size),
           icon = {},
-          label = { Text(kind.shortStatusLabel(s), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+          label = { Text(kind.shortStatusLabel(LocalResources.current, s), maxLines = 1, overflow = TextOverflow.Ellipsis) },
         )
       }
     }
     SwitchRow(
-      title = "Suspected",
-      subtitle = "Not formally diagnosed, such as a symptom or a condition under investigation",
+      title = stringResource(R.string.indication_suspected),
+      subtitle = stringResource(R.string.indication_suspected_help),
       checked = suspected,
       onCheckedChange = { suspected = it },
     )
+    if (primaryOptions.isNotEmpty()) {
+      Text(stringResource(R.string.indication_secondary_to), style = MaterialTheme.typography.titleSmall)
+      Text(
+        stringResource(R.string.indication_secondary_to_help),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        primaryOptions.forEach { option ->
+          val selected = option.id in primaryIds
+          FilterChip(
+            selected = selected,
+            onClick = { primaryIds = if (selected) primaryIds - option.id else primaryIds + option.id },
+            label = { Text(option.name) },
+          )
+        }
+      }
+    }
     DatePickerField(
       label = when {
-        isAllergy -> "First reaction"
-        kind == IndicationKind.CHRONIC && !suspected -> "Diagnosed"
-        else -> "Started"
+        isAllergy -> stringResource(R.string.indication_first_reaction)
+        kind == IndicationKind.CHRONIC && !suspected -> stringResource(R.string.indication_diagnosed)
+        else -> stringResource(R.string.field_started)
       },
       valueIso = startDateIso,
       onValueChange = { startDateIso = it },
     )
     if (!isAllergy) DatePickerField(
-      label = "End date",
+      label = stringResource(R.string.indication_end_date),
       valueIso = endDateIso,
       onValueChange = { endDateIso = it },
       supportingText = when {
-        endBeforeStart -> "Ends before it starts"
+        endBeforeStart -> stringResource(R.string.indication_ends_before_start)
         endDateIso.isNotBlank() -> null
         kind.endsWithCourse && courseEnd != null ->
-          "Blank: ends with its medication course (${UiFormat.date(courseEnd, withWeekday = false)})"
-        kind == IndicationKind.ACUTE -> "Blank: ends when its medication course ends"
-        kind == IndicationKind.PREVENTIVE -> "Blank: ongoing unless its medication course has an end"
-        else -> "Blank: ongoing"
+          stringResource(R.string.indication_end_blank_course_date, UiFormat.date(courseEnd, withWeekday = false))
+        kind == IndicationKind.ACUTE -> stringResource(R.string.indication_end_blank_acute)
+        kind == IndicationKind.PREVENTIVE -> stringResource(R.string.indication_end_blank_preventive)
+        else -> stringResource(R.string.indication_end_blank_ongoing)
       },
     )
     if (snapshot.tracksProviders && providerOptions.isNotEmpty()) {
-      Text("Providers helping manage it", style = MaterialTheme.typography.titleSmall)
+      Text(stringResource(R.string.indication_providers_dialog), style = MaterialTheme.typography.titleSmall)
       FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -711,7 +756,7 @@ fun IndicationEditorScreen(
     OutlinedTextField(
       value = details,
       onValueChange = { details = it },
-      label = { Text("Notes") },
+      label = { Text(stringResource(R.string.field_notes)) },
       minLines = 2,
       modifier = Modifier.fillMaxWidth(),
     )

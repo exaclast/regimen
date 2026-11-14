@@ -51,9 +51,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.exaclast.regimen.R
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.MedicationGroups
 import com.exaclast.regimen.model.Medication
@@ -104,7 +106,7 @@ fun MedicationListScreen(
   Scaffold(
     topBar = {
       SearchableTopBar(
-        title = "Medications",
+        title = stringResource(R.string.medications_title),
         searching = searching,
         query = query,
         onQueryChange = { query = it },
@@ -112,7 +114,7 @@ fun MedicationListScreen(
           searching = active
           if (!active) query = ""
         },
-        searchPlaceholder = "Search medications",
+        searchPlaceholder = stringResource(R.string.medications_search),
       )
     },
     floatingActionButton = {
@@ -120,14 +122,14 @@ fun MedicationListScreen(
         onClick = onAddMedication,
         expanded = fabExpanded,
         icon = { Icon(Icons.Default.Add, contentDescription = null) },
-        text = { Text("Add medication") },
+        text = { Text(stringResource(R.string.medications_add)) },
       )
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
     if (snapshot.medications.isEmpty()) {
       EmptyListMessage(
-        text = "No medications yet. Add one to start tracking doses.",
+        text = stringResource(R.string.medications_empty),
         modifier = Modifier.padding(padding),
       )
       return@Scaffold
@@ -152,7 +154,7 @@ fun MedicationListScreen(
         }
       }
       if (grouped.sections.isEmpty() && grouped.finished.isEmpty()) {
-        item { Text("No matches for \"$query\"", modifier = Modifier.padding(16.dp)) }
+        item { Text(stringResource(R.string.list_no_matches, query), modifier = Modifier.padding(16.dp)) }
       }
       grouped.sections.forEach { section ->
         item(key = "header-${section.key}") { SectionHeader(section.title) }
@@ -168,8 +170,8 @@ fun MedicationListScreen(
         val expanded = showFinished || query.isNotBlank()
         item(key = "finished-header") {
           SectionHeader(
-            title = "Finished (${grouped.finished.size})",
-            action = { TextButton(onClick = { showFinished = !showFinished }) { Text(if (expanded) "Hide" else "Show") } },
+            title = stringResource(R.string.medications_finished, grouped.finished.size),
+            action = { TextButton(onClick = { showFinished = !showFinished }) { Text(stringResource(if (expanded) R.string.action_hide else R.string.action_show)) } },
           )
         }
         if (expanded) {
@@ -261,17 +263,17 @@ fun SearchableTopBar(
     navigationIcon = {
       if (searching) {
         IconButton(onClick = { onSearchingChange(false) }) {
-          Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close search")
+          Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.search_close))
         }
       }
     },
     actions = {
       if (searching) {
         if (query.isNotEmpty()) {
-          IconButton(onClick = { onQueryChange("") }) { Icon(Icons.Default.Close, contentDescription = "Clear search") }
+          IconButton(onClick = { onQueryChange("") }) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.search_clear)) }
         }
       } else {
-        IconButton(onClick = { onSearchingChange(true) }) { Icon(Icons.Default.Search, contentDescription = "Search") }
+        IconButton(onClick = { onSearchingChange(true) }) { Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search_open)) }
       }
     },
   )

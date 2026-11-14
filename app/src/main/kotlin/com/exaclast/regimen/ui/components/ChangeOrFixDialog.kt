@@ -21,7 +21,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.exaclast.regimen.R
 import com.exaclast.regimen.domain.Adjustments.EditMode
 import java.time.LocalDate
 
@@ -44,15 +46,15 @@ fun ChangeOrFixDialog(
   var note by rememberSaveable { mutableStateOf("") }
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("Change or correction?") },
+    title = { Text(stringResource(R.string.change_or_fix_title)) },
     text = {
       Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
-        Text("You changed $what.", style = MaterialTheme.typography.bodyLarge)
+        Text(stringResource(R.string.change_or_fix_you_changed, what), style = MaterialTheme.typography.bodyLarge)
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-          listOf("From a date", "Correction").forEachIndexed { index, label ->
+          listOf(stringResource(R.string.change_or_fix_from_date), stringResource(R.string.change_or_fix_correction)).forEachIndexed { index, label ->
             SegmentedButton(
               selected = isChange == (index == 0),
               onClick = { isChange = index == 0 },
@@ -64,15 +66,14 @@ fun ChangeOrFixDialog(
         }
         if (isChange) {
           Text(
-            "Doses before the date keep the old value. Pick a future date to plan a step.",
+            stringResource(R.string.change_or_fix_from_date_help),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
-          DatePickerField(label = "Starting", valueIso = dateIso, onValueChange = { dateIso = it }, allowClear = false)
+          DatePickerField(label = stringResource(R.string.change_or_fix_starting), valueIso = dateIso, onValueChange = { dateIso = it }, allowClear = false)
           if (clearsNdc) {
             Text(
-              "A different strength or package has a different NDC, so it's blank from that date. " +
-                "Edit the medication and use the FDA lookup to fill it in.",
+              stringResource(R.string.change_or_fix_ndc_cleared),
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -80,14 +81,14 @@ fun ChangeOrFixDialog(
           OutlinedTextField(
             value = note,
             onValueChange = { note = it },
-            label = { Text("Note (optional)") },
-            placeholder = { Text("e.g. increased at follow-up") },
+            label = { Text(stringResource(R.string.field_note_optional)) },
+            placeholder = { Text(stringResource(R.string.change_or_fix_note_hint)) },
             maxLines = 3,
             modifier = Modifier.fillMaxWidth(),
           )
         } else {
           Text(
-            "It was always this: the value in effect today is replaced, with no history.",
+            stringResource(R.string.change_or_fix_correction_help),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
@@ -95,8 +96,8 @@ fun ChangeOrFixDialog(
       }
     },
     confirmButton = {
-      Button(onClick = { onConfirm(if (isChange) EditMode.Change(dateIso, note) else EditMode.Fix) }) { Text("Save") }
+      Button(onClick = { onConfirm(if (isChange) EditMode.Change(dateIso, note) else EditMode.Fix) }) { Text(stringResource(R.string.action_save)) }
     },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
 }

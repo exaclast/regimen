@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.runtime.entryProvider
@@ -147,7 +148,7 @@ fun RegimenApp(
                   Icon(tab.icon, contentDescription = null)
                 }
               },
-              label = { Text(tab.label) },
+              label = { Text(stringResource(tab.labelRes)) },
             )
           }
         },

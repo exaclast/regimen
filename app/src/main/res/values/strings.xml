@@ -1,5 +1,791 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every user-visible string lives here. Conventions:
+  - Names are <area>_<what>, lower snake case. Shared words are action_* and field_*.
+  - Strings with more than one placeholder use numbered ones (%1$s, %2$s) so a translation can reorder them.
+  - Counts use <plurals>, never "1 thing" / "2 things" built in code.
+  - Add a translation as res/values-xx/strings.xml; nothing else is needed (the locale list is generated).
+-->
 <resources>
     <string name="app_name">Regimen</string>
     <string name="shortcut_summary_short">Health summary</string>
     <string name="shortcut_summary_long">Open health summary</string>
+
+    <!-- Shared actions -->
+    <string name="action_add">Add</string>
+    <string name="action_add_range">Add range</string>
+    <string name="action_back">Back</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_close">Close</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_hide">Hide</string>
+    <string name="action_log_dose">Log dose</string>
+    <string name="action_ok">OK</string>
+    <string name="action_save">Save</string>
+    <string name="action_show">Show</string>
+
+    <!-- Shared fields -->
+    <string name="field_date">Date</string>
+    <string name="field_time">Time</string>
+    <string name="field_note_optional">Note (optional)</string>
+    <string name="field_note">Note</string>
+    <string name="field_site">Site</string>
+    <string name="value_none">None</string>
+    <string name="list_no_matches">No matches for "%1$s"</string>
+    <string name="search_close">Close search</string>
+    <string name="search_clear">Clear search</string>
+    <string name="search_open">Search</string>
+
+    <!-- Shared components -->
+    <string name="choose_field">Choose %1$s</string>
+    <string name="select_date_range">Select date range</string>
+
+    <!-- Log time dialog -->
+    <string name="log_time_now">Now</string>
+    <string name="log_time_other">Other time</string>
+    <string name="log_time_future">That time hasn\'t happened yet.</string>
+    <string name="log_time_note_hint">e.g. headache, 6/10</string>
+
+    <!-- Change or correction dialog -->
+    <string name="change_or_fix_title">Change or correction?</string>
+    <string name="change_or_fix_you_changed">You changed %1$s.</string>
+    <string name="change_or_fix_from_date">From a date</string>
+    <string name="change_or_fix_correction">Correction</string>
+    <string name="change_or_fix_from_date_help">Doses before the date keep the old value. Pick a future date to plan a step.</string>
+    <string name="change_or_fix_starting">Starting</string>
+    <string name="change_or_fix_ndc_cleared">A different strength or package has a different NDC, so it\'s blank from that date. Edit the medication and use the FDA lookup to fill it in.</string>
+    <string name="change_or_fix_note_hint">e.g. increased at follow-up</string>
+    <string name="change_or_fix_correction_help">It was always this: the value in effect today is replaced, with no history.</string>
+
+    <!-- Health summary screen -->
+    <string name="summary_title">Health summary</string>
+    <string name="summary_as_of_today">As of today</string>
+    <string name="summary_share">Share summary as text</string>
+    <string name="summary_share_chooser">Share health summary</string>
+    <string name="summary_empty">Nothing to summarize yet. Add medications, indications or providers, and log doses.</string>
+
+    <!-- Plan or edit a change (adjustment) -->
+    <string name="adjust_plan_title">Plan a change</string>
+    <string name="adjust_edit_title">Edit change</string>
+    <string name="adjust_help">Fill in what changes; blank fields keep the value before this date.</string>
+    <string name="adjust_dose_now">%1$s: now %2$s %3$s</string>
+    <string name="adjust_default_dose_now">Default dose: now %1$s %2$s</string>
+    <string name="adjust_strength_now">Strength: now %1$s</string>
+    <string name="adjust_ndc_label">NDC-11 (optional)</string>
+    <string name="adjust_ndc_blank">Blank from this date</string>
+    <string name="adjust_ndc_help_cleared">A different strength has a different NDC. Leave it blank and use the FDA lookup when the change starts.</string>
+    <string name="adjust_ndc_help">Only if it changes. Leave blank to keep the NDC before this date.</string>
+    <string name="adjust_keep_injection">Keep injection change</string>
+    <string name="adjust_injection_help">To change injection details from a date, edit the medication and choose "From a date" when saving.</string>
+    <string name="adjust_note_hint">e.g. increased at 1-month visit</string>
+
+    <!-- Dose log editor -->
+    <string name="dose_log_edit_title">Edit %1$s dose</string>
+    <string name="dose_status_taken">Taken</string>
+    <string name="dose_log_date_taken">Date taken</string>
+    <string name="dose_log_time_taken">Time taken</string>
+    <string name="dose_log_amount">Amount (%1$s)</string>
+
+    <!-- Medication list -->
+    <string name="medications_title">Medications</string>
+    <string name="medications_search">Search medications</string>
+    <string name="medications_add">Add medication</string>
+    <string name="medications_empty">No medications yet. Add one to start tracking doses.</string>
+    <string name="medications_finished">Finished (%1$d)</string>
+
+    <!-- Counts -->
+    <plurals name="medication_count">
+        <item quantity="one">%1$d medication</item>
+        <item quantity="other">%1$d medications</item>
+    </plurals>
+    <plurals name="indication_count">
+        <item quantity="one">%1$d indication</item>
+        <item quantity="other">%1$d indications</item>
+    </plurals>
+
+    <!-- Shared fields and values (more) -->
+    <string name="action_more">More</string>
+    <string name="label_past">Past</string>
+    <string name="field_name_required">Name *</string>
+    <string name="field_notes">Notes</string>
+    <string name="field_phone">Phone</string>
+    <string name="field_email">Email</string>
+    <string name="field_practice">Practice</string>
+    <string name="field_started">Started</string>
+    <string name="field_ended">Ended</string>
+    <string name="field_ends">Ends</string>
+    <string name="field_type">Type</string>
+    <string name="field_status">Status</string>
+    <string name="field_severity">Severity</string>
+    <string name="field_reaction">Reaction</string>
+    <string name="field_diagnosis">Diagnosis</string>
+    <string name="value_not_set">Not set</string>
+    <string name="value_ongoing">Ongoing</string>
+
+    <!-- Providers -->
+    <string name="providers_title">Providers</string>
+    <string name="providers_add">Add provider</string>
+    <string name="providers_empty">No providers yet.</string>
+    <string name="providers_regular">Regular</string>
+    <string name="providers_as_needed">As needed</string>
+    <string name="providers_past">Past providers (%1$d)</string>
+    <string name="providers_care_ended">Care ended %1$s</string>
+    <string name="provider_pcp">PCP</string>
+    <string name="provider_primary_care">Primary care</string>
+    <string name="provider_seen_regularly">Seen regularly</string>
+    <string name="provider_label">Provider</string>
+    <string name="provider_edit">Edit provider</string>
+    <string name="provider_delete">Delete provider</string>
+    <string name="provider_contact">Contact</string>
+    <string name="provider_no_contact">No contact details</string>
+    <string name="provider_call">Call</string>
+    <string name="provider_send_email">Send email</string>
+    <string name="provider_care">Care</string>
+    <string name="provider_indications">Indications they manage</string>
+    <string name="provider_no_indications">No indications linked</string>
+    <string name="provider_medications">Medications they prescribed</string>
+    <string name="provider_no_medications">No medications linked</string>
+    <string name="provider_delete_title">Delete %1$s?</string>
+    <string name="provider_delete_text">This removes the provider.</string>
+    <string name="provider_delete_text_linked">This removes the provider and unlinks %1$s.</string>
+    <string name="field_specialty">Specialty</string>
+    <string name="field_specialty_hint">e.g. Psychiatry</string>
+    <string name="field_practice_or_hospital">Practice or hospital</string>
+    <string name="provider_pcp_switch">Primary care provider</string>
+    <string name="provider_regular_switch">See regularly</string>
+    <string name="provider_regular_switch_help">Off for specialists you only see when needed</string>
+    <string name="provider_care_started">Care started</string>
+    <string name="provider_care_ended">Care ended</string>
+
+    <!-- Indications -->
+    <string name="status_managed_short">Managed</string>
+    <string name="status_remission_short">Remission</string>
+    <string name="indications_title">Indications</string>
+    <string name="indications_add">Add indication</string>
+    <string name="indications_empty">No indications yet.</string>
+    <string name="indications_search">Search indications</string>
+    <string name="indications_none_current">No current indications.</string>
+    <string name="indications_past">Past indications (%1$d)</string>
+    <string name="indications_no_match">No indications match "%1$s".</string>
+    <string name="indication_suspected">Suspected</string>
+    <string name="indication_suspected_help">Not formally diagnosed, such as a symptom or a condition under investigation</string>
+    <string name="indication_secondary_to">Secondary to</string>
+    <string name="indication_secondary_to_help">Pick the indication this one is caused by or follows from, if any</string>
+    <string name="indication_secondary_to_names">Secondary to %1$s</string>
+    <string name="indication_has_secondary">Secondary conditions</string>
+    <string name="indication_ended_on">Ended %1$s</string>
+    <string name="indication_until">Until %1$s</string>
+    <string name="indication_edit">Edit indication</string>
+    <string name="indication_delete">Delete indication</string>
+    <string name="indication_had_again">Had this again</string>
+    <string name="indication_details">Details</string>
+    <string name="indication_ends_with_course">When its medication course ends</string>
+    <string name="indication_diagnosis_suspected">Suspected, not formally diagnosed</string>
+    <string name="indication_diagnosis_diagnosed">Diagnosed</string>
+    <string name="indication_no_providers">No providers linked</string>
+    <string name="indication_medications">Medications for this indication</string>
+    <string name="indication_providers_dialog">Providers helping manage it</string>
+    <string name="indication_delete_text">This removes the indication.</string>
+    <string name="indication_delete_text_linked">This removes the indication and unlinks %1$s.</string>
+    <string name="indication_new_episode">New episode</string>
+    <string name="indication_allergen_required">Allergen *</string>
+    <string name="indication_trigger_required">Trigger *</string>
+    <string name="indication_hint_acute">e.g. Sinus infection</string>
+    <string name="indication_hint_chronic">e.g. ADHD</string>
+    <string name="indication_hint_preventive">e.g. HIV PrEP</string>
+    <string name="indication_hint_drug_allergy">e.g. Penicillin</string>
+    <string name="indication_hint_food_allergy">e.g. Peanuts</string>
+    <string name="indication_hint_environmental_allergy">e.g. Birch pollen</string>
+    <string name="indication_hint_intolerance">e.g. Metformin</string>
+    <string name="indication_kind_acute_help">Short-term, like an infection or injury. Moves to past indications when it ends.</string>
+    <string name="indication_kind_chronic_help">Ongoing, like diabetes or high blood pressure.</string>
+    <string name="indication_kind_preventive_help">Taken to prevent something, like PrEP or PEP. Stays current unless its course ends.</string>
+    <string name="indication_kind_allergy_help">An immune reaction, like hives or anaphylaxis. Medications you link are the ones that treat it.</string>
+    <string name="indication_kind_intolerance_help">A drug you can\'t tolerate, like severe nausea or another side effect. Not an immune reaction, so not an allergy.</string>
+    <string name="indication_allergic_to">Allergic to</string>
+    <string name="indication_reaction_hint">e.g. Hives, swelling</string>
+    <string name="indication_first_reaction">First reaction</string>
+    <string name="indication_diagnosed">Diagnosed</string>
+    <string name="indication_end_date">End date</string>
+    <string name="indication_ends_before_start">Ends before it starts</string>
+    <string name="indication_end_blank_course_date">Blank: ends with its medication course (%1$s)</string>
+    <string name="indication_end_blank_acute">Blank: ends when its medication course ends</string>
+    <string name="indication_end_blank_preventive">Blank: ongoing unless its medication course has an end</string>
+    <string name="indication_end_blank_ongoing">Blank: ongoing</string>
+
+    <!-- Backup passphrase and restore -->
+    <plurals name="item_count">
+        <item quantity="one">%1$d item</item>
+        <item quantity="other">%1$d items</item>
+    </plurals>
+    <string name="action_done">Done</string>
+    <string name="action_change">Change</string>
+    <string name="action_continue">Continue</string>
+    <string name="action_copy">Copy</string>
+    <string name="action_replace">Replace</string>
+    <string name="error_generic">Something went wrong</string>
+    <string name="backup_passphrase_title">Backup passphrase</string>
+    <string name="backup_change_passphrase_title">Change passphrase</string>
+    <string name="backup_reset_passphrase_title">Reset passphrase</string>
+    <string name="backup_recovery_code">Recovery code</string>
+    <string name="backup_code_help">Your recovery code opens every backup made with this passphrase, even if you forget it. Store it somewhere safe and private, like a password manager or on paper.</string>
+    <string name="backup_code_saved">I\'ve saved my recovery code</string>
+    <string name="backup_setup_help">Backups are encrypted with this passphrase. You\'ll need it to restore on another device. Use a few unrelated words that you\'ll remember.</string>
+    <string name="backup_change_help">Earlier backups stay readable: they open with the new passphrase or your recovery code.</string>
+    <string name="backup_show_code_help">Enter your backup passphrase to see your recovery code.</string>
+    <string name="backup_reset_help">Starts over with a new passphrase and recovery code. Backups made before the reset still need the old passphrase or recovery code.</string>
+    <string name="backup_current_passphrase">Current passphrase</string>
+    <string name="backup_passphrase">Passphrase</string>
+    <string name="backup_new_passphrase">New passphrase</string>
+    <string name="backup_confirm_passphrase">Confirm passphrase</string>
+    <plurals name="backup_passphrase_too_short">
+        <item quantity="one">At least %1$d character</item>
+        <item quantity="other">At least %1$d characters</item>
+    </plurals>
+    <string name="backup_passphrase_mismatch">Doesn\'t match</string>
+    <string name="backup_securing">Securing your key…</string>
+    <string name="backup_forgot">Forgot your passphrase?</string>
+    <string name="backup_clip_label">Regimen recovery code</string>
+    <string name="backup_hide_passphrase">Hide passphrase</string>
+    <string name="backup_show_passphrase">Show passphrase</string>
+    <string name="backup_unlock_title">Unlock backup</string>
+    <string name="backup_restore_title">Restore backup</string>
+    <string name="backup_opening">Opening backup…</string>
+    <string name="backup_locked_help">This backup is locked with a different passphrase than this device\'s. Enter the passphrase it was made with, or its recovery code.</string>
+    <string name="backup_backed_up">Backed up %1$s</string>
+    <string name="backup_from_device">from %1$s</string>
+    <string name="backup_unlocking">Unlocking…</string>
+    <string name="backup_unlock">Unlock</string>
+    <string name="backup_not_encrypted">This file isn\'t encrypted.</string>
+    <string name="backup_dose_history_one">Dose history: %1$s</string>
+    <string name="backup_dose_history_range">Dose history: %1$s – %2$s</string>
+    <string name="backup_compared">Compared with this device</string>
+    <string name="backup_matches">This backup matches what\'s on this device.</string>
+    <string name="backup_restoring">Restoring…</string>
+    <string name="backup_restore_section">Restore</string>
+    <string name="backup_merge">Merge into this device</string>
+    <string name="backup_merge_help">Adds what\'s new and keeps the most recently edited version of anything on both. Anything only on this device stays, and so do its reminder and display settings.</string>
+    <string name="backup_replace">Replace this device\'s data</string>
+    <string name="backup_replace_help">Makes this device match the backup exactly, including reminder and display settings.</string>
+    <string name="backup_replace_help_removing">Makes this device match the backup exactly, including reminder and display settings. %1$s only on this device will be removed.</string>
+    <string name="backup_replace_title">Replace this device\'s data?</string>
+    <string name="backup_replace_text">Everything on this device will be replaced with the backup. You can undo this right after.</string>
+    <string name="backup_replace_text_removing">Everything on this device will be replaced with the backup, removing %1$s that aren\'t in it. You can undo this right after.</string>
+    <plurals name="backup_diff_new">
+        <item quantity="one">%1$d new</item>
+        <item quantity="other">%1$d new</item>
+    </plurals>
+    <plurals name="backup_diff_changed">
+        <item quantity="one">%1$d different</item>
+        <item quantity="other">%1$d different</item>
+    </plurals>
+    <plurals name="backup_diff_only_here">
+        <item quantity="one">%1$d only on this device</item>
+        <item quantity="other">%1$d only on this device</item>
+    </plurals>
+    <string name="backup_diff_same">Same as this device</string>
+
+    <!-- Today -->
+    <string name="action_fix">Fix</string>
+    <string name="action_review">Review</string>
+    <string name="action_skip">Skip</string>
+    <string name="action_snooze">Snooze</string>
+    <string name="settings_title">Settings</string>
+    <string name="label_medication">Medication</string>
+    <string name="today_title">Today</string>
+    <string name="today_nothing_scheduled">Nothing scheduled</string>
+    <string name="today_progress">%1$d of %2$d taken</string>
+    <string name="today_subtitle">%1$s · %2$s</string>
+    <string name="today_previous_day">Previous day</string>
+    <string name="today_next_day">Next day</string>
+    <string name="today_go_to_today">Go to today</string>
+    <string name="today_log_extra_dose">Log extra dose</string>
+    <string name="today_reminders_off">Reminders are turned off. Doses won\'t notify you.</string>
+    <string name="today_no_window_one">%1$s has no dose window, so it won\'t appear here or remind you.</string>
+    <plurals name="today_no_window_many">
+        <item quantity="one">%1$d medication has no dose window, so it won\'t appear here or remind you.</item>
+        <item quantity="other">%1$d medications have no dose window, so they won\'t appear here or remind you.</item>
+    </plurals>
+    <plurals name="today_yesterday_missed">
+        <item quantity="one">%1$d dose from yesterday wasn\'t logged.</item>
+        <item quantity="other">%1$d doses from yesterday weren\'t logged.</item>
+    </plurals>
+    <string name="today_from_last_night">From last night</string>
+    <string name="today_logged_today">Logged today</string>
+    <string name="today_logged_this_day">Logged this day</string>
+    <string name="today_log_named">Log %1$s</string>
+    <string name="today_log_named_question">Log %1$s?</string>
+    <string name="today_take_anyway_title">Take %1$s anyway?</string>
+    <string name="today_take_anyway">Take anyway</string>
+    <plurals name="today_take_all_anyway_title">
+        <item quantity="one">Take %1$d anyway?</item>
+        <item quantity="other">Take all %1$d anyway?</item>
+    </plurals>
+    <string name="today_pacing_limits_apply">Pacing limits apply to %1$s.</string>
+    <string name="today_take_all">Take all</string>
+    <string name="today_take_all_n">Take all %1$d</string>
+    <string name="today_hide_doses">Hide doses</string>
+    <string name="today_show_doses">Show doses</string>
+    <string name="today_window_overnight">%1$s (overnight)</string>
+    <plurals name="today_done_taken">
+        <item quantity="one">%1$d taken</item>
+        <item quantity="other">%1$d taken</item>
+    </plurals>
+    <plurals name="today_done_skipped">
+        <item quantity="one">%1$d skipped</item>
+        <item quantity="other">%1$d skipped</item>
+    </plurals>
+    <string name="today_done_last_at">last at %1$s</string>
+    <string name="today_delete_log_entry">Delete %1$s log entry</string>
+    <string name="today_no_medications">No medications yet</string>
+    <string name="today_empty_with_meds">Add a medication and give it a schedule to see doses here.</string>
+    <string name="today_empty_first_run">Add your medications and schedules to start tracking doses, restore a backup, or load demo data to explore.</string>
+    <string name="demo_load">Load demo data</string>
+    <string name="demo_load_title">Load demo data?</string>
+    <string name="demo_load_text">This populates sample medications, indications, providers, and schedules.</string>
+    <string name="pacing_next_dose">The next dose isn\'t due until %1$s.</string>
+    <string name="pacing_daily_limit">You\'ve reached the daily limit (%1$d of %2$s).</string>
+    <string name="pacing_daily_amount_limit">You\'ve reached the daily amount limit for %1$s.</string>
+    <string name="pacing_from_settings">These limits come from this medication\'s settings.</string>
+    <string name="phase_scheduled">Scheduled</string>
+    <string name="phase_now">Now</string>
+    <string name="phase_upcoming">Upcoming</string>
+    <string name="phase_missed">Missed</string>
+    <string name="phase_done">Done</string>
+    <string name="reminder_off">%1$s reminders off</string>
+    <string name="reminder_at">%1$s: reminder at %2$s</string>
+    <string name="reminder_and_alarm">%1$s: reminder at %2$s, alarm at %3$s</string>
+    <string name="status_taken_at">Taken at %1$s</string>
+    <string name="status_skipped">Skipped</string>
+    <string name="status_snoozed_until">Snoozed until %1$s</string>
+    <string name="status_ready">Ready</string>
+    <string name="take_anyway_ellipsis">Take anyway…</string>
+    <string name="take_now">Take now</string>
+    <string name="take_early">Take early</string>
+    <string name="take">Take</string>
+    <string name="taken_on_time">Taken on time</string>
+    <string name="take_different_site">Take at a different site…</string>
+    <string name="mark_taken_on_time">Mark as taken on time (%1$s)</string>
+    <string name="mark_taken_now">Mark as taken now</string>
+    <string name="mark_taken">Mark as taken</string>
+    <string name="mark_skipped">Mark as skipped</string>
+    <string name="mark_not_taken">Mark as not taken</string>
+    <string name="view_medication">View medication</string>
+    <string name="dose_new_from_today">New dose from today</string>
+    <string name="dose_site">Site %1$s</string>
+    <string name="dose_site_line">Site: %1$s</string>
+    <string name="a11y_taken_on_time">Taken on time, at %1$s</string>
+    <string name="a11y_mark_taken_on_time">Mark as taken on time, at %1$s</string>
+    <string name="a11y_open_medication">Open medication</string>
+    <plurals name="a11y_snooze_minutes">
+        <item quantity="one">Snooze %1$d minute</item>
+        <item quantity="other">Snooze %1$d minutes</item>
+    </plurals>
+    <string name="prn_daily_note_today">%1$d of %2$s today</string>
+    <string name="prn_daily_note_that_day">%1$d of %2$s that day</string>
+    <string name="prn_log_label">Log %1$s %2$s</string>
+    <string name="prn_log_other_time_label">%1$s at another time</string>
+    <string name="prn_log_anyway">%1$s anyway…</string>
+    <string name="log_taken_at">Taken %1$s</string>
+    <string name="log_skipped_at">Skipped %1$s</string>
+    <string name="site_choose">Choose a site</string>
+    <string name="site_last_used">Last used: %1$s</string>
+    <string name="site_next_in_rotation">Next in rotation</string>
+    <string name="site_same_as_last">Same as last time</string>
+
+    <!-- Medication detail -->
+    <string name="med_edit">Edit medication</string>
+    <string name="med_delete">Delete medication</string>
+    <string name="med_delete_text">This removes the medication and its schedules. Dose history is kept.</string>
+    <string name="med_default_dose">Default dose: %1$s</string>
+    <string name="med_next_site">Next site: %1$s</string>
+    <string name="med_log_window_dose">Log %1$s dose</string>
+    <string name="med_log_window_dose_early">Log %1$s dose early</string>
+    <string name="med_extra_dose">Extra dose</string>
+    <string name="med_schedules">Schedules</string>
+    <string name="med_no_schedule">No schedule</string>
+    <string name="med_no_schedule_help">Shows under "As needed" on Today</string>
+    <string name="med_dose_from">%1$s %2$s from %3$s</string>
+    <string name="med_changes">Changes</string>
+    <string name="med_plan">Plan</string>
+    <string name="med_no_changes">No changes</string>
+    <string name="med_no_changes_help">Dose steps, tapers and new equipment, by date. Editing a dose after logging asks whether it\'s a change.</string>
+    <string name="med_planned">Planned</string>
+    <string name="med_injection">Injection</string>
+    <string name="med_route">Route</string>
+    <string name="med_per_ml">Per mL</string>
+    <string name="med_device_volume">Device volume</string>
+    <string name="med_vial_size">Vial size</string>
+    <string name="med_ml">%1$s mL</string>
+    <string name="med_needle_hub">%1$s · %2$s hub</string>
+    <string name="med_pen_needle">Pen needle</string>
+    <string name="med_syringe_marks">(%1$s units on a %2$s syringe)</string>
+    <string name="med_draw_volume">Draw volume</string>
+    <string name="med_syringe">Syringe</string>
+    <string name="med_needle_attached">Needle (attached)</string>
+    <string name="med_draw_needle">Draw needle</string>
+    <string name="med_injection_needle">Injection needle</string>
+    <string name="med_site_rotation">Site rotation</string>
+    <string name="med_sites">Sites</string>
+    <string name="med_site_next">Next</string>
+    <string name="med_site_last_used">Last used</string>
+    <string name="med_pacing_limits">Pacing limits</string>
+    <string name="med_min_interval">Minimum time between doses</string>
+    <string name="med_daily_dose_limit">Daily dose limit</string>
+    <string name="med_daily_amount_limit">Daily amount limit</string>
+    <string name="med_dose_per_day_one">%1$s dose per day</string>
+    <string name="med_dose_per_day_many">%1$s doses per day</string>
+    <string name="med_indication">Indication</string>
+    <string name="med_not_linked">Not linked</string>
+    <string name="med_indication_notes">Indication notes</string>
+    <string name="med_prescriber">Prescriber</string>
+    <string name="med_name_pcp">%1$s (PCP)</string>
+    <string name="med_prescribed">Prescribed</string>
+    <string name="med_ndc">NDC</string>
+    <string name="med_manufacturer">Manufacturer</string>
+    <string name="med_recent_doses">Recent doses</string>
+    <string name="med_no_doses">No doses logged yet</string>
+    <string name="med_log_anyway_title">Log %1$s anyway?</string>
+    <string name="med_log_anyway">Log anyway</string>
+    <string name="pacing_daily_limit_reached">You\'ve reached the daily limit.</string>
+    <string name="med_add_schedule_title">Add a schedule?</string>
+    <string name="med_add_schedule_text">Pick when %1$s is due, or skip to track it as needed.</string>
+    <string name="med_add_schedule">Add schedule</string>
+    <string name="med_window_time">%1$s %2$s</string>
+    <string name="med_first_dose">first dose: %1$s</string>
+    <string name="med_last_dose">last dose: %1$s</string>
+    <string name="med_date_range">%1$s – %2$s</string>
+    <string name="med_starts">Starts %1$s</string>
+    <string name="med_from">from %1$s</string>
+    <string name="med_next_date">Next: %1$s</string>
+    <string name="med_then">Then %1$s</string>
+    <string name="med_paused">Paused</string>
+    <string name="med_no_window">No dose window: no doses or reminders until you pick one</string>
+    <string name="med_schedule_options">Schedule options</string>
+
+    <!-- Settings -->
+    <string name="value_off">Off</string>
+    <string name="settings_reminders">Reminders</string>
+    <string name="settings_dose_reminders">Dose reminders</string>
+    <string name="settings_dose_reminders_help">Notify when a dose window opens</string>
+    <string name="settings_end_alarm">End-of-window alarm</string>
+    <string name="settings_end_alarm_help">Ring if a dose is still unlogged when its window ends</string>
+    <string name="settings_discreet">Discreet notifications</string>
+    <string name="settings_discreet_help">Hide medication names and sites on the lock screen</string>
+    <string name="settings_snooze_title">When dismissed, remind again in</string>
+    <string name="settings_snooze_help">Swiping a reminder away (or tapping Snooze in the app) brings it back after this long</string>
+    <string name="settings_minutes_short">%1$d min</string>
+    <string name="settings_minutes_tiny">%1$d m</string>
+    <string name="settings_repeat_title">Remind again if no response</string>
+    <string name="settings_repeat_help">Repeats a reminder you haven\'t acted on, until the window\'s end alarm</string>
+    <string name="settings_confirm">Confirm before logging</string>
+    <string name="settings_confirm_help">Ask before logging a scheduled dose</string>
+    <string name="settings_windows">Dose windows</string>
+    <string name="settings_restore_windows">Restore default windows</string>
+    <string name="settings_restore_windows_help">Morning, Afternoon, Evening, Bedtime</string>
+    <string name="settings_restore_windows_title">Restore default windows?</string>
+    <string name="settings_restore_windows_text">Morning, Afternoon, Evening and Bedtime go back to their default times. Custom windows are removed unless a medication is scheduled in them.</string>
+    <string name="settings_restore_confirm">Restore</string>
+    <string name="settings_permissions">Permissions</string>
+    <string name="settings_tracking">Tracking</string>
+    <string name="settings_providers_help">Keep a list of providers and link them to medications</string>
+    <string name="settings_indications_help">Keep a list of indications and what each medication is for</string>
+    <string name="settings_tracking_help">Turning one off hides it from the app. Nothing you\'ve entered is deleted.</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_theme">Theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="settings_wallpaper_colors">Wallpaper colors</string>
+    <string name="settings_wallpaper_colors_help">Match your device\'s color palette</string>
+    <string name="settings_scanning">Label scanning &amp; lookup</string>
+    <string name="settings_nano_unsupported">This device doesn\'t support on-device Gemini Nano label scanning. You can still enter medications manually and verify them with OpenFDA.</string>
+    <string name="nano_initiating">Initiating download via AICore...</string>
+    <string name="nano_download_failed">Download failed</string>
+    <string name="settings_diagnostics">Diagnostics</string>
+    <string name="settings_test_turn_on">Turn on dose reminders first</string>
+    <string name="settings_test_no_dose">No scheduled dose today to test with</string>
+    <string name="settings_test_uses">Uses %1$s</string>
+    <string name="settings_test_reminder">Send a test reminder</string>
+    <string name="settings_alarm_is_off">End-of-window alarm is off</string>
+    <string name="settings_test_alarm">Test the end-of-window alarm</string>
+    <string name="settings_backup">Backup</string>
+    <string name="settings_export_help">Save an encrypted file with everything on this device</string>
+    <string name="settings_export_help_setup">Set a passphrase, then save an encrypted file</string>
+    <string name="settings_export">Export backup</string>
+    <string name="settings_restore">Restore from backup</string>
+    <string name="settings_restore_help">Preview a backup file, then merge it or replace this device\'s data</string>
+    <string name="settings_export_plain">Export unencrypted</string>
+    <string name="settings_export_plain_help">Readable JSON for other tools. Anyone with the file can read it.</string>
+    <string name="settings_change_passphrase">Change backup passphrase</string>
+    <string name="settings_change_passphrase_help">Earlier backups stay readable</string>
+    <string name="settings_show_code">Show recovery code</string>
+    <string name="settings_show_code_help">Opens your backups if you forget the passphrase</string>
+    <string name="settings_passphrase_not_set">Not set up yet</string>
+    <string name="settings_danger">Danger zone</string>
+    <string name="settings_demo_help">Replace everything with sample medications</string>
+    <string name="settings_demo_text">This replaces your medications, schedules and dose history with sample data.</string>
+    <string name="settings_demo_loaded">Demo data loaded.</string>
+    <string name="settings_delete_all">Delete all data</string>
+    <string name="settings_delete_all_help">Medications, providers, indications and dose history</string>
+    <string name="settings_delete_all_title">Delete all data?</string>
+    <string name="settings_delete_all_text">This permanently removes every medication, provider, indication and dose log. Copy a backup first if you might need it.</string>
+    <string name="settings_delete_all_confirm">Delete everything</string>
+    <string name="settings_all_deleted">All data deleted.</string>
+    <string name="settings_plain_title">Export without encryption?</string>
+    <string name="settings_plain_text">The file will contain your medications, doses and history in plain text. Anyone who gets the file, or any app or cloud service it\'s stored in, can read it.</string>
+    <string name="settings_plain_confirm">Export</string>
+    <string name="settings_label_name">Your name as printed on labels</string>
+    <string name="settings_label_name_help">Used by on-device Gemini Nano as a filter so your printed name is never misread as a medication brand or generic name. Stays entirely on-device; only required if you plan to use label scanning.</string>
+
+    <!-- Dose windows -->
+    <string name="window_reminders_off">Reminders off</string>
+    <string name="window_reminder_and_alarm">Reminder and alarm</string>
+    <string name="window_reminder_only">Reminder only</string>
+    <string name="window_summary">%1$s · %2$s</string>
+    <string name="window_add">Add window</string>
+    <string name="window_edit">Edit window</string>
+    <string name="window_starts">Starts</string>
+    <string name="window_ends_next_morning">%1$s · ends the next morning</string>
+    <string name="window_same_time">Start and end can\'t be the same time</string>
+    <string name="duration_hours">%1$d h</string>
+    <string name="duration_minutes">%1$d min</string>
+    <string name="window_reminder_switch">Reminder when the window opens</string>
+    <string name="window_reminders_off_in_settings">Dose reminders are off in Settings</string>
+    <string name="window_alarm_switch">Alarm if still unlogged at the end</string>
+    <string name="window_alarms_off_in_settings">End-of-window alarms are off in Settings</string>
+    <string name="window_delete">Delete window</string>
+    <string name="window_delete_none_scheduled">No medications are scheduled in this window.</string>
+    <string name="window_delete_choose">Choose where the doses in this window move:</string>
+    <string name="window_name_time">%1$s · %2$s</string>
+    <string name="window_delete_what_changes">What changes:</string>
+    <string name="window_delete_change">%1$s: %2$s → %3$s</string>
+    <string name="window_delete_loses_dose">One fewer dose each day, because it\'s already scheduled in that window.</string>
+    <string name="window_delete_and_move">Delete and move</string>
+    <string-array name="window_name_presets">
+        <item>Morning</item>
+        <item>Breakfast</item>
+        <item>Midday</item>
+        <item>Lunch</item>
+        <item>Afternoon</item>
+        <item>Dinner</item>
+        <item>Evening</item>
+        <item>Bedtime</item>
+        <item>Late night</item>
+    </string-array>
+
+    <!-- First-run setup and permissions -->
+    <string name="setup_title">Permissions &amp; System Setup</string>
+    <string name="setup_intro_nano">Configure notification reliability and optional label scanning features. You can change these anytime in Settings:</string>
+    <string name="setup_intro">Configure notification reliability for your dose reminders and optional medication lookup. You can change these anytime in Settings:</string>
+    <string name="setup_reminders_timing">Dose Reminders &amp; Timing</string>
+    <string name="setup_track_question">What would you like to track?</string>
+    <string name="setup_track_help">Medications and doses are always tracked. These are optional; you can change them in Settings.</string>
+    <string name="setup_providers_help">Who prescribed each medication</string>
+    <string name="setup_indications_help">What each medication is for</string>
+    <string name="setup_scanning_optional">Label Scanning &amp; Lookup (Optional)</string>
+    <string name="setup_lookup_optional">Medication Lookup (Optional)</string>
+    <string name="setup_nano_help">On-device AI extracts medication details from prescription bottle labels without sending images to the cloud.</string>
+    <string name="setup_name_title">Your Name on Labels (Optional)</string>
+    <string name="setup_name_help">Label scanning ignores this name so it\'s never mistaken for a medication. It stays on your device.</string>
+    <string name="setup_name_label">Name as printed on labels</string>
+    <string name="setup_name_hint">e.g. Jane Doe</string>
+    <string name="setup_all_set">All Set</string>
+    <string name="setup_done_for_now">Done for Now</string>
+    <string name="perm_allow">Allow</string>
+    <string name="perm_exempt">Exempt</string>
+    <string name="perm_granted">Granted</string>
+    <string name="perm_active">Active</string>
+    <string name="perm_notifications">1. Notifications</string>
+    <string name="perm_notifications_granted">Granted — persistent window notifications &amp; alarms can be displayed</string>
+    <string name="perm_notifications_needed">Required to display active dose window notifications and alarms</string>
+    <string name="perm_exact_alarms">2. Alarms &amp; Reminders (Exact Timing)</string>
+    <string name="perm_exact_alarms_granted">Granted — window start &amp; end triggers fire on the exact minute</string>
+    <string name="perm_exact_alarms_needed">Required so Android Doze mode does not delay window notifications</string>
+    <string name="perm_full_screen">3. Full-Screen Alarms</string>
+    <string name="perm_full_screen_granted">Granted — end-of-window alarms open full screen over the lock screen</string>
+    <string name="perm_full_screen_needed">Without this, end-of-window alarms only appear as a heads-up notification</string>
+    <string name="perm_battery">4. Unrestricted Background Battery</string>
+    <string name="perm_battery_granted">Granted — exempt from background battery throttling</string>
+    <string name="perm_battery_needed">Recommended so overnight/morning windows wake reliably</string>
+    <string name="nano_ready">Gemini Nano is downloaded and ready for on-device label parsing</string>
+    <string name="nano_downloading">Downloading model via AICore (~1.5 GB)...</string>
+    <string name="nano_downloadable">Ready for download (~1.5 GB) — requires Wi-Fi and power/charging</string>
+    <string name="nano_unsupported">Not supported on this hardware (manual OpenFDA search works everywhere)</string>
+    <string name="nano_checking">Checking on-device AI status...</string>
+    <string name="nano_aicore_settings">AICore Settings</string>
+    <string name="nano_download">Download</string>
+    <string name="nano_title">On-Device AI (Gemini Nano / AICore)</string>
+    <string name="fda_title">OpenFDA Medication Lookup</string>
+    <string name="fda_help">Allow medication lookup via FDA API. Medication data (such as drug name, strength, or NDC) will be sent to official OpenFDA servers for autofill and verification. No personally identifiable information (PII) is included.</string>
+
+    <!-- Medication and schedule editors -->
+    <string name="action_collapse">Collapse</string>
+    <string name="action_expand">Expand</string>
+    <string name="action_discard">Discard</string>
+    <string name="action_remove">Remove</string>
+    <string name="label_lot">Lot: %1$s</string>
+    <string name="label_exp">Exp: %1$s</string>
+    <string name="label_prescriber">Prescriber: %1$s</string>
+    <string name="editor_autofilled_meta">Autofilled (%1$s • %2$s)</string>
+    <string name="editor_autofilled">Autofilled from FDA NDC (%1$s)</string>
+    <string name="editor_verified">Verified via OpenFDA (%1$s • Matched: %2$s)</string>
+    <string name="editor_label_not_detected">Could not detect medication name or NDC on the label. Try moving closer or check lighting.</string>
+    <string name="editor_parsed_compound">Parsed compounded medication label (no FDA NDC applicable)</string>
+    <string name="editor_parsed_cross_referencing">Parsed label text — cross-referencing OpenFDA…</string>
+    <string name="editor_parsed_on_device">Parsed label text on-device</string>
+    <string name="editor_reading_label">Reading label text…</string>
+    <string name="editor_analyze_failed">Failed to analyze label.</string>
+    <string name="editor_analyzing_text">Analyzing label text with on-device Gemini Nano…</string>
+    <string name="editor_analyze_text_failed">Failed to analyze label text.</string>
+    <string name="editor_ndc_not_found">NDC not found</string>
+    <string name="editor_default_dose">Default Dose</string>
+    <string name="editor_device_volume">Device Volume</string>
+    <string name="editor_vial_size">Vial Size</string>
+    <string name="editor_draw_gauge">Draw Gauge</string>
+    <string name="editor_draw_length">Draw Length</string>
+    <string name="editor_needle_gauge">Needle Gauge</string>
+    <string name="editor_inject_gauge">Inject Gauge</string>
+    <string name="editor_needle_length">Needle Length</string>
+    <string name="editor_inject_length">Inject Length</string>
+    <string name="editor_min_interval">Min Interval</string>
+    <string name="editor_max_daily_doses">Max Daily Doses</string>
+    <string name="editor_max_daily_amount">Max Daily Amount</string>
+    <string name="editor_fix_to_save">Fix to save: %1$s</string>
+    <string name="editor_scan_label">Scan Label</string>
+    <string name="editor_label_photo">Label Photo</string>
+    <string name="editor_match_fda">Match FDA</string>
+    <string name="editor_scanning_help">Scanning reads the label on this device. A small bottle may need a few photos. Check the results against your bottle.</string>
+    <string name="editor_brand_name">Brand Name (Optional)</string>
+    <string name="editor_brand_name_hint">e.g. Augmentin, Tylenol, Advil</string>
+    <string name="editor_formula_name">Formula / Generic Name *</string>
+    <string name="editor_formula_name_hint">e.g. Amoxicillin / Clavulanate, Acetaminophen</string>
+    <string name="editor_strength">Strength *</string>
+    <string name="editor_strength_hint">e.g. 200 mg/mL</string>
+    <string name="editor_form">Form</string>
+    <string name="editor_unit">Unit</string>
+    <string name="editor_pen_details">Pen / Auto-injector Details</string>
+    <string name="editor_vial_details">Vial, Syringe &amp; Needle Details</string>
+    <string name="editor_route">Administration Route (IM vs SC)</string>
+    <string name="editor_device_volume_ml">Device Volume (mL)</string>
+    <string name="editor_vial_size_ml">Vial Size (mL)</string>
+    <string name="editor_size_ml">Size (mL)</string>
+    <string name="editor_what_kind">What kind</string>
+    <string name="editor_what_kind_hint">Glass syringe</string>
+    <string name="editor_draw_gauge_label">Draw Gauge (G)</string>
+    <string name="editor_draw_length_label">Draw Length (in)</string>
+    <string name="editor_pen_needle_help">Pen needle — only for multi-dose pens with screw-on needles (e.g. insulin). Leave blank for auto-injectors.</string>
+    <string name="editor_needle_attached_help">The needle is attached to this syringe.</string>
+    <string name="editor_needle_gauge_label">Needle Gauge (G)</string>
+    <string name="editor_inject_gauge_label">Inject Gauge (G)</string>
+    <string name="editor_needle_length_label">Needle Length (in)</string>
+    <string name="editor_inject_length_label">Inject Length (in)</string>
+    <string name="editor_sites_required">Add at least one site, or turn sites off.</string>
+    <string name="editor_site_preset">Load Site Preset</string>
+    <string name="editor_no_sites">No sites yet</string>
+    <plurals name="editor_site_count">
+        <item quantity="one">%1$d site</item>
+        <item quantity="other">%1$d sites</item>
+    </plurals>
+    <string name="editor_site_numbered">%1$d. %2$s</string>
+    <string name="editor_move_up">Move up</string>
+    <string name="editor_move_down">Move down</string>
+    <string name="editor_remove_site">Remove site</string>
+    <string name="editor_add_custom_site">Add Custom Site</string>
+    <string name="editor_summary_interval">Min %1$sh interval</string>
+    <string name="editor_summary_max_doses">Max %1$s doses/day</string>
+    <string name="editor_pacing_summary_empty">Minimum time between doses &amp; daily limits</string>
+    <string name="editor_pacing_title">Pacing &amp; Daily Limits (Optional)</string>
+    <string name="editor_min_interval_hours">Min Interval (Hours)</string>
+    <string name="editor_min_interval_hint">e.g. 4</string>
+    <string name="editor_max_daily_doses_hint">e.g. 2</string>
+    <string name="editor_max_daily_amount_unit">Max Daily Amount (%1$s)</string>
+    <string name="editor_max_daily_amount_hint">Optional total daily limit</string>
+    <string name="editor_summary_ndc">NDC %1$s</string>
+    <string name="editor_optional_summary_providers">NDC-11, manufacturer, prescriber, prescribed date &amp; notes</string>
+    <string name="editor_optional_summary">NDC-11, manufacturer, prescribed date &amp; notes</string>
+    <string name="editor_optional_title">Optional Rx &amp; Drug Details</string>
+    <string name="editor_ndc_hint">e.g. 00781-1852-20</string>
+    <string name="editor_lookup">Lookup</string>
+    <string name="editor_none_selected">None selected</string>
+    <string name="editor_prescribed_date">Prescribed date</string>
+    <string name="editor_indication_notes">Indication Notes</string>
+    <string name="editor_indication_notes_hint">Supplemental indication details</string>
+    <string name="editor_instructions">Instructions / Notes</string>
+    <plurals name="editor_photos_taken">
+        <item quantity="one">%1$d photo taken</item>
+        <item quantity="other">%1$d photos taken</item>
+    </plurals>
+    <string name="editor_photos_help">If the label wraps around the bottle, turn it a little and add another photo. Overlap generously: each line, especially the drug name, should appear whole in at least one photo.</string>
+    <string name="editor_read_label">Read label</string>
+    <string name="editor_add_another">Add another</string>
+    <string name="editor_scan_title">Scan or Paste Medication Label Text</string>
+    <string name="editor_scan_help">Pharmacy prescription vials, compounded bottles, and OTC containers print drug name, strength, manufacturer (MFG), NDC, and prescriber in text rather than an FDA barcode.</string>
+    <string name="editor_camera">Camera</string>
+    <string name="editor_photos">Photos</string>
+    <string name="editor_paste_label">Or Paste Printed Label Text</string>
+    <string name="editor_paste_hint">Paste text copied from a prescription label or pharmacy portal…</string>
+    <string name="editor_parse">Parse &amp; Cross-Reference</string>
+    <string name="editor_selected_match">Selected FDA match (%1$s • %2$s)</string>
+    <string name="editor_kept_fields">Kept entered/scanned fields without assigning a specific manufacturer NDC</string>
+    <string name="editor_confirm_match">Confirm Exact Medication Match</string>
+    <string name="editor_candidate_line">%1$s • Mfg: %2$s • NDC: %3$s</string>
+    <string name="editor_unspecified">Unspecified</string>
+    <string name="editor_matched">Matched: %1$s</string>
+    <string name="editor_note">Note: %1$s</string>
+    <string name="editor_keep_fields">Keep Fields Only (No Specific NDC)</string>
+    <string name="editor_previous_month">Previous month</string>
+    <string name="editor_next_month">Next month</string>
+    <string name="editor_no_dates">No dates selected</string>
+    <plurals name="editor_dates_selected">
+        <item quantity="one">%1$d date selected</item>
+        <item quantity="other">%1$d dates selected</item>
+    </plurals>
+    <string name="editor_clear_all">Clear all</string>
+    <plurals name="editor_more_dates">
+        <item quantity="one">+%1$d more</item>
+        <item quantity="other">+%1$d more</item>
+    </plurals>
+    <string name="schedule_pick_start">Pick a start date</string>
+    <string name="schedule_end_before_start">End date can\'t be before the start date</string>
+    <string name="schedule_last_before_first">On a single-day schedule the last dose can\'t come before the first</string>
+    <string name="schedule_select_window">Select at least one dose window</string>
+    <string name="schedule_select_day">Select at least one day</string>
+    <string name="schedule_select_date">Select at least one date</string>
+    <string name="schedule_edit">Edit schedule</string>
+    <string name="schedule_how_often">How often</string>
+    <string name="schedule_dose">Dose</string>
+    <string name="schedule_unit_mismatch">The daily amount limit is in %1$s, so doses in %2$s won\'t count toward it.</string>
+    <string name="schedule_every_days">Every how many days</string>
+    <string name="schedule_start_date">Start date</string>
+    <string name="schedule_first_dose_cycle">First dose of the cycle</string>
+    <string name="schedule_last_day_inclusive">Last day, inclusive</string>
+    <string name="schedule_days">Days</string>
+    <string name="schedule_dates">Dates</string>
+    <string name="schedule_first_last_day">First and last day</string>
+    <string name="schedule_first_last_help">For courses that start or finish partway through a day, like an antibiotic picked up in the evening.</string>
+    <string name="schedule_first_dose">First dose (start date)</string>
+    <string name="schedule_last_dose">Last dose (end date)</string>
+
+    <!-- Alarm screen and navigation -->
+    <string name="action_dismiss">Dismiss</string>
+    <string name="alarm_dose_window">Dose Window</string>
+    <string name="alarm_window_ended">DOSE WINDOW ENDED • %1$s</string>
+    <string name="alarm_all_recorded">All doses for this window have already been recorded.</string>
+    <string name="alarm_open_app">Open App</string>
+    <plurals name="alarm_take_ready">
+        <item quantity="one">Take %1$d Ready</item>
+        <item quantity="other">Take %1$d Ready</item>
+    </plurals>
+    <string name="alarm_take_dose">Take Dose</string>
+    <string name="alarm_take_all">Take All (%1$d)</string>
+    <string name="alarm_snooze">Snooze %1$dm</string>
+    <string name="alarm_skip_dose">Skip Dose</string>
+    <string name="alarm_skip_all">Skip All</string>
+    <string name="alarm_dose">Dose: %1$s</string>
+    <string name="alarm_site_last">(Last: %1$s)</string>
+    <string name="alarm_draw">Draw: %1$s</string>
+    <string name="alarm_inject">Inject: %1$s</string>
 </resources>

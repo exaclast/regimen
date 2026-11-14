@@ -14,7 +14,7 @@ The one list of everything still to do. Last reconciled 2026-11-10 against commi
 
 ## How to use this file
 
-**Adding something.** Add one row in the matching area, using the next free number (next: **T-116**). IDs never change
+**Adding something.** Add one row in the matching area, using the next free number (next: **T-121**). IDs never change
 or get reused. One sentence is enough; anything longer goes in `designs/`. An audit or device pass adds rows here, and its
 raw report goes in `archive/`.
 
@@ -100,6 +100,9 @@ Small, high-value and independent of each other. Suggested order (T-111 to T-113
 | T-023 | "Other time" for a due scheduled dose accepts any past date, so today's dose can be recorded as taken weeks ago. Limit the range or warn | P3 | S | — | new |
 | T-024 | Choose the dose amount when logging an extra dose (always the default today) | P3 | S | — | new |
 | T-114 | Reminders and the alarm screen don't say a dose is new; only Today flags the first dose after a titration step | P3 | S | — | T-113 |
+| T-118 | Localization phase 2: enum labels. About 14 enums hold English `displayName`s (`DoseUnit`, `MedicationForm`, `IndicationKind`, `ScheduleFrequencyType`, `Adjustments.Part`, ...). Give each a `@StringRes` label and resolve it in the UI; keep a `displayName(context)` helper so call sites barely change. Includes the default window names, site presets, `NeedleHub` colors and the "the X and Y" sentence in the change dialog | P2 | M | — | T-120 |
+| T-119 | Localization phase 3: text built outside Compose. `CareSummary`, `volumeHint`, `PacingEvaluation.warningText`/`nextAllowedText`, `ScheduleText`, `NumberInput` errors, `FdaNdcLookupService` messages, `RegimenViewModel` messages and the notification text take a string provider (a `Resources` in the app, a fake English one in tests) instead of returning English | P2 | L | — | T-118 |
+| T-120 | Localization phase 1 left-overs: a lint check for hardcoded Compose text (Android Lint only checks XML), and the pre-existing `MissingPermission` lint error in `DoseNotificationManager` (line 634) that makes `lintDebug` fail | P3 | S | — | — |
 | T-115 | "Plan a change" can't set injection details: they change from a date only through the medication editor's "From a date". Fine for now; revisit if planning equipment changes ahead is common | P3 | M | — | T-113 |
 
 ### Medication data and label scanning
@@ -244,6 +247,7 @@ Shipped, but never confirmed on a device. Clear these opportunistically; if one 
 | Snooze with the app killed | While a window is open, snooze, leave the app, `adb shell am kill com.exaclast.regimen`, wait | The reminder alerts with sound | B6 |
 | Alert after boot | With a window open (or just closed) and a dose unlogged, reboot the phone | One alert for that window after boot; a snooze that ended while off alerts too | T-002 |
 | Allergy links and narrow phones | Link an antihistamine to an allergy; open the Type selector on a 360 dp phone | The medication editor offers the allergy under its "Drug/Food/Environmental allergies" heading; the Type chips wrap cleanly with five types. Also add an Intolerance (drug only, e.g. Metformin) and check it lists beside drug allergies, labelled "Intolerance", with no allergen-type selector. (Create, list, detail and the Suspected section were checked on the Fold emulator before the Intolerance type was added, T-116/T-117.) | T-117 |
+| Secondary indication | Edit an indication, pick another under "Secondary to", save | The list line says "Secondary to X"; X's page lists it under "Secondary conditions"; the health summary line says "secondary to X" | Secondary indications |
 | Suspected, switched off | Edit a suspected indication and turn Suspected off | It moves from "Suspected" back under its kind | T-116 |
 | Snooze across reboot | Repeat reminders off, snooze, reboot, wait | The reminder comes back | B5 |
 | As-needed unit | Log an as-needed dose from its card | Log matches the amount and unit on the card | B10 |

@@ -23,7 +23,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.exaclast.regimen.R
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -62,7 +64,7 @@ fun LogTimeDialog(
       ) {
         Text(doseLabel, style = MaterialTheme.typography.bodyLarge)
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-          listOf("Now", "Other time").forEachIndexed { index, label ->
+          listOf(stringResource(R.string.log_time_now), stringResource(R.string.log_time_other)).forEachIndexed { index, label ->
             SegmentedButton(
               selected = otherTime == (index == 1),
               onClick = { otherTime = index == 1 },
@@ -71,11 +73,11 @@ fun LogTimeDialog(
           }
         }
         if (otherTime) {
-          DatePickerField(label = "Date", valueIso = dateIso, onValueChange = { dateIso = it }, allowClear = false)
-          TimePickerField(label = "Time", hour = hour, minute = minute, onTimeChange = { h, m -> hour = h; minute = m })
+          DatePickerField(label = stringResource(R.string.field_date), valueIso = dateIso, onValueChange = { dateIso = it }, allowClear = false)
+          TimePickerField(label = stringResource(R.string.field_time), hour = hour, minute = minute, onTimeChange = { h, m -> hour = h; minute = m })
           if (inFuture) {
             Text(
-              "That time hasn't happened yet.",
+              stringResource(R.string.log_time_future),
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.error,
             )
@@ -84,8 +86,8 @@ fun LogTimeDialog(
         OutlinedTextField(
           value = note,
           onValueChange = { note = it },
-          label = { Text("Note (optional)") },
-          placeholder = { Text("e.g. headache, 6/10") },
+          label = { Text(stringResource(R.string.field_note_optional)) },
+          placeholder = { Text(stringResource(R.string.log_time_note_hint)) },
           maxLines = 3,
           modifier = Modifier.fillMaxWidth(),
         )
@@ -95,8 +97,8 @@ fun LogTimeDialog(
       Button(
         onClick = { onConfirm(if (otherTime) takenAt else null, note.trim().takeIf { it.isNotEmpty() }) },
         enabled = !otherTime || (takenAt != null && !inFuture),
-      ) { Text("Log dose") }
+      ) { Text(stringResource(R.string.action_log_dose)) }
     },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
 }

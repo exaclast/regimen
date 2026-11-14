@@ -58,9 +58,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.exaclast.regimen.R
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.ui.NumberInput
 import java.time.Instant
@@ -217,7 +219,7 @@ fun ConfirmDialog(
         },
       ) { Text(confirmLabel) }
     },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
 }
 
@@ -232,7 +234,7 @@ fun EditorScaffold(
   onSave: () -> Unit,
   saveEnabled: Boolean,
   modifier: Modifier = Modifier,
-  saveLabel: String = "Save",
+  saveLabel: String = stringResource(R.string.action_save),
   banner: (@Composable () -> Unit)? = null,
   content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -242,7 +244,7 @@ fun EditorScaffold(
       TopAppBar(
         title = { Text(title, maxLines = 1) },
         navigationIcon = {
-          IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close") }
+          IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_close)) }
         },
         actions = {
           TextButton(onClick = onSave, enabled = saveEnabled) { Text(saveLabel) }
@@ -300,7 +302,7 @@ fun DatePickerField(
     Box(
       modifier = Modifier
         .matchParentSize()
-        .clickable(onClickLabel = "Choose $label") { open = true },
+        .clickable(onClickLabel = stringResource(R.string.choose_field, label)) { open = true },
     )
   }
   if (open) {
@@ -315,7 +317,7 @@ fun DatePickerField(
             onValueChange(Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate().toString())
           }
           open = false
-        }) { Text("OK") }
+        }) { Text(stringResource(R.string.action_ok)) }
       },
       dismissButton = {
         Row {
@@ -323,9 +325,9 @@ fun DatePickerField(
             TextButton(onClick = {
               onValueChange("")
               open = false
-            }) { Text("Clear") }
+            }) { Text(stringResource(R.string.action_clear)) }
           }
-          TextButton(onClick = { open = false }) { Text("Cancel") }
+          TextButton(onClick = { open = false }) { Text(stringResource(R.string.action_cancel)) }
         }
       },
     ) {
@@ -362,12 +364,12 @@ fun DateRangePickerDialog(
         },
         enabled = state.selectedStartDateMillis != null,
       ) {
-        Text("Add range")
+        Text(stringResource(R.string.action_add_range))
       }
     },
     dismissButton = {
       TextButton(onClick = onDismissRequest) {
-        Text("Cancel")
+        Text(stringResource(R.string.action_cancel))
       }
     },
   ) {
@@ -375,7 +377,7 @@ fun DateRangePickerDialog(
       state = state,
       title = {
         Text(
-          text = "Select date range",
+          text = stringResource(R.string.select_date_range),
           modifier = Modifier.padding(start = 24.dp, top = 16.dp, bottom = 8.dp),
           style = MaterialTheme.typography.titleMedium,
         )
@@ -408,7 +410,7 @@ fun TimePickerField(
     Box(
       modifier = Modifier
         .matchParentSize()
-        .clickable(onClickLabel = "Choose $label") { open = true },
+        .clickable(onClickLabel = stringResource(R.string.choose_field, label)) { open = true },
     )
   }
   if (open) {
@@ -424,9 +426,9 @@ fun TimePickerField(
         TextButton(onClick = {
           onTimeChange(state.hour, state.minute)
           open = false
-        }) { Text("OK") }
+        }) { Text(stringResource(R.string.action_ok)) }
       },
-      dismissButton = { TextButton(onClick = { open = false }) { Text("Cancel") } },
+      dismissButton = { TextButton(onClick = { open = false }) { Text(stringResource(R.string.action_cancel)) } },
     ) {
       TimePicker(state = state)
     }

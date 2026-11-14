@@ -62,11 +62,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.exaclast.regimen.MainActivity
+import com.exaclast.regimen.R
 import com.exaclast.regimen.data.RegimenRepository
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.ScheduledDoseItem
@@ -358,9 +361,9 @@ fun DoseAlarmScreen(
         color = MaterialTheme.colorScheme.onSurface,
       )
 
-      val bucketTitle = bucket?.name ?: "Dose Window"
+      val bucketTitle = bucket?.name ?: stringResource(R.string.alarm_dose_window)
       Text(
-        text = "DOSE WINDOW ENDED • $bucketTitle",
+        text = stringResource(R.string.alarm_window_ended, bucketTitle),
         style = MaterialTheme.typography.labelLarge.copy(
           fontWeight = FontWeight.Bold,
           letterSpacing = 1.2.sp,
@@ -384,7 +387,7 @@ fun DoseAlarmScreen(
             contentAlignment = Alignment.Center,
           ) {
             Text(
-              text = "All doses for this window have already been recorded.",
+              text = stringResource(R.string.alarm_all_recorded),
               style = MaterialTheme.typography.bodyLarge,
               textAlign = TextAlign.Center,
               modifier = Modifier.padding(24.dp),
@@ -399,7 +402,7 @@ fun DoseAlarmScreen(
             .height(56.dp),
           shape = RoundedCornerShape(16.dp),
         ) {
-          Text("Dismiss")
+          Text(stringResource(R.string.action_dismiss))
         }
       } else {
         // Items list
@@ -421,13 +424,13 @@ fun DoseAlarmScreen(
         // Doses over a pacing limit are left out of Take; each card says why.
         val readyItems = activeItems.filter { it.pacing.canTakeNow }
         val takeLabel = when {
-          readyItems.isEmpty() -> "Open App"
-          readyItems.size < count -> "Take ${readyItems.size} Ready"
-          count == 1 -> "Take Dose"
-          else -> "Take All ($count)"
+          readyItems.isEmpty() -> stringResource(R.string.alarm_open_app)
+          readyItems.size < count -> pluralStringResource(R.plurals.alarm_take_ready, readyItems.size, readyItems.size)
+          count == 1 -> stringResource(R.string.alarm_take_dose)
+          else -> stringResource(R.string.alarm_take_all, count)
         }
-        val snoozeLabel = "Snooze ${snapshot.settings.snoozeMinutes}m"
-        val skipLabel = if (count == 1) "Skip Dose" else "Skip All"
+        val snoozeLabel = stringResource(R.string.alarm_snooze, snapshot.settings.snoozeMinutes)
+        val skipLabel = stringResource(if (count == 1) R.string.alarm_skip_dose else R.string.alarm_skip_all)
 
         Column(
           modifier = Modifier.fillMaxWidth(),
@@ -521,7 +524,7 @@ private fun AlarmItemCard(item: ScheduledDoseItem) {
       Spacer(Modifier.height(6.dp))
 
       Text(
-        text = "Dose: ${item.formattedDoseInstruction()}",
+        text = stringResource(R.string.alarm_dose, item.formattedDoseInstruction()),
         style = MaterialTheme.typography.bodyLarge,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
@@ -545,9 +548,9 @@ private fun AlarmItemCard(item: ScheduledDoseItem) {
             modifier = Modifier.size(16.dp),
           )
           Spacer(Modifier.width(4.dp))
-          val lastInfo = item.lastSiteUsed?.let { " (Last: $it)" } ?: ""
+          val lastInfo = item.lastSiteUsed?.let { " " + stringResource(R.string.alarm_site_last, it) } ?: ""
           Text(
-            text = "Site: ${item.suggestedSite}$lastInfo",
+            text = stringResource(R.string.dose_site_line, item.suggestedSite) + lastInfo,
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
             color = MaterialTheme.colorScheme.primary,
           )
@@ -555,8 +558,8 @@ private fun AlarmItemCard(item: ScheduledDoseItem) {
       }
 
       med.injectableDetails?.let { inj ->
-        val draw = inj.formattedDrawNeedle()?.takeUnless { med.form.isPrefilledInjector }?.let { "Draw: $it" }
-        val inject = inj.formattedInjectNeedle()?.let { "Inject: $it" }
+        val draw = inj.formattedDrawNeedle()?.takeUnless { med.form.isPrefilledInjector }?.let { stringResource(R.string.alarm_draw, it) }
+        val inject = inj.formattedInjectNeedle()?.let { stringResource(R.string.alarm_inject, it) }
         val needles = listOfNotNull(draw, inject).joinToString(" • ")
         if (needles.isNotEmpty()) {
           Spacer(Modifier.height(4.dp))

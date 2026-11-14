@@ -25,7 +25,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.exaclast.regimen.R
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.CareSummary
 import com.exaclast.regimen.ui.components.GroupItem
@@ -43,15 +45,17 @@ fun CareSummaryScreen(snapshot: RegimenSnapshot, onBack: () -> Unit) {
   val context = LocalContext.current
   val summary = remember(snapshot) { CareSummary.build(snapshot, formatTaken = UiFormat::dateTime, formatDate = { UiFormat.date(it, withWeekday = false) }) }
   val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+  val subject = stringResource(R.string.summary_title)
+  val chooserTitle = stringResource(R.string.summary_share_chooser)
 
   Scaffold(
     modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
     topBar = {
       MediumFlexibleTopAppBar(
-        title = { Text("Health summary") },
-        subtitle = { Text(summary.patientName.ifEmpty { "As of today" }) },
+        title = { Text(subject) },
+        subtitle = { Text(summary.patientName.ifEmpty { stringResource(R.string.summary_as_of_today) }) },
         navigationIcon = {
-          IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+          IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
         },
         actions = {
           IconButton(
@@ -59,20 +63,20 @@ fun CareSummaryScreen(snapshot: RegimenSnapshot, onBack: () -> Unit) {
               val text = CareSummary.toText(summary, asOf = UiFormat.date(LocalDate.now(), withWeekday = false))
               val send = Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"
-                putExtra(Intent.EXTRA_SUBJECT, "Health summary")
+                putExtra(Intent.EXTRA_SUBJECT, subject)
                 putExtra(Intent.EXTRA_TEXT, text)
               }
-              context.startActivityOrIgnore(Intent.createChooser(send, "Share health summary"))
+              context.startActivityOrIgnore(Intent.createChooser(send, chooserTitle))
             },
             enabled = !summary.isEmpty,
-          ) { Icon(Icons.Default.Share, contentDescription = "Share summary as text") }
+          ) { Icon(Icons.Default.Share, contentDescription = stringResource(R.string.summary_share)) }
         },
         scrollBehavior = scrollBehavior,
       )
     },
   ) { padding ->
     if (summary.isEmpty) {
-      EmptyListMessage("Nothing to summarize yet. Add medications, indications or providers, and log doses.", Modifier.padding(padding))
+      EmptyListMessage(stringResource(R.string.summary_empty), Modifier.padding(padding))
       return@Scaffold
     }
     LazyColumn(

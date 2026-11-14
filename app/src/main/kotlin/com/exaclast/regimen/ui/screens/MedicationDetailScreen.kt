@@ -2,6 +2,7 @@
 
 package com.exaclast.regimen.ui.screens
 
+import android.content.res.Resources
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,9 +53,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.exaclast.regimen.R
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.Adjustments
 import com.exaclast.regimen.domain.DoseEngine
@@ -175,15 +179,15 @@ fun MedicationDetailScreen(
         title = { Text(medication.primaryName, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         subtitle = medication.secondaryName?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
         navigationIcon = {
-          IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+          IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
         },
         actions = {
-          IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit medication") }
+          IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.med_edit)) }
           Box {
-            IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, contentDescription = "More") }
+            IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.action_more)) }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
               DropdownMenuItem(
-                text = { Text("Delete medication") },
+                text = { Text(stringResource(R.string.med_delete)) },
                 leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
                 onClick = { menuOpen = false; confirmDelete = true },
               )
@@ -215,32 +219,32 @@ fun MedicationDetailScreen(
               listOfNotNull(medication.form.displayName, route).joinToString(" · "),
               style = MaterialTheme.typography.bodyMedium,
             )
-            Text("Default dose: ${medication.formattedDefaultDose()}", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.med_default_dose, medication.formattedDefaultDose()), style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(4.dp))
             HeroStatus(
               icon = if (warning != null) Icons.Default.Warning else Icons.Default.Check,
               text = warning ?: listOfNotNull(
-                "Ready",
-                pacing.maxDailyDoses?.let { "${pacing.dosesTakenToday} of ${formatNum(it)} today" },
+                stringResource(R.string.status_ready),
+                pacing.maxDailyDoses?.let { stringResource(R.string.prn_daily_note_today, pacing.dosesTakenToday, formatNum(it)) },
               ).joinToString(" · "),
             )
             if (nextSite != null) {
               if (medication.rotatesSites) {
-                HeroStatus(icon = Icons.Default.Autorenew, text = "Next site: $nextSite")
+                HeroStatus(icon = Icons.Default.Autorenew, text = stringResource(R.string.med_next_site, nextSite))
               } else {
-                HeroStatus(icon = Icons.Default.Place, text = "Site: $nextSite")
+                HeroStatus(icon = Icons.Default.Place, text = stringResource(R.string.dose_site_line, nextSite))
               }
             }
             Spacer(Modifier.height(8.dp))
             val logLabel = when {
-              dueDose == null -> "Log dose"
+              dueDose == null -> stringResource(R.string.action_log_dose)
               (DoseAlarmTiming.windowStartMillis(dueDose.bucket, dueDose.dateIso) ?: 0L) > nowMillis ->
-                "Log ${dueDose.bucket.name} dose early"
-              else -> "Log ${dueDose.bucket.name} dose"
+                stringResource(R.string.med_log_window_dose_early, dueDose.bucket.name)
+              else -> stringResource(R.string.med_log_window_dose, dueDose.bucket.name)
             }
             if (warning != null) {
               OutlinedButton(onClick = { startLogging(extra = false) }, modifier = Modifier.fillMaxWidth()) {
-                Text("$logLabel anyway…")
+                Text(stringResource(R.string.prn_log_anyway, logLabel))
               }
             } else {
               Button(onClick = { startLogging(extra = false) }, modifier = Modifier.fillMaxWidth()) {
@@ -251,11 +255,11 @@ fun MedicationDetailScreen(
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
               TextButton(onClick = { timeChoice = TimeChoice(extra = false, startWithOtherTime = true) }) {
-                Text("Other time")
+                Text(stringResource(R.string.log_time_other))
               }
               if (dueDose != null) {
                 TextButton(onClick = { timeChoice = TimeChoice(extra = true, startWithOtherTime = false) }) {
-                  Text("Extra dose")
+                  Text(stringResource(R.string.med_extra_dose))
                 }
               }
             }
@@ -264,20 +268,20 @@ fun MedicationDetailScreen(
       }
 
       item(key = "schedules") {
-        SectionHeader("Schedules") {
+        SectionHeader(stringResource(R.string.med_schedules)) {
           TextButton(onClick = onAddSchedule) {
             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(4.dp))
-            Text("Add")
+            Text(stringResource(R.string.action_add))
           }
         }
         GroupedColumn {
           if (schedules.isEmpty()) {
             GroupItem(index = 0, count = 1) {
               ListItem(
-                supportingContent = { Text("Shows under \"As needed\" on Today") },
+                supportingContent = { Text(stringResource(R.string.med_no_schedule_help)) },
                 colors = groupListItemColors(),
-              ) { Text("No schedule") }
+              ) { Text(stringResource(R.string.med_no_schedule)) }
             }
           }
           schedules.forEachIndexed { i, sched ->
@@ -287,7 +291,7 @@ fun MedicationDetailScreen(
             }
             val upcoming = next?.let { a ->
               val dose = Adjustments.doseOn(stored, sched, a.effectiveDateOrNull()!!)
-              "${formatNum(dose.amount)} ${dose.unit.symbol} from ${UiFormat.date(a.effectiveDateOrNull()!!, withWeekday = false)}"
+              stringResource(R.string.med_dose_from, formatNum(dose.amount), dose.unit.symbol, UiFormat.date(a.effectiveDateOrNull()!!, withWeekday = false))
             }
             GroupItem(index = i, count = schedules.size, onClick = { onEditSchedule(sched) }) {
               ScheduleRow(
@@ -304,11 +308,11 @@ fun MedicationDetailScreen(
       }
 
       item(key = "changes") {
-        SectionHeader("Changes") {
+        SectionHeader(stringResource(R.string.med_changes)) {
           TextButton(onClick = onPlanChange) {
             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(4.dp))
-            Text("Plan")
+            Text(stringResource(R.string.med_plan))
           }
         }
         val changes = Adjustments.sorted(stored)
@@ -317,10 +321,10 @@ fun MedicationDetailScreen(
             GroupItem(index = 0, count = 1) {
               ListItem(
                 supportingContent = {
-                  Text("Dose steps, tapers and new equipment, by date. Editing a dose after logging asks whether it's a change.")
+                  Text(stringResource(R.string.med_no_changes_help))
                 },
                 colors = groupListItemColors(),
-              ) { Text("No changes") }
+              ) { Text(stringResource(R.string.med_no_changes)) }
             }
           }
           changes.forEachIndexed { i, change ->
@@ -330,7 +334,7 @@ fun MedicationDetailScreen(
             }
             GroupItem(index = i, count = changes.size, onClick = { onOpenChange(change.id) }) {
               ListItem(
-                overlineContent = if (date.isAfter(today)) ({ Text("Planned") }) else null,
+                overlineContent = if (date.isAfter(today)) ({ Text(stringResource(R.string.med_planned)) }) else null,
                 supportingContent = {
                   Text((lines + listOfNotNull(change.note)).joinToString("\n"))
                 },
@@ -343,34 +347,37 @@ fun MedicationDetailScreen(
 
       medication.injectableDetails?.let { inj ->
         item(key = "injection") {
-          SectionHeader("Injection")
+          SectionHeader(stringResource(R.string.med_injection))
           val pen = medication.form.isPrefilledInjector
           val rows = buildList {
-            add("Route" to inj.route.displayName)
+            add(stringResource(R.string.med_route) to inj.route.displayName)
             // Worked out from the strength; only worth a row when the strength isn't already per 1 mL.
             medication.concentration?.formatted()
               ?.takeUnless { medication.strength.contains(it, ignoreCase = true) }
-              ?.let { add("Per mL" to it) }
-            inj.vialVolumeMl?.let { add((if (pen) "Device volume" else "Vial size") to "${formatNum(it)} mL") }
+              ?.let { add(stringResource(R.string.med_per_ml) to it) }
+            inj.vialVolumeMl?.let {
+              add(stringResource(if (pen) R.string.med_device_volume else R.string.med_vial_size) to stringResource(R.string.med_ml, formatNum(it)))
+            }
             // A needle with its standard hub color, which is how it's picked out of a box.
+            @Composable
             fun needle(text: String?, gauge: Int?) = text?.let { t ->
-              NeedleHub.colorFor(gauge)?.let { "$t · ${it.name.lowercase()} hub" } ?: t
+              NeedleHub.colorFor(gauge)?.let { stringResource(R.string.med_needle_hub, t, it.name.lowercase()) } ?: t
             }
             if (pen) {
-              needle(inj.formattedInjectNeedle(), inj.injectNeedleGauge)?.let { add("Pen needle" to it) }
+              needle(inj.formattedInjectNeedle(), inj.injectNeedleGauge)?.let { add(stringResource(R.string.med_pen_needle) to it) }
             } else {
               medication.doseVolumeMl(medication.defaultDoseAmount, medication.defaultDoseUnit)?.let { ml ->
                 // Insulin syringes are marked in units; say where to draw to on one.
                 val marks = inj.syringeType?.unitsPerMl
-                  ?.let { " (${formatNum(ml * it)} units on a ${inj.syringeType.displayName} syringe)" }
-                add("Draw volume" to "${formatNum(ml)} mL${marks.orEmpty()}")
+                  ?.let { " " + stringResource(R.string.med_syringe_marks, formatNum(ml * it), inj.syringeType.displayName) }
+                add(stringResource(R.string.med_draw_volume) to stringResource(R.string.med_ml, formatNum(ml)) + marks.orEmpty())
               }
-              inj.formattedSyringe()?.let { add("Syringe" to it) }
+              inj.formattedSyringe()?.let { add(stringResource(R.string.med_syringe) to it) }
               if (inj.needleAttached) {
-                needle(inj.formattedInjectNeedle(), inj.injectNeedleGauge)?.let { add("Needle (attached)" to it) }
+                needle(inj.formattedInjectNeedle(), inj.injectNeedleGauge)?.let { add(stringResource(R.string.med_needle_attached) to it) }
               } else {
-                needle(inj.formattedDrawNeedle(), inj.drawNeedleGauge)?.let { add("Draw needle" to it) }
-                needle(inj.formattedInjectNeedle(), inj.injectNeedleGauge)?.let { add("Injection needle" to it) }
+                needle(inj.formattedDrawNeedle(), inj.drawNeedleGauge)?.let { add(stringResource(R.string.med_draw_needle) to it) }
+                needle(inj.formattedInjectNeedle(), inj.injectNeedleGauge)?.let { add(stringResource(R.string.med_injection_needle) to it) }
               }
             }
           }
@@ -385,14 +392,16 @@ fun MedicationDetailScreen(
       if (medication.tracksSites) {
         item(key = "sites") {
           val rotates = medication.rotatesSites
-          SectionHeader(if (rotates) "Site rotation" else "Sites")
+          SectionHeader(stringResource(if (rotates) R.string.med_site_rotation else R.string.med_sites))
+          val nextTag = stringResource(R.string.med_site_next)
+          val lastTag = stringResource(R.string.med_site_last_used)
           val sites = medication.activeSites
           GroupedColumn {
             sites.forEachIndexed { i, site ->
               // Recording has no "next": the suggestion is the last site, so only that is tagged.
               val tag = when {
-                rotates && site.equals(nextSite, ignoreCase = true) -> "Next"
-                site.equals(lastSite, ignoreCase = true) -> "Last used"
+                rotates && site.equals(nextSite, ignoreCase = true) -> nextTag
+                site.equals(lastSite, ignoreCase = true) -> lastTag
                 else -> null
               }
               GroupItem(index = i, count = sites.size) {
@@ -402,7 +411,7 @@ fun MedicationDetailScreen(
                   } else {
                     null
                   },
-                  trailingContent = tag?.let { { SiteTag(it, highlighted = it == "Next") } },
+                  trailingContent = tag?.let { { SiteTag(it, highlighted = it == nextTag) } },
                   colors = groupListItemColors(),
                 ) { Text(site) }
               }
@@ -412,13 +421,15 @@ fun MedicationDetailScreen(
       }
 
       item(key = "limits") {
-        SectionHeader("Pacing limits")
+        SectionHeader(stringResource(R.string.med_pacing_limits))
+        val res = LocalResources.current
+        val none = stringResource(R.string.value_none)
         val rows = listOf(
-          "Minimum time between doses" to
-            (medication.minIntervalMinutes?.let { DoseEngine.formatDurationMinutes(it) } ?: "None"),
-          "Daily dose limit" to (medication.maxDailyDoses?.let { doseCount(it) } ?: "None"),
-          "Daily amount limit" to
-            (medication.maxDailyAmount?.let { "${formatNum(it)} ${medication.defaultDoseUnit.symbol}" } ?: "None"),
+          stringResource(R.string.med_min_interval) to
+            (medication.minIntervalMinutes?.let { DoseEngine.formatDurationMinutes(it) } ?: none),
+          stringResource(R.string.med_daily_dose_limit) to (medication.maxDailyDoses?.let { doseCount(res, it) } ?: none),
+          stringResource(R.string.med_daily_amount_limit) to
+            (medication.maxDailyAmount?.let { "${formatNum(it)} ${medication.defaultDoseUnit.symbol}" } ?: none),
         )
         GroupedColumn {
           rows.forEachIndexed { i, (label, value) -> GroupItem(index = i, count = rows.size) { InfoRow(label, value) } }
@@ -426,29 +437,30 @@ fun MedicationDetailScreen(
       }
 
       item(key = "details") {
-        SectionHeader("Details")
+        SectionHeader(stringResource(R.string.indication_details))
+        val indicationLabel = stringResource(R.string.med_indication)
         val rows = buildList<Triple<String, String, (() -> Unit)?>> {
           if (snapshot.tracksIndications) {
             if (indications.isEmpty()) {
-              add(Triple("Indication", "Not linked", null))
+              add(Triple(indicationLabel, stringResource(R.string.med_not_linked), null))
             } else {
-              indications.forEach { c -> add(Triple("Indication", c.name) { onOpenIndication(c.id) }) }
+              indications.forEach { c -> add(Triple(indicationLabel, c.name) { onOpenIndication(c.id) }) }
             }
           }
-          if (medication.indicationText.isNotBlank()) add(Triple("Indication notes", medication.indicationText, null))
+          if (medication.indicationText.isNotBlank()) add(Triple(stringResource(R.string.med_indication_notes), medication.indicationText, null))
           if (snapshot.tracksProviders) {
             add(
               Triple(
-                "Prescriber",
-                prescriber?.let { if (it.isPcp) "${it.name} (PCP)" else it.name } ?: "Not set",
+                stringResource(R.string.med_prescriber),
+                prescriber?.let { if (it.isPcp) stringResource(R.string.med_name_pcp, it.name) else it.name } ?: stringResource(R.string.value_not_set),
                 prescriber?.let { p -> { onOpenProvider(p.id) } },
               )
             )
           }
-          UiFormat.dateIso(medication.prescribedDateIso)?.let { add(Triple("Prescribed", it, null)) }
-          medication.ndc11?.takeIf { it.isNotBlank() }?.let { add(Triple("NDC", it, null)) }
-          medication.manufacturer?.takeIf { it.isNotBlank() }?.let { add(Triple("Manufacturer", it, null)) }
-          medication.notes?.takeIf { it.isNotBlank() }?.let { add(Triple("Notes", it, null)) }
+          UiFormat.dateIso(medication.prescribedDateIso)?.let { add(Triple(stringResource(R.string.med_prescribed), it, null)) }
+          medication.ndc11?.takeIf { it.isNotBlank() }?.let { add(Triple(stringResource(R.string.med_ndc), it, null)) }
+          medication.manufacturer?.takeIf { it.isNotBlank() }?.let { add(Triple(stringResource(R.string.med_manufacturer), it, null)) }
+          medication.notes?.takeIf { it.isNotBlank() }?.let { add(Triple(stringResource(R.string.field_notes), it, null)) }
         }
         GroupedColumn {
           rows.forEachIndexed { i, (label, value, click) ->
@@ -458,13 +470,13 @@ fun MedicationDetailScreen(
       }
 
       item(key = "history") {
-        SectionHeader("Recent doses")
+        SectionHeader(stringResource(R.string.med_recent_doses))
         GroupedColumn {
           if (logs.isEmpty()) {
             GroupItem(index = 0, count = 1) {
               ListItem(
                 colors = groupListItemColors(),
-              ) { Text("No doses logged yet") }
+              ) { Text(stringResource(R.string.med_no_doses)) }
             }
           }
           logs.forEachIndexed { i, log ->
@@ -494,9 +506,9 @@ fun MedicationDetailScreen(
 
   if (confirmDelete) {
     ConfirmDialog(
-      title = "Delete ${medication.primaryName}?",
-      text = "This removes the medication and its schedules. Dose history is kept.",
-      confirmLabel = "Delete",
+      title = stringResource(R.string.provider_delete_title, medication.primaryName),
+      text = stringResource(R.string.med_delete_text),
+      confirmLabel = stringResource(R.string.action_delete),
       destructive = true,
       onConfirm = {
         confirmDelete = false
@@ -509,7 +521,7 @@ fun MedicationDetailScreen(
   timeChoice?.let { choice ->
     val duePart = dueDose.takeIf { !choice.extra }
     LogTimeDialog(
-      title = duePart?.let { "Log ${it.bucket.name} dose" } ?: "Log ${medication.primaryName}",
+      title = duePart?.let { stringResource(R.string.med_log_window_dose, it.bucket.name) } ?: stringResource(R.string.today_log_named, medication.primaryName),
       doseLabel = duePart?.formattedDoseInstruction() ?: medication.formattedDefaultDose(),
       defaultDateIso = todayIso,
       startWithOtherTime = choice.startWithOtherTime,
@@ -526,13 +538,13 @@ fun MedicationDetailScreen(
     AlertDialog(
       onDismissRequest = { pacingPrompt = false },
       icon = { Icon(Icons.Default.Warning, contentDescription = null) },
-      title = { Text("Log ${medication.primaryName} anyway?") },
+      title = { Text(stringResource(R.string.med_log_anyway_title, medication.primaryName)) },
       text = {
         Text(
           listOfNotNull(
-            shownPacing.nextAllowedText()?.let { "The next dose isn't due until $it." },
-            if (shownPacing.isDailyLimitReached) "You've reached the daily limit." else null,
-            "These limits come from this medication's settings.",
+            shownPacing.nextAllowedText()?.let { stringResource(R.string.pacing_next_dose, it) },
+            if (shownPacing.isDailyLimitReached) stringResource(R.string.pacing_daily_limit_reached) else null,
+            stringResource(R.string.pacing_from_settings),
           ).joinToString(" ")
         )
       },
@@ -540,9 +552,9 @@ fun MedicationDetailScreen(
         Button(onClick = {
           pacingPrompt = false
           proceedWithoutPacingCheck()
-        }) { Text("Log anyway") }
+        }) { Text(stringResource(R.string.med_log_anyway)) }
       },
-      dismissButton = { TextButton(onClick = { pacingPrompt = false }) { Text("Cancel") } },
+      dismissButton = { TextButton(onClick = { pacingPrompt = false }) { Text(stringResource(R.string.action_cancel)) } },
     )
   }
 
@@ -562,15 +574,15 @@ fun MedicationDetailScreen(
   if (showSchedulePrompt) {
     AlertDialog(
       onDismissRequest = { showSchedulePrompt = false },
-      title = { Text("Add a schedule?") },
-      text = { Text("Pick when ${medication.primaryName} is due, or skip to track it as needed.") },
+      title = { Text(stringResource(R.string.med_add_schedule_title)) },
+      text = { Text(stringResource(R.string.med_add_schedule_text, medication.primaryName)) },
       confirmButton = {
         Button(onClick = {
           showSchedulePrompt = false
           onAddSchedule()
-        }) { Text("Add schedule") }
+        }) { Text(stringResource(R.string.med_add_schedule)) }
       },
-      dismissButton = { TextButton(onClick = { showSchedulePrompt = false }) { Text("As needed") } },
+      dismissButton = { TextButton(onClick = { showSchedulePrompt = false }) { Text(stringResource(R.string.providers_as_needed)) } },
     )
   }
 }
@@ -578,9 +590,9 @@ fun MedicationDetailScreen(
 /** Which time dialog to open from the medication page: for an extra dose, or for the dose that's due. */
 private data class TimeChoice(val extra: Boolean, val startWithOtherTime: Boolean)
 
-private fun doseCount(value: Double): String {
+private fun doseCount(res: Resources, value: Double): String {
   val n = formatNum(value)
-  return if (value == 1.0) "$n dose per day" else "$n doses per day"
+  return res.getString(if (value == 1.0) R.string.med_dose_per_day_one else R.string.med_dose_per_day_many, n)
 }
 
 @Composable
@@ -617,53 +629,53 @@ private fun ScheduleRow(
   var menuOpen by remember { mutableStateOf(false) }
   val windows = snapshot.buckets.chronological().filter { it.id in schedule.bucketIds }
   val detail = buildList {
-    if (windows.isNotEmpty()) add(windows.joinToString(", ") { "${it.name} ${it.formattedTime()}" })
+    if (windows.isNotEmpty()) add(windows.map { stringResource(R.string.med_window_time, it.name, it.formattedTime()) }.joinToString(", "))
     val today = LocalDate.now()
     val start = schedule.startDateOrNull()
     val end = schedule.endDateOrNull()
     fun windowName(id: String?) = id?.let { wid -> snapshot.buckets.find { it.id == wid }?.name }
     windowName(schedule.startBucketId)?.takeIf { start != null && !start.isBefore(today) }
-      ?.let { add("first dose: $it") }
+      ?.let { add(stringResource(R.string.med_first_dose, it)) }
     windowName(schedule.endBucketId)?.takeIf { end != null && !end.isBefore(today) }
-      ?.let { add("last dose: $it") }
+      ?.let { add(stringResource(R.string.med_last_dose, it)) }
     if (schedule.usesDateRange) {
       when {
-        end != null && end.isBefore(today) -> add("Ended ${UiFormat.date(end, withWeekday = false)}")
+        end != null && end.isBefore(today) -> add(stringResource(R.string.indication_ended_on, UiFormat.date(end, withWeekday = false)))
         start != null && start.isAfter(today) && end != null ->
-          add("${UiFormat.date(start, withWeekday = false)} – ${UiFormat.date(end, withWeekday = false)}")
-        start != null && start.isAfter(today) -> add("Starts ${UiFormat.date(start, withWeekday = false)}")
-        end != null -> add("Until ${UiFormat.date(end, withWeekday = false)}")
+          add(stringResource(R.string.med_date_range, UiFormat.date(start, withWeekday = false), UiFormat.date(end, withWeekday = false)))
+        start != null && start.isAfter(today) -> add(stringResource(R.string.med_starts, UiFormat.date(start, withWeekday = false)))
+        end != null -> add(stringResource(R.string.indication_until, UiFormat.date(end, withWeekday = false)))
         start != null &&
           (schedule.frequencyType == ScheduleFrequencyType.EVERY_N_DAYS ||
             schedule.frequencyType == ScheduleFrequencyType.RELATIVE_TO_LAST_DOSE) ->
-          add("from ${UiFormat.date(start, withWeekday = false)}")
+          add(stringResource(R.string.med_from, UiFormat.date(start, withWeekday = false)))
       }
     }
     if (schedule.frequencyType == ScheduleFrequencyType.SPECIFIC_DATES && schedule.specificDatesIso.isNotEmpty()) {
       val nextUpcoming = schedule.specificDatesIso.sorted().firstOrNull { it >= LocalDate.now().toString() }
       if (nextUpcoming != null) {
-        UiFormat.dateIso(nextUpcoming)?.let { add("Next: $it") }
+        UiFormat.dateIso(nextUpcoming)?.let { add(stringResource(R.string.med_next_date, it)) }
       }
     }
-    upcoming?.let { add("Then $it") }
-    if (!schedule.enabled) add("Paused")
-    if (schedule.hasNoValidWindow(snapshot.buckets)) add("No dose window: no doses or reminders until you pick one")
+    upcoming?.let { add(stringResource(R.string.med_then, it)) }
+    if (!schedule.enabled) add(stringResource(R.string.med_paused))
+    if (schedule.hasNoValidWindow(snapshot.buckets)) add(stringResource(R.string.med_no_window))
   }.joinToString(" · ")
   ListItem(
     supportingContent = if (detail.isNotEmpty()) ({ Text(detail) }) else null,
     trailingContent = {
       Box {
         IconButton(onClick = { menuOpen = true }) {
-          Icon(Icons.Default.MoreVert, contentDescription = "Schedule options")
+          Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.med_schedule_options))
         }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
           DropdownMenuItem(
-            text = { Text("Edit") },
+            text = { Text(stringResource(R.string.action_edit)) },
             leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null) },
             onClick = { menuOpen = false; onEdit() },
           )
           DropdownMenuItem(
-            text = { Text("Delete") },
+            text = { Text(stringResource(R.string.action_delete)) },
             leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
             onClick = { menuOpen = false; onDelete() },
           )

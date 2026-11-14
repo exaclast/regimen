@@ -4,6 +4,7 @@ package com.exaclast.regimen.ui.screens
 
 import android.Manifest
 import android.content.Context
+import android.content.res.Resources
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -69,7 +70,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -79,6 +83,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.exaclast.regimen.R
 import com.exaclast.regimen.data.DrugBarcodeScanner
 import com.exaclast.regimen.domain.WindowDeletion
 import com.exaclast.regimen.model.AppSettings
@@ -179,9 +184,9 @@ fun SettingsScreen(
   Scaffold(
     topBar = {
       TopAppBar(
-        title = { Text("Settings") },
+        title = { Text(stringResource(R.string.settings_title)) },
         navigationIcon = {
-          IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+          IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
         },
       )
     },
@@ -194,20 +199,20 @@ fun SettingsScreen(
       contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
     ) {
       item(key = "reminders") {
-        SectionHeader("Reminders")
+        SectionHeader(stringResource(R.string.settings_reminders))
         GroupedColumn {
           GroupItem(0, 6) {
             SwitchRow(
-              title = "Dose reminders",
-              subtitle = "Notify when a dose window opens",
+              title = stringResource(R.string.settings_dose_reminders),
+              subtitle = stringResource(R.string.settings_dose_reminders_help),
               checked = settings.notificationsEnabled,
               onCheckedChange = { onSaveSettings(settings.copy(notificationsEnabled = it)) },
             )
           }
           GroupItem(1, 6) {
             SwitchRow(
-              title = "End-of-window alarm",
-              subtitle = "Ring if a dose is still unlogged when its window ends",
+              title = stringResource(R.string.settings_end_alarm),
+              subtitle = stringResource(R.string.settings_end_alarm_help),
               checked = settings.alarmsEnabled,
               enabled = settings.notificationsEnabled,
               onCheckedChange = { onSaveSettings(settings.copy(alarmsEnabled = it)) },
@@ -215,8 +220,8 @@ fun SettingsScreen(
           }
           GroupItem(2, 6) {
             SwitchRow(
-              title = "Discreet notifications",
-              subtitle = "Hide medication names and sites on the lock screen",
+              title = stringResource(R.string.settings_discreet),
+              subtitle = stringResource(R.string.settings_discreet_help),
               checked = settings.discreetNotifications,
               enabled = settings.notificationsEnabled,
               onCheckedChange = { onSaveSettings(settings.copy(discreetNotifications = it)) },
@@ -224,9 +229,9 @@ fun SettingsScreen(
           }
           GroupItem(3, 6) {
             Column(modifier = Modifier.padding(16.dp)) {
-              Text("When dismissed, remind again in", style = MaterialTheme.typography.bodyLarge)
+              Text(stringResource(R.string.settings_snooze_title), style = MaterialTheme.typography.bodyLarge)
               Text(
-                "Swiping a reminder away (or tapping Snooze in the app) brings it back after this long",
+                stringResource(R.string.settings_snooze_help),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
@@ -239,7 +244,7 @@ fun SettingsScreen(
                     onClick = { onSaveSettings(settings.copy(snoozeMinutes = mins)) },
                     shape = SegmentedButtonDefaults.itemShape(index = i, count = presets.size),
                     icon = {},
-                    label = { Text("$mins min", maxLines = 1) },
+                    label = { Text(stringResource(R.string.settings_minutes_short, mins), maxLines = 1) },
                   )
                 }
               }
@@ -247,9 +252,9 @@ fun SettingsScreen(
           }
           GroupItem(4, 6) {
             Column(modifier = Modifier.padding(16.dp)) {
-              Text("Remind again if no response", style = MaterialTheme.typography.bodyLarge)
+              Text(stringResource(R.string.settings_repeat_title), style = MaterialTheme.typography.bodyLarge)
               Text(
-                "Repeats a reminder you haven't acted on, until the window's end alarm",
+                stringResource(R.string.settings_repeat_help),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
@@ -262,7 +267,7 @@ fun SettingsScreen(
                     onClick = { onSaveSettings(settings.copy(reminderRepeatMinutes = mins)) },
                     shape = SegmentedButtonDefaults.itemShape(index = i, count = repeatPresets.size),
                     icon = {},
-                    label = { Text(if (mins == 0) "Off" else "$mins m", maxLines = 1) },
+                    label = { Text(if (mins == 0) stringResource(R.string.value_off) else stringResource(R.string.settings_minutes_tiny, mins), maxLines = 1) },
                   )
                 }
               }
@@ -270,8 +275,8 @@ fun SettingsScreen(
           }
           GroupItem(5, 6) {
             SwitchRow(
-              title = "Confirm before logging",
-              subtitle = "Ask before logging a scheduled dose",
+              title = stringResource(R.string.settings_confirm),
+              subtitle = stringResource(R.string.settings_confirm_help),
               checked = settings.confirmBeforeTake,
               onCheckedChange = { onSaveSettings(settings.copy(confirmBeforeTake = it)) },
             )
@@ -280,11 +285,11 @@ fun SettingsScreen(
       }
 
       item(key = "windows") {
-        SectionHeader("Dose windows") {
+        SectionHeader(stringResource(R.string.settings_windows)) {
           TextButton(onClick = { onOpenWindow(null) }) {
             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(4.dp))
-            Text("Add")
+            Text(stringResource(R.string.action_add))
           }
         }
         val ordered = buckets.chronological()
@@ -293,7 +298,7 @@ fun SettingsScreen(
           ordered.forEachIndexed { i, bucket ->
             GroupItem(index = i, count = count, onClick = { onOpenWindow(bucket.id) }) {
               ListItem(
-                supportingContent = { Text(windowSummary(bucket, settings)) },
+                supportingContent = { Text(windowSummary(LocalResources.current, bucket, settings)) },
                 trailingContent = {
                   Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
                 },
@@ -303,42 +308,42 @@ fun SettingsScreen(
           }
           GroupItem(index = ordered.size, count = count, onClick = { confirmResetWindows = true }) {
             ListItem(
-              supportingContent = { Text("Morning, Afternoon, Evening, Bedtime") },
+              supportingContent = { Text(stringResource(R.string.settings_restore_windows_help)) },
               colors = groupListItemColors(),
-            ) { Text("Restore default windows") }
+            ) { Text(stringResource(R.string.settings_restore_windows)) }
           }
         }
       }
 
       item(key = "permissions") {
-        SectionHeader("Permissions")
+        SectionHeader(stringResource(R.string.settings_permissions))
         PermissionsChecklistSection(
           onPermissionStateChanged = onPermissionsChanged,
         )
       }
 
       item(key = "tracking") {
-        SectionHeader("Tracking")
+        SectionHeader(stringResource(R.string.settings_tracking))
         GroupedColumn {
           GroupItem(0, 2) {
             SwitchRow(
-              title = "Providers",
-              subtitle = "Keep a list of providers and link them to medications",
+              title = stringResource(R.string.providers_title),
+              subtitle = stringResource(R.string.settings_providers_help),
               checked = tracksProviders,
               onCheckedChange = { onSaveSettings(settings.copy(trackProviders = it)) },
             )
           }
           GroupItem(1, 2) {
             SwitchRow(
-              title = "Indications",
-              subtitle = "Keep a list of indications and what each medication is for",
+              title = stringResource(R.string.indications_title),
+              subtitle = stringResource(R.string.settings_indications_help),
               checked = tracksIndications,
               onCheckedChange = { onSaveSettings(settings.copy(trackIndications = it)) },
             )
           }
         }
         Text(
-          text = "Turning one off hides it from the app. Nothing you've entered is deleted.",
+          text = stringResource(R.string.settings_tracking_help),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
           modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -346,11 +351,11 @@ fun SettingsScreen(
       }
 
       item(key = "appearance") {
-        SectionHeader("Appearance")
+        SectionHeader(stringResource(R.string.settings_appearance))
         GroupedColumn {
           GroupItem(0, 2) {
             Column(modifier = Modifier.padding(16.dp)) {
-              Text("Theme", style = MaterialTheme.typography.bodyLarge)
+              Text(stringResource(R.string.settings_theme), style = MaterialTheme.typography.bodyLarge)
               Spacer(Modifier.height(8.dp))
               val modes = ThemeMode.entries
               SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -363,9 +368,9 @@ fun SettingsScreen(
                     label = {
                       Text(
                         when (mode) {
-                          ThemeMode.SYSTEM -> "System"
-                          ThemeMode.LIGHT -> "Light"
-                          ThemeMode.DARK -> "Dark"
+                          ThemeMode.SYSTEM -> stringResource(R.string.theme_system)
+                          ThemeMode.LIGHT -> stringResource(R.string.theme_light)
+                          ThemeMode.DARK -> stringResource(R.string.theme_dark)
                         },
                         maxLines = 1,
                       )
@@ -377,8 +382,8 @@ fun SettingsScreen(
           }
           GroupItem(1, 2) {
             SwitchRow(
-              title = "Wallpaper colors",
-              subtitle = "Match your device's color palette",
+              title = stringResource(R.string.settings_wallpaper_colors),
+              subtitle = stringResource(R.string.settings_wallpaper_colors_help),
               checked = settings.dynamicColor,
               onCheckedChange = { onSaveSettings(settings.copy(dynamicColor = it)) },
             )
@@ -387,7 +392,9 @@ fun SettingsScreen(
       }
 
       item(key = "scanning") {
-        SectionHeader("Label scanning & lookup")
+        SectionHeader(stringResource(R.string.settings_scanning))
+        val initiatingMessage = stringResource(R.string.nano_initiating)
+        val downloadFailedMessage = stringResource(R.string.nano_download_failed)
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
           if (nanoStatus == FeatureStatus.UNAVAILABLE) {
             Surface(
@@ -409,7 +416,7 @@ fun SettingsScreen(
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                  text = "This device doesn't support on-device Gemini Nano label scanning. You can still enter medications manually and verify them with OpenFDA.",
+                  text = stringResource(R.string.settings_nano_unsupported),
                   style = MaterialTheme.typography.bodyMedium,
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -421,7 +428,7 @@ fun SettingsScreen(
               nanoProgressMessage = nanoProgressMessage,
               onDownloadClick = {
                 coroutineScope.launch {
-                  nanoProgressMessage = "Initiating download via AICore..."
+                  nanoProgressMessage = initiatingMessage
                   DrugBarcodeScanner.startNanoDownload(
                     onProgress = { msg -> nanoProgressMessage = msg }
                   ).fold(
@@ -430,7 +437,7 @@ fun SettingsScreen(
                       onPermissionsChanged()
                     },
                     onFailure = { err ->
-                      nanoProgressMessage = err.localizedMessage ?: "Download failed"
+                      nanoProgressMessage = err.localizedMessage ?: downloadFailedMessage
                       DrugBarcodeScanner.openAiCoreSettings(context)
                     }
                   )
@@ -459,31 +466,31 @@ fun SettingsScreen(
       }
 
       item(key = "diagnostics") {
-        SectionHeader("Diagnostics")
+        SectionHeader(stringResource(R.string.settings_diagnostics))
         val enabled = diagnosticsTarget != null && settings.notificationsEnabled
         val supporting = when {
-          !settings.notificationsEnabled -> "Turn on dose reminders first"
-          diagnosticsTarget == null -> "No scheduled dose today to test with"
-          else -> "Uses ${diagnosticsTarget.label}"
+          !settings.notificationsEnabled -> stringResource(R.string.settings_test_turn_on)
+          diagnosticsTarget == null -> stringResource(R.string.settings_test_no_dose)
+          else -> stringResource(R.string.settings_test_uses, diagnosticsTarget.label)
         }
         GroupedColumn {
           GroupItem(0, 2, onClick = if (enabled) ({ onTestNotification(DoseNotificationStage.WINDOW_START_PERSISTENT) }) else null) {
             ListItem(
               supportingContent = { Text(supporting) },
               colors = groupListItemColors(),
-            ) { Text("Send a test reminder") }
+            ) { Text(stringResource(R.string.settings_test_reminder)) }
           }
           GroupItem(1, 2, onClick = if (enabled && settings.alarmsEnabled) ({ onTestNotification(DoseNotificationStage.WINDOW_END_ALARM) }) else null) {
             ListItem(
-              supportingContent = { Text(if (!settings.alarmsEnabled) "End-of-window alarm is off" else supporting) },
+              supportingContent = { Text(if (!settings.alarmsEnabled) stringResource(R.string.settings_alarm_is_off) else supporting) },
               colors = groupListItemColors(),
-            ) { Text("Test the end-of-window alarm") }
+            ) { Text(stringResource(R.string.settings_test_alarm)) }
           }
         }
       }
 
       item(key = "data") {
-        SectionHeader("Backup")
+        SectionHeader(stringResource(R.string.settings_backup))
         GroupedColumn {
           GroupItem(0, 3, onClick = {
             if (backupEncryptionConfigured) {
@@ -496,24 +503,25 @@ fun SettingsScreen(
             ListItem(
               supportingContent = {
                 Text(
-                  if (backupEncryptionConfigured) "Save an encrypted file with everything on this device"
-                  else "Set a passphrase, then save an encrypted file",
+                  stringResource(
+                    if (backupEncryptionConfigured) R.string.settings_export_help else R.string.settings_export_help_setup,
+                  ),
                 )
               },
               colors = groupListItemColors(),
-            ) { Text("Export backup") }
+            ) { Text(stringResource(R.string.settings_export)) }
           }
           GroupItem(1, 3, onClick = { restoreLauncher.launch(arrayOf("*/*")) }) {
             ListItem(
-              supportingContent = { Text("Preview a backup file, then merge it or replace this device's data") },
+              supportingContent = { Text(stringResource(R.string.settings_restore_help)) },
               colors = groupListItemColors(),
-            ) { Text("Restore from backup") }
+            ) { Text(stringResource(R.string.settings_restore)) }
           }
           GroupItem(2, 3, onClick = { confirmPlainExport = true }) {
             ListItem(
-              supportingContent = { Text("Readable JSON for other tools. Anyone with the file can read it.") },
+              supportingContent = { Text(stringResource(R.string.settings_export_plain_help)) },
               colors = groupListItemColors(),
-            ) { Text("Export unencrypted") }
+            ) { Text(stringResource(R.string.settings_export_plain)) }
           }
         }
         Spacer(Modifier.height(12.dp))
@@ -521,22 +529,22 @@ fun SettingsScreen(
           if (backupEncryptionConfigured) {
             GroupItem(0, 2, onClick = { onOpenBackupEncryption(BackupEncryptionMode.CHANGE) }) {
               ListItem(
-                supportingContent = { Text("Earlier backups stay readable") },
+                supportingContent = { Text(stringResource(R.string.settings_change_passphrase_help)) },
                 colors = groupListItemColors(),
-              ) { Text("Change backup passphrase") }
+              ) { Text(stringResource(R.string.settings_change_passphrase)) }
             }
             GroupItem(1, 2, onClick = { onOpenBackupEncryption(BackupEncryptionMode.SHOW_CODE) }) {
               ListItem(
-                supportingContent = { Text("Opens your backups if you forget the passphrase") },
+                supportingContent = { Text(stringResource(R.string.settings_show_code_help)) },
                 colors = groupListItemColors(),
-              ) { Text("Show recovery code") }
+              ) { Text(stringResource(R.string.settings_show_code)) }
             }
           } else {
             GroupItem(0, 1, onClick = { onOpenBackupEncryption(BackupEncryptionMode.SETUP) }) {
               ListItem(
-                supportingContent = { Text("Not set up yet") },
+                supportingContent = { Text(stringResource(R.string.settings_passphrase_not_set)) },
                 colors = groupListItemColors(),
-              ) { Text("Backup passphrase") }
+              ) { Text(stringResource(R.string.backup_passphrase_title)) }
             }
           }
         }
@@ -551,19 +559,19 @@ fun SettingsScreen(
       }
 
       item(key = "danger") {
-        SectionHeader("Danger zone")
+        SectionHeader(stringResource(R.string.settings_danger))
         GroupedColumn {
           GroupItem(0, 2, onClick = { confirmDemo = true }) {
             ListItem(
-              supportingContent = { Text("Replace everything with sample medications") },
+              supportingContent = { Text(stringResource(R.string.settings_demo_help)) },
               colors = groupListItemColors(),
-            ) { Text("Load demo data") }
+            ) { Text(stringResource(R.string.demo_load)) }
           }
           GroupItem(1, 2, onClick = { confirmClear = true }) {
             ListItem(
-              supportingContent = { Text("Medications, providers, indications and dose history") },
+              supportingContent = { Text(stringResource(R.string.settings_delete_all_help)) },
               colors = groupListItemColors(),
-            ) { Text("Delete all data", color = MaterialTheme.colorScheme.error) }
+            ) { Text(stringResource(R.string.settings_delete_all), color = MaterialTheme.colorScheme.error) }
           }
         }
       }
@@ -572,9 +580,9 @@ fun SettingsScreen(
 
   if (confirmResetWindows) {
     ConfirmDialog(
-      title = "Restore default windows?",
-      text = "Morning, Afternoon, Evening and Bedtime go back to their default times. Custom windows are removed unless a medication is scheduled in them.",
-      confirmLabel = "Restore",
+      title = stringResource(R.string.settings_restore_windows_title),
+      text = stringResource(R.string.settings_restore_windows_text),
+      confirmLabel = stringResource(R.string.settings_restore_confirm),
       onConfirm = {
         confirmResetWindows = false
         onResetWindows()
@@ -583,15 +591,16 @@ fun SettingsScreen(
     )
   }
   if (confirmDemo) {
+    val demoLoadedMessage = stringResource(R.string.settings_demo_loaded)
     ConfirmDialog(
-      title = "Load demo data?",
-      text = "This replaces your medications, schedules and dose history with sample data.",
-      confirmLabel = "Load demo data",
+      title = stringResource(R.string.demo_load_title),
+      text = stringResource(R.string.settings_demo_text),
+      confirmLabel = stringResource(R.string.demo_load),
       destructive = true,
       onConfirm = {
         confirmDemo = false
         onResetSampleData()
-        statusMessage = "Demo data loaded."
+        statusMessage = demoLoadedMessage
       },
       onDismiss = { confirmDemo = false },
     )
@@ -599,47 +608,45 @@ fun SettingsScreen(
   if (confirmPlainExport) {
     AlertDialog(
       onDismissRequest = { confirmPlainExport = false },
-      title = { Text("Export without encryption?") },
-      text = {
-        Text(
-          "The file will contain your medications, doses and history in plain text. " +
-            "Anyone who gets the file, or any app or cloud service it's stored in, can read it.",
-        )
-      },
+      title = { Text(stringResource(R.string.settings_plain_title)) },
+      text = { Text(stringResource(R.string.settings_plain_text)) },
       confirmButton = {
         TextButton(onClick = {
           confirmPlainExport = false
           exportPlainLauncher.launch(suggestedBackupFileName(false))
-        }) { Text("Export") }
+        }) { Text(stringResource(R.string.settings_plain_confirm)) }
       },
-      dismissButton = { TextButton(onClick = { confirmPlainExport = false }) { Text("Cancel") } },
+      dismissButton = { TextButton(onClick = { confirmPlainExport = false }) { Text(stringResource(R.string.action_cancel)) } },
     )
   }
 
   if (confirmClear) {
+    val allDeletedMessage = stringResource(R.string.settings_all_deleted)
     ConfirmDialog(
-      title = "Delete all data?",
-      text = "This permanently removes every medication, provider, indication and dose log. Copy a backup first if you might need it.",
-      confirmLabel = "Delete everything",
+      title = stringResource(R.string.settings_delete_all_title),
+      text = stringResource(R.string.settings_delete_all_text),
+      confirmLabel = stringResource(R.string.settings_delete_all_confirm),
       destructive = true,
       onConfirm = {
         confirmClear = false
         onClearAllData()
-        statusMessage = "All data deleted."
+        statusMessage = allDeletedMessage
       },
       onDismiss = { confirmClear = false },
     )
   }
 }
 
-private fun windowSummary(bucket: TimeOfDayBucket, settings: AppSettings): String {
-  val reminder = when {
-    !settings.notificationsEnabled || !bucket.notificationsEnabled -> "Reminders off"
-    settings.alarmsEnabled && bucket.alarmAtWindowEnd -> "Reminder and alarm"
-    else -> "Reminder only"
-  }
-  val overnight = if (bucket.crossesMidnight) " (overnight)" else ""
-  return "${bucket.formattedTime()}$overnight · $reminder"
+private fun windowSummary(res: Resources, bucket: TimeOfDayBucket, settings: AppSettings): String {
+  val reminder = res.getString(
+    when {
+      !settings.notificationsEnabled || !bucket.notificationsEnabled -> R.string.window_reminders_off
+      settings.alarmsEnabled && bucket.alarmAtWindowEnd -> R.string.window_reminder_and_alarm
+      else -> R.string.window_reminder_only
+    },
+  )
+  val time = if (bucket.crossesMidnight) res.getString(R.string.today_window_overnight, bucket.formattedTime()) else bucket.formattedTime()
+  return res.getString(R.string.window_summary, time, reminder)
 }
 
 /** Saves when editing finishes (Done or focus leaves), not on every keystroke. */
@@ -654,10 +661,8 @@ private fun PatientNameField(savedName: String, onSave: (String) -> Unit) {
     OutlinedTextField(
       value = text,
       onValueChange = { text = it },
-      label = { Text("Your name as printed on labels") },
-      supportingText = {
-        Text("Used by on-device Gemini Nano as a filter so your printed name is never misread as a medication brand or generic name. Stays entirely on-device; only required if you plan to use label scanning.")
-      },
+      label = { Text(stringResource(R.string.settings_label_name)) },
+      supportingText = { Text(stringResource(R.string.settings_label_name_help)) },
       singleLine = true,
       keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
       keyboardActions = KeyboardActions(onDone = {
@@ -670,11 +675,6 @@ private fun PatientNameField(savedName: String, onSave: (String) -> Unit) {
     )
   }
 }
-
-/** Preset names offered when creating a window. */
-private val WINDOW_NAME_PRESETS = listOf(
-  "Morning", "Breakfast", "Midday", "Lunch", "Afternoon", "Dinner", "Evening", "Bedtime", "Late night",
-)
 
 @Composable
 fun DoseWindowEditorScreen(
@@ -703,16 +703,14 @@ fun DoseWindowEditorScreen(
   val endTotal = endHour * 60 + endMinute
   val crossesMidnight = endTotal < startTotal
   val durationMinutes = if (crossesMidnight) 24 * 60 - startTotal + endTotal else endTotal - startTotal
-  val durationText = buildString {
-    val h = durationMinutes / 60
-    val m = durationMinutes % 60
-    if (h > 0) append("$h h")
-    if (m > 0) append(if (h > 0) " $m min" else "$m min")
-  }
-  val timeError = if (durationMinutes <= 0) "Start and end can't be the same time" else null
+  val durationText = listOfNotNull(
+    (durationMinutes / 60).takeIf { it > 0 }?.let { stringResource(R.string.duration_hours, it) },
+    (durationMinutes % 60).takeIf { it > 0 }?.let { stringResource(R.string.duration_minutes, it) },
+  ).joinToString(" ")
+  val timeError = if (durationMinutes <= 0) stringResource(R.string.window_same_time) else null
 
   EditorScaffold(
-    title = if (initialBucket == null) "Add window" else "Edit window",
+    title = stringResource(if (initialBucket == null) R.string.window_add else R.string.window_edit),
     onClose = onClose,
     saveEnabled = name.isNotBlank() && timeError == null,
     onSave = {
@@ -734,13 +732,13 @@ fun DoseWindowEditorScreen(
     OutlinedTextField(
       value = name,
       onValueChange = { name = it },
-      label = { Text("Name *") },
+      label = { Text(stringResource(R.string.field_name_required)) },
       singleLine = true,
       modifier = Modifier.fillMaxWidth(),
     )
     if (initialBucket == null) {
       FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        WINDOW_NAME_PRESETS.forEach { preset ->
+        stringArrayResource(R.array.window_name_presets).forEach { preset ->
           FilterChip(
             selected = name.equals(preset, ignoreCase = true),
             onClick = { name = preset },
@@ -751,14 +749,14 @@ fun DoseWindowEditorScreen(
     }
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
       TimePickerField(
-        label = "Starts",
+        label = stringResource(R.string.window_starts),
         hour = startHour,
         minute = startMinute,
         onTimeChange = { h, m -> startHour = h; startMinute = m },
         modifier = Modifier.weight(1f),
       )
       TimePickerField(
-        label = "Ends",
+        label = stringResource(R.string.field_ends),
         hour = endHour,
         minute = endMinute,
         onTimeChange = { h, m -> endHour = h; endMinute = m },
@@ -766,15 +764,15 @@ fun DoseWindowEditorScreen(
       )
     }
     Text(
-      text = timeError ?: if (crossesMidnight) "$durationText · ends the next morning" else durationText,
+      text = timeError ?: if (crossesMidnight) stringResource(R.string.window_ends_next_morning, durationText) else durationText,
       style = MaterialTheme.typography.bodyMedium,
       color = if (timeError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
     )
     GroupedColumn {
       GroupItem(0, 2) {
         SwitchRow(
-          title = "Reminder when the window opens",
-          subtitle = if (!globalNotificationsEnabled) "Dose reminders are off in Settings" else null,
+          title = stringResource(R.string.window_reminder_switch),
+          subtitle = if (!globalNotificationsEnabled) stringResource(R.string.window_reminders_off_in_settings) else null,
           checked = notifEnabled,
           enabled = globalNotificationsEnabled,
           onCheckedChange = { notifEnabled = it },
@@ -782,8 +780,8 @@ fun DoseWindowEditorScreen(
       }
       GroupItem(1, 2) {
         SwitchRow(
-          title = "Alarm if still unlogged at the end",
-          subtitle = if (!globalAlarmsEnabled) "End-of-window alarms are off in Settings" else null,
+          title = stringResource(R.string.window_alarm_switch),
+          subtitle = if (!globalAlarmsEnabled) stringResource(R.string.window_alarms_off_in_settings) else null,
           checked = alarmAtEnd,
           enabled = globalNotificationsEnabled && globalAlarmsEnabled && notifEnabled,
           onCheckedChange = { alarmAtEnd = it },
@@ -796,7 +794,7 @@ fun DoseWindowEditorScreen(
         onClick = { confirmDelete = true },
         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
         modifier = Modifier.fillMaxWidth(),
-      ) { Text("Delete window") }
+      ) { Text(stringResource(R.string.window_delete)) }
     }
   }
 
@@ -829,9 +827,9 @@ private fun DeleteWindowDialog(
   val affected = WindowDeletion.affectedSchedules(window.id, schedules)
   if (affected.isEmpty() || others.isEmpty()) {
     ConfirmDialog(
-      title = "Delete ${window.name}?",
-      text = "No medications are scheduled in this window.",
-      confirmLabel = "Delete",
+      title = stringResource(R.string.provider_delete_title, window.name),
+      text = stringResource(R.string.window_delete_none_scheduled),
+      confirmLabel = stringResource(R.string.action_delete),
       destructive = true,
       onConfirm = { onConfirm(null) },
       onDismiss = onDismiss,
@@ -844,13 +842,13 @@ private fun DeleteWindowDialog(
 
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("Delete ${window.name}?") },
+    title = { Text(stringResource(R.string.provider_delete_title, window.name)) },
     text = {
       Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp),
       ) {
-        Text("Choose where the doses in this window move:")
+        Text(stringResource(R.string.window_delete_choose))
         others.forEach { other ->
           Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -861,18 +859,18 @@ private fun DeleteWindowDialog(
           ) {
             RadioButton(selected = other.id == targetId, onClick = null)
             Spacer(Modifier.width(12.dp))
-            Text("${other.name} · ${other.formattedTime()}", style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.window_name_time, other.name, other.formattedTime()), style = MaterialTheme.typography.bodyLarge)
           }
         }
-        Text("What changes:", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+        Text(stringResource(R.string.window_delete_what_changes), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
         changes.forEach { change ->
-          val name = medications.find { it.id == change.before.medicationId }?.primaryName ?: "Medication"
+          val name = medications.find { it.id == change.before.medicationId }?.primaryName ?: stringResource(R.string.label_medication)
           val before = ScheduleText.windows(change.before, allWindows)
           val after = ScheduleText.windows(change.after, allWindows)
-          Text("$name: $before → $after", style = MaterialTheme.typography.bodyMedium)
+          Text(stringResource(R.string.window_delete_change, name, before, after), style = MaterialTheme.typography.bodyMedium)
           if (change.losesDose) {
             Text(
-              "One fewer dose each day, because it's already scheduled in that window.",
+              stringResource(R.string.window_delete_loses_dose),
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.error,
             )
@@ -887,9 +885,9 @@ private fun DeleteWindowDialog(
           containerColor = MaterialTheme.colorScheme.error,
           contentColor = MaterialTheme.colorScheme.onError,
         ),
-      ) { Text("Delete and move") }
+      ) { Text(stringResource(R.string.window_delete_and_move)) }
     },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
 }
 
@@ -907,6 +905,8 @@ fun StartupPermissionsDialog(
   val coroutineScope = rememberCoroutineScope()
   var refreshTick by remember { mutableIntStateOf(0) }
   var nanoProgressMessage by remember { mutableStateOf<String?>(null) }
+  val initiatingMessage = stringResource(R.string.nano_initiating)
+  val downloadFailedMessage = stringResource(R.string.nano_download_failed)
 
   DisposableEffect(lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event ->
@@ -949,25 +949,21 @@ fun StartupPermissionsDialog(
 
   AlertDialog(
     onDismissRequest = ::finish,
-    title = { Text("Permissions & System Setup") },
+    title = { Text(stringResource(R.string.setup_title)) },
     text = {
       Column(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
       ) {
         Text(
-          text = if (isNanoSupported) {
-            "Configure notification reliability and optional label scanning features. You can change these anytime in Settings:"
-          } else {
-            "Configure notification reliability for your dose reminders and optional medication lookup. You can change these anytime in Settings:"
-          },
+          text = stringResource(if (isNanoSupported) R.string.setup_intro_nano else R.string.setup_intro),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
           Text(
-            text = "Dose Reminders & Timing",
+            text = stringResource(R.string.setup_reminders_timing),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
@@ -982,25 +978,25 @@ fun StartupPermissionsDialog(
 
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
           Text(
-            text = "What would you like to track?",
+            text = stringResource(R.string.setup_track_question),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
           )
           Text(
-            text = "Medications and doses are always tracked. These are optional; you can change them in Settings.",
+            text = stringResource(R.string.setup_track_help),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           SwitchRow(
-            title = "Providers",
-            subtitle = "Who prescribed each medication",
+            title = stringResource(R.string.providers_title),
+            subtitle = stringResource(R.string.setup_providers_help),
             checked = tracksProviders,
             onCheckedChange = { onSaveSettings(settings.copy(trackProviders = it)) },
           )
           SwitchRow(
-            title = "Indications",
-            subtitle = "What each medication is for",
+            title = stringResource(R.string.indications_title),
+            subtitle = stringResource(R.string.setup_indications_help),
             checked = tracksIndications,
             onCheckedChange = { onSaveSettings(settings.copy(trackIndications = it)) },
           )
@@ -1008,14 +1004,14 @@ fun StartupPermissionsDialog(
 
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
           Text(
-            text = if (isNanoSupported) "Label Scanning & Lookup (Optional)" else "Medication Lookup (Optional)",
+            text = stringResource(if (isNanoSupported) R.string.setup_scanning_optional else R.string.setup_lookup_optional),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
           )
           if (isNanoSupported) {
             Text(
-              text = "On-device AI extracts medication details from prescription bottle labels without sending images to the cloud.",
+              text = stringResource(R.string.setup_nano_help),
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1025,7 +1021,7 @@ fun StartupPermissionsDialog(
               nanoProgressMessage = nanoProgressMessage,
               onDownloadClick = {
                 coroutineScope.launch {
-                  nanoProgressMessage = "Initiating download via AICore..."
+                  nanoProgressMessage = initiatingMessage
                   DrugBarcodeScanner.startNanoDownload(
                     onProgress = { msg -> nanoProgressMessage = msg }
                   ).fold(
@@ -1035,7 +1031,7 @@ fun StartupPermissionsDialog(
                       onPermissionsChanged()
                     },
                     onFailure = { err ->
-                      nanoProgressMessage = err.localizedMessage ?: "Download failed"
+                      nanoProgressMessage = err.localizedMessage ?: downloadFailedMessage
                       DrugBarcodeScanner.openAiCoreSettings(context)
                     }
                   )
@@ -1054,22 +1050,22 @@ fun StartupPermissionsDialog(
 
           if (isNanoSupported) {
             Text(
-              text = "Your Name on Labels (Optional)",
+              text = stringResource(R.string.setup_name_title),
               style = MaterialTheme.typography.titleSmall,
               fontWeight = FontWeight.Bold,
               color = MaterialTheme.colorScheme.primary,
               modifier = Modifier.padding(top = 6.dp),
             )
             Text(
-              text = "Label scanning ignores this name so it's never mistaken for a medication. It stays on your device.",
+              text = stringResource(R.string.setup_name_help),
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             OutlinedTextField(
               value = patientNameText,
               onValueChange = { patientNameText = it },
-              label = { Text("Name as printed on labels") },
-              placeholder = { Text("e.g. Jane Doe") },
+              label = { Text(stringResource(R.string.setup_name_label)) },
+              placeholder = { Text(stringResource(R.string.setup_name_hint)) },
               singleLine = true,
               keyboardOptions = KeyboardOptions(
                 capitalization = KeyboardCapitalization.Words,
@@ -1084,13 +1080,15 @@ fun StartupPermissionsDialog(
     confirmButton = {
       Button(onClick = ::finish) {
         Text(
-          if (allCoreGranted && batteryUnrestricted) {
-            "All Set"
-          } else if (allCoreGranted) {
-            "Continue"
-          } else {
-            "Done for Now"
-          }
+          stringResource(
+            if (allCoreGranted && batteryUnrestricted) {
+              R.string.setup_all_set
+            } else if (allCoreGranted) {
+              R.string.action_continue
+            } else {
+              R.string.setup_done_for_now
+            },
+          ),
         )
       }
     },
@@ -1143,56 +1141,40 @@ fun PermissionsChecklistSection(
 
   Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
     PermissionItemCard(
-      title = "1. Notifications",
-      subtitle = if (notifGranted) {
-        "Granted — persistent window notifications & alarms can be displayed"
-      } else {
-        "Required to display active dose window notifications and alarms"
-      },
+      title = stringResource(R.string.perm_notifications),
+      subtitle = stringResource(if (notifGranted) R.string.perm_notifications_granted else R.string.perm_notifications_needed),
       isGranted = notifGranted,
-      actionLabel = "Allow",
+      actionLabel = stringResource(R.string.perm_allow),
       onActionClick = {
         notifPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
       },
     )
 
     PermissionItemCard(
-      title = "2. Alarms & Reminders (Exact Timing)",
-      subtitle = if (exactAlarmsGranted) {
-        "Granted — window start & end triggers fire on the exact minute"
-      } else {
-        "Required so Android Doze mode does not delay window notifications"
-      },
+      title = stringResource(R.string.perm_exact_alarms),
+      subtitle = stringResource(if (exactAlarmsGranted) R.string.perm_exact_alarms_granted else R.string.perm_exact_alarms_needed),
       isGranted = exactAlarmsGranted,
-      actionLabel = "Allow",
+      actionLabel = stringResource(R.string.perm_allow),
       onActionClick = {
         DoseNotificationManager.openExactAlarmSettings(context)
       },
     )
 
     PermissionItemCard(
-      title = "3. Full-Screen Alarms",
-      subtitle = if (fullScreenGranted) {
-        "Granted — end-of-window alarms open full screen over the lock screen"
-      } else {
-        "Without this, end-of-window alarms only appear as a heads-up notification"
-      },
+      title = stringResource(R.string.perm_full_screen),
+      subtitle = stringResource(if (fullScreenGranted) R.string.perm_full_screen_granted else R.string.perm_full_screen_needed),
       isGranted = fullScreenGranted,
-      actionLabel = "Allow",
+      actionLabel = stringResource(R.string.perm_allow),
       onActionClick = {
         DoseNotificationManager.openFullScreenIntentSettings(context)
       },
     )
 
     PermissionItemCard(
-      title = "4. Unrestricted Background Battery",
-      subtitle = if (batteryUnrestricted) {
-        "Granted — exempt from background battery throttling"
-      } else {
-        "Recommended so overnight/morning windows wake reliably"
-      },
+      title = stringResource(R.string.perm_battery),
+      subtitle = stringResource(if (batteryUnrestricted) R.string.perm_battery_granted else R.string.perm_battery_needed),
       isGranted = batteryUnrestricted,
-      actionLabel = "Exempt",
+      actionLabel = stringResource(R.string.perm_exempt),
       onActionClick = {
         DoseNotificationManager.requestIgnoreBatteryOptimizations(context)
       },
@@ -1209,24 +1191,20 @@ private fun NanoAiCard(
 ) {
   val isNanoReady = nanoStatus == FeatureStatus.AVAILABLE
   val nanoSubtitle = when (nanoStatus) {
-    FeatureStatus.AVAILABLE ->
-      "Gemini Nano is downloaded and ready for on-device label parsing"
-    FeatureStatus.DOWNLOADING ->
-      nanoProgressMessage ?: "Downloading model via AICore (~1.5 GB)..."
-    FeatureStatus.DOWNLOADABLE ->
-      nanoProgressMessage ?: "Ready for download (~1.5 GB) — requires Wi-Fi and power/charging"
-    FeatureStatus.UNAVAILABLE ->
-      "Not supported on this hardware (manual OpenFDA search works everywhere)"
-    else -> "Checking on-device AI status..."
+    FeatureStatus.AVAILABLE -> stringResource(R.string.nano_ready)
+    FeatureStatus.DOWNLOADING -> nanoProgressMessage ?: stringResource(R.string.nano_downloading)
+    FeatureStatus.DOWNLOADABLE -> nanoProgressMessage ?: stringResource(R.string.nano_downloadable)
+    FeatureStatus.UNAVAILABLE -> stringResource(R.string.nano_unsupported)
+    else -> stringResource(R.string.nano_checking)
   }
   val nanoActionLabel = when (nanoStatus) {
-    FeatureStatus.DOWNLOADING -> "AICore Settings"
-    FeatureStatus.DOWNLOADABLE -> "Download"
+    FeatureStatus.DOWNLOADING -> stringResource(R.string.nano_aicore_settings)
+    FeatureStatus.DOWNLOADABLE -> stringResource(R.string.nano_download)
     else -> null
   }
 
   PermissionItemCard(
-    title = "On-Device AI (Gemini Nano / AICore)",
+    title = stringResource(R.string.nano_title),
     subtitle = nanoSubtitle,
     isGranted = isNanoReady,
     actionLabel = nanoActionLabel,
@@ -1271,7 +1249,7 @@ private fun FdaLookupCard(
       Spacer(modifier = Modifier.width(8.dp))
       Column(modifier = Modifier.weight(1f)) {
         Text(
-          text = "OpenFDA Medication Lookup",
+          text = stringResource(R.string.fda_title),
           style = MaterialTheme.typography.labelLarge,
           fontWeight = FontWeight.Bold,
           color = if (allowFdaLookup) {
@@ -1281,7 +1259,7 @@ private fun FdaLookupCard(
           },
         )
         Text(
-          text = "Allow medication lookup via FDA API. Medication data (such as drug name, strength, or NDC) will be sent to official OpenFDA servers for autofill and verification. No personally identifiable information (PII) is included.",
+          text = stringResource(R.string.fda_help),
           style = MaterialTheme.typography.bodySmall,
           color = if (allowFdaLookup) {
             MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.85f)
@@ -1347,13 +1325,13 @@ private fun PermissionItemCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
           Icon(
             Icons.Default.CheckCircle,
-            contentDescription = "Granted",
+            contentDescription = stringResource(R.string.perm_granted),
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(18.dp),
           )
           Spacer(modifier = Modifier.width(4.dp))
           Text(
-            text = "Active",
+            text = stringResource(R.string.perm_active),
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,

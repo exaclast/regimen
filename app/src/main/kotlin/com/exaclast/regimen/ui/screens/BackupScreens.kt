@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.res.Resources
 import android.os.PersistableBundle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -54,6 +55,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -62,6 +66,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.exaclast.regimen.R
 import com.exaclast.regimen.sync.BackupFiles
 import com.exaclast.regimen.ui.RestoreUiState
 import com.exaclast.regimen.ui.components.AppSnackbarHost
@@ -106,11 +111,12 @@ fun BackupEncryptionScreen(
     (!needsNew || (newPass.length >= MIN_PASSPHRASE_LENGTH && confirm == newPass))
 
   val title = when (mode) {
-    BackupEncryptionMode.SETUP -> "Backup passphrase"
-    BackupEncryptionMode.CHANGE -> "Change passphrase"
-    BackupEncryptionMode.SHOW_CODE -> "Recovery code"
-    BackupEncryptionMode.RESET -> "Reset passphrase"
+    BackupEncryptionMode.SETUP -> stringResource(R.string.backup_passphrase_title)
+    BackupEncryptionMode.CHANGE -> stringResource(R.string.backup_change_passphrase_title)
+    BackupEncryptionMode.SHOW_CODE -> stringResource(R.string.backup_recovery_code)
+    BackupEncryptionMode.RESET -> stringResource(R.string.backup_reset_passphrase_title)
   }
+  val genericError = stringResource(R.string.error_generic)
 
   fun submit() {
     if (!inputValid || busy) return
@@ -120,7 +126,7 @@ fun BackupEncryptionScreen(
       busy = false
       result.fold(
         onSuccess = { code -> if (code != null) recoveryCode = code else onDone(true) },
-        onFailure = { error = it.message ?: "Something went wrong" },
+        onFailure = { error = it.message ?: genericError },
       )
     }
     when (mode) {
@@ -139,18 +145,17 @@ fun BackupEncryptionScreen(
       onClose = { onDone(mustConfirm) },
       onSave = { onDone(mustConfirm) },
       saveEnabled = !mustConfirm || savedConfirmed,
-      saveLabel = "Done",
+      saveLabel = stringResource(R.string.action_done),
     ) {
       Text(
-        "Your recovery code opens every backup made with this passphrase, even if you forget it. " +
-          "Store it somewhere safe and private, like a password manager or on paper.",
+        stringResource(R.string.backup_code_help),
         style = MaterialTheme.typography.bodyMedium,
       )
       RecoveryCodeCard(code)
       if (mustConfirm) {
         Row(verticalAlignment = Alignment.CenterVertically) {
           Checkbox(checked = savedConfirmed, onCheckedChange = { savedConfirmed = it })
-          Text("I've saved my recovery code", style = MaterialTheme.typography.bodyLarge)
+          Text(stringResource(R.string.backup_code_saved), style = MaterialTheme.typography.bodyLarge)
         }
       }
     }
@@ -163,22 +168,18 @@ fun BackupEncryptionScreen(
     onSave = ::submit,
     saveEnabled = inputValid && !busy,
     saveLabel = when (mode) {
-      BackupEncryptionMode.SHOW_CODE -> "Show"
-      BackupEncryptionMode.CHANGE -> "Change"
-      else -> "Continue"
+      BackupEncryptionMode.SHOW_CODE -> stringResource(R.string.action_show)
+      BackupEncryptionMode.CHANGE -> stringResource(R.string.action_change)
+      else -> stringResource(R.string.action_continue)
     },
   ) {
     Text(
       when (mode) {
         BackupEncryptionMode.SETUP ->
-          "Backups are encrypted with this passphrase. You'll need it to restore on another device. " +
-            "Use a few unrelated words that you'll remember."
-        BackupEncryptionMode.CHANGE ->
-          "Earlier backups stay readable: they open with the new passphrase or your recovery code."
-        BackupEncryptionMode.SHOW_CODE -> "Enter your backup passphrase to see your recovery code."
-        BackupEncryptionMode.RESET ->
-          "Starts over with a new passphrase and recovery code. Backups made before the reset still " +
-            "need the old passphrase or recovery code."
+          stringResource(R.string.backup_setup_help)
+        BackupEncryptionMode.CHANGE -> stringResource(R.string.backup_change_help)
+        BackupEncryptionMode.SHOW_CODE -> stringResource(R.string.backup_show_code_help)
+        BackupEncryptionMode.RESET -> stringResource(R.string.backup_reset_help)
       },
       style = MaterialTheme.typography.bodyMedium,
     )
@@ -186,7 +187,7 @@ fun BackupEncryptionScreen(
       PassphraseField(
         value = current,
         onValueChange = { current = it; error = null },
-        label = "Current passphrase",
+        label = stringResource(R.string.backup_current_passphrase),
         imeAction = if (needsNew) ImeAction.Next else ImeAction.Done,
         onDone = ::submit,
       )
@@ -195,26 +196,26 @@ fun BackupEncryptionScreen(
       PassphraseField(
         value = newPass,
         onValueChange = { newPass = it; error = null },
-        label = if (mode == BackupEncryptionMode.SETUP) "Passphrase" else "New passphrase",
+        label = stringResource(if (mode == BackupEncryptionMode.SETUP) R.string.backup_passphrase else R.string.backup_new_passphrase),
         isError = newTooShort,
-        supportingText = if (newTooShort) "At least $MIN_PASSPHRASE_LENGTH characters" else null,
+        supportingText = if (newTooShort) pluralStringResource(R.plurals.backup_passphrase_too_short, MIN_PASSPHRASE_LENGTH, MIN_PASSPHRASE_LENGTH) else null,
         imeAction = ImeAction.Next,
         onDone = ::submit,
       )
       PassphraseField(
         value = confirm,
         onValueChange = { confirm = it; error = null },
-        label = "Confirm passphrase",
+        label = stringResource(R.string.backup_confirm_passphrase),
         isError = mismatch,
-        supportingText = if (mismatch) "Doesn't match" else null,
+        supportingText = if (mismatch) stringResource(R.string.backup_passphrase_mismatch) else null,
         imeAction = ImeAction.Done,
         onDone = ::submit,
       )
     }
     error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
-    if (busy) BusyRow("Securing your key…")
+    if (busy) BusyRow(stringResource(R.string.backup_securing))
     if (mode == BackupEncryptionMode.CHANGE || mode == BackupEncryptionMode.SHOW_CODE) {
-      TextButton(onClick = onReset, enabled = !busy) { Text("Forgot your passphrase?") }
+      TextButton(onClick = onReset, enabled = !busy) { Text(stringResource(R.string.backup_forgot)) }
     }
   }
 }
@@ -222,6 +223,7 @@ fun BackupEncryptionScreen(
 @Composable
 private fun RecoveryCodeCard(code: String) {
   val context = LocalContext.current
+  val clipLabel = stringResource(R.string.backup_clip_label)
   Surface(
     shape = MaterialTheme.shapes.large,
     color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -235,9 +237,9 @@ private fun RecoveryCodeCard(code: String) {
         fontFamily = FontFamily.Monospace,
         fontWeight = FontWeight.Medium,
       )
-      OutlinedButton(onClick = { copySensitive(context, "Regimen recovery code", code) }) {
+      OutlinedButton(onClick = { copySensitive(context, clipLabel, code) }) {
         Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-        Text("Copy", modifier = Modifier.padding(start = 8.dp))
+        Text(stringResource(R.string.action_copy), modifier = Modifier.padding(start = 8.dp))
       }
     }
   }
@@ -281,7 +283,7 @@ private fun PassphraseField(
         IconButton(onClick = { visible = !visible }) {
           Icon(
             if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-            contentDescription = if (visible) "Hide passphrase" else "Show passphrase",
+            contentDescription = stringResource(if (visible) R.string.backup_hide_passphrase else R.string.backup_show_passphrase),
           )
         }
       }
@@ -320,8 +322,8 @@ fun BackupRestoreScreen(
   Scaffold(
     topBar = {
       TopAppBar(
-        title = { Text(if (state is RestoreUiState.Locked) "Unlock backup" else "Restore backup") },
-        navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close") } },
+        title = { Text(stringResource(if (state is RestoreUiState.Locked) R.string.backup_unlock_title else R.string.backup_restore_title)) },
+        navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_close)) } },
       )
     },
     snackbarHost = { AppSnackbarHost() },
@@ -338,7 +340,7 @@ fun BackupRestoreScreen(
       when (state) {
         is RestoreUiState.Locked -> UnlockContent(state, onUnlock)
         is RestoreUiState.Preview -> PreviewContent(state, onApply)
-        else -> BusyRow("Opening backup…")
+        else -> BusyRow(stringResource(R.string.backup_opening))
       }
     }
   }
@@ -355,16 +357,15 @@ private fun ColumnScope.UnlockContent(state: RestoreUiState.Locked, onUnlock: (S
   Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
     Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
     Text(
-      "This backup is locked with a different passphrase than this device's. " +
-        "Enter the passphrase it was made with, or its recovery code.",
+      stringResource(R.string.backup_locked_help),
       style = MaterialTheme.typography.bodyMedium,
     )
   }
   state.locked.header.createdAtEpochMillis.takeIf { it > 0 }?.let {
-    Text("Backed up ${UiFormat.dateTime(it)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(stringResource(R.string.backup_backed_up, UiFormat.dateTime(it)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
   }
   SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-    listOf("Passphrase", "Recovery code").forEachIndexed { i, label ->
+    listOf(stringResource(R.string.backup_passphrase), stringResource(R.string.backup_recovery_code)).forEachIndexed { i, label ->
       SegmentedButton(
         selected = useRecoveryCode == (i == 1),
         onClick = { useRecoveryCode = i == 1; secret = "" },
@@ -375,7 +376,7 @@ private fun ColumnScope.UnlockContent(state: RestoreUiState.Locked, onUnlock: (S
   PassphraseField(
     value = secret,
     onValueChange = { secret = it },
-    label = if (useRecoveryCode) "Recovery code" else "Passphrase",
+    label = stringResource(if (useRecoveryCode) R.string.backup_recovery_code else R.string.backup_passphrase),
     imeAction = ImeAction.Done,
     onDone = submit,
     isError = state.error != null,
@@ -383,9 +384,9 @@ private fun ColumnScope.UnlockContent(state: RestoreUiState.Locked, onUnlock: (S
     isRecoveryCode = useRecoveryCode,
   )
   if (state.busy) {
-    BusyRow("Unlocking…")
+    BusyRow(stringResource(R.string.backup_unlocking))
   } else {
-    Button(onClick = submit, enabled = canSubmit, modifier = Modifier.align(Alignment.End)) { Text("Unlock") }
+    Button(onClick = submit, enabled = canSubmit, modifier = Modifier.align(Alignment.End)) { Text(stringResource(R.string.backup_unlock)) }
   }
 }
 
@@ -395,14 +396,15 @@ private fun PreviewContent(state: RestoreUiState.Preview, onApply: (Boolean) -> 
   var confirmReplace by remember { mutableStateOf(false) }
   val removedByReplace = preview.kinds.sumOf { it.onlyOnDevice }
 
+  val resources = LocalResources.current
   val source = listOfNotNull(
-    "Backed up ${UiFormat.dateTime(preview.exportedAtEpochMillis)}",
-    preview.sourceDeviceName?.let { "from $it" },
+    stringResource(R.string.backup_backed_up, UiFormat.dateTime(preview.exportedAtEpochMillis)),
+    preview.sourceDeviceName?.let { stringResource(R.string.backup_from_device, it) },
   ).joinToString(" ")
   Text(source, style = MaterialTheme.typography.bodyLarge)
   if (!state.ready.wasEncrypted) {
     Text(
-      "This file isn't encrypted.",
+      stringResource(R.string.backup_not_encrypted),
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -411,19 +413,19 @@ private fun PreviewContent(state: RestoreUiState.Preview, onApply: (Boolean) -> 
   val last = UiFormat.dateIso(preview.lastDoseDateIso)
   if (first != null && last != null) {
     Text(
-      if (first == last) "Dose history: $first" else "Dose history: $first – $last",
+      if (first == last) stringResource(R.string.backup_dose_history_one, first) else stringResource(R.string.backup_dose_history_range, first, last),
       style = MaterialTheme.typography.bodyMedium,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
   }
 
-  SectionHeader("Compared with this device")
+  SectionHeader(stringResource(R.string.backup_compared))
   val rows = preview.kinds.filter { it.inFile > 0 || it.onlyOnDevice > 0 }
   GroupedColumn {
     rows.forEachIndexed { i, kind ->
       GroupItem(i, rows.size) {
         ListItem(
-          supportingContent = { Text(diffSummary(kind)) },
+          supportingContent = { Text(diffSummary(resources, kind)) },
           trailingContent = { Text("${kind.inFile}", style = MaterialTheme.typography.titleMedium) },
           colors = groupListItemColors(),
         ) { Text(kind.label) }
@@ -431,19 +433,18 @@ private fun PreviewContent(state: RestoreUiState.Preview, onApply: (Boolean) -> 
     }
   }
   if (preview.identicalToDevice) {
-    Text("This backup matches what's on this device.", style = MaterialTheme.typography.bodyMedium)
+    Text(stringResource(R.string.backup_matches), style = MaterialTheme.typography.bodyMedium)
   }
 
   if (state.busy) {
-    BusyRow("Restoring…")
+    BusyRow(stringResource(R.string.backup_restoring))
     return
   }
 
-  SectionHeader("Restore")
-  Button(onClick = { onApply(false) }, modifier = Modifier.fillMaxWidth()) { Text("Merge into this device") }
+  SectionHeader(stringResource(R.string.backup_restore_section))
+  Button(onClick = { onApply(false) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.backup_merge)) }
   Text(
-    "Adds what's new and keeps the most recently edited version of anything on both. " +
-      "Anything only on this device stays, and so do its reminder and display settings.",
+    stringResource(R.string.backup_merge_help),
     style = MaterialTheme.typography.bodySmall,
     color = MaterialTheme.colorScheme.onSurfaceVariant,
   )
@@ -451,10 +452,13 @@ private fun PreviewContent(state: RestoreUiState.Preview, onApply: (Boolean) -> 
     onClick = { confirmReplace = true },
     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
     modifier = Modifier.fillMaxWidth(),
-  ) { Text("Replace this device's data") }
+  ) { Text(stringResource(R.string.backup_replace)) }
   Text(
-    "Makes this device match the backup exactly, including reminder and display settings." +
-      if (removedByReplace > 0) " ${itemCount(removedByReplace)} only on this device will be removed." else "",
+    if (removedByReplace > 0) {
+      stringResource(R.string.backup_replace_help_removing, itemCount(resources, removedByReplace))
+    } else {
+      stringResource(R.string.backup_replace_help)
+    },
     style = MaterialTheme.typography.bodySmall,
     color = MaterialTheme.colorScheme.onSurfaceVariant,
   )
@@ -462,31 +466,33 @@ private fun PreviewContent(state: RestoreUiState.Preview, onApply: (Boolean) -> 
   if (confirmReplace) {
     AlertDialog(
       onDismissRequest = { confirmReplace = false },
-      title = { Text("Replace this device's data?") },
+      title = { Text(stringResource(R.string.backup_replace_title)) },
       text = {
         Text(
-          "Everything on this device will be replaced with the backup" +
-            (if (removedByReplace > 0) ", removing ${itemCount(removedByReplace)} that aren't in it" else "") +
-            ". You can undo this right after.",
+          if (removedByReplace > 0) {
+            stringResource(R.string.backup_replace_text_removing, itemCount(resources, removedByReplace))
+          } else {
+            stringResource(R.string.backup_replace_text)
+          },
         )
       },
       confirmButton = {
         TextButton(onClick = { confirmReplace = false; onApply(true) }) {
-          Text("Replace", color = MaterialTheme.colorScheme.error)
+          Text(stringResource(R.string.action_replace), color = MaterialTheme.colorScheme.error)
         }
       },
-      dismissButton = { TextButton(onClick = { confirmReplace = false }) { Text("Cancel") } },
+      dismissButton = { TextButton(onClick = { confirmReplace = false }) { Text(stringResource(R.string.action_cancel)) } },
     )
   }
 }
 
-private fun diffSummary(kind: BackupFiles.KindDiff): String {
+private fun diffSummary(res: Resources, kind: BackupFiles.KindDiff): String {
   val parts = buildList {
-    if (kind.new > 0) add("${kind.new} new")
-    if (kind.changed > 0) add("${kind.changed} different")
-    if (kind.onlyOnDevice > 0) add("${kind.onlyOnDevice} only on this device")
+    if (kind.new > 0) add(res.getQuantityString(R.plurals.backup_diff_new, kind.new, kind.new))
+    if (kind.changed > 0) add(res.getQuantityString(R.plurals.backup_diff_changed, kind.changed, kind.changed))
+    if (kind.onlyOnDevice > 0) add(res.getQuantityString(R.plurals.backup_diff_only_here, kind.onlyOnDevice, kind.onlyOnDevice))
   }
-  return parts.joinToString(" · ").ifEmpty { "Same as this device" }
+  return parts.joinToString(" · ").ifEmpty { res.getString(R.string.backup_diff_same) }
 }
 
-private fun itemCount(n: Int) = if (n == 1) "1 item" else "$n items"
+private fun itemCount(res: Resources, n: Int): String = res.getQuantityString(R.plurals.item_count, n, n)

@@ -23,7 +23,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.exaclast.regimen.R
 import com.exaclast.regimen.domain.DoseLogEdits
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
@@ -69,7 +71,7 @@ fun DoseLogEditorScreen(
   val showSite = taken && (medication.tracksSites || log.siteUsed != null)
 
   EditorScaffold(
-    title = "Edit ${medication.primaryName} dose",
+    title = stringResource(R.string.dose_log_edit_title, medication.primaryName),
     onClose = onClose,
     saveEnabled = !taken || (amountCheck.validOrNull() != null && takenAt != null && !inFuture),
     onSave = {
@@ -86,18 +88,18 @@ fun DoseLogEditorScreen(
     },
   ) {
     Text(
-      text = if (taken) "Taken" else log.status.displayName,
+      text = if (taken) stringResource(R.string.dose_status_taken) else log.status.displayName,
       style = MaterialTheme.typography.titleMedium,
     )
     if (taken) {
       DatePickerField(
-        label = "Date taken",
+        label = stringResource(R.string.dose_log_date_taken),
         valueIso = dateIso,
         onValueChange = { dateIso = it },
         allowClear = false,
       )
       TimePickerField(
-        label = "Time taken",
+        label = stringResource(R.string.dose_log_time_taken),
         hour = hour,
         minute = minute,
         onTimeChange = { h, m ->
@@ -107,7 +109,7 @@ fun DoseLogEditorScreen(
       )
       if (inFuture) {
         Text(
-          "That time hasn't happened yet.",
+          stringResource(R.string.log_time_future),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.error,
         )
@@ -116,7 +118,7 @@ fun DoseLogEditorScreen(
         value = amountText,
         onValueChange = { amountText = it },
         check = amountCheck,
-        label = { Text("Amount (${log.amountUnit.symbol})") },
+        label = { Text(stringResource(R.string.dose_log_amount, log.amountUnit.symbol)) },
         modifier = Modifier.fillMaxWidth(),
       )
     }
@@ -124,7 +126,7 @@ fun DoseLogEditorScreen(
       OutlinedTextField(
         value = site,
         onValueChange = { site = it },
-        label = { Text("Site") },
+        label = { Text(stringResource(R.string.field_site)) },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
       )
@@ -152,8 +154,8 @@ fun DoseLogEditorScreen(
     OutlinedTextField(
       value = notes,
       onValueChange = { notes = it },
-      label = { Text("Note") },
-      placeholder = { Text("e.g. headache, 6/10") },
+      label = { Text(stringResource(R.string.field_note)) },
+      placeholder = { Text(stringResource(R.string.log_time_note_hint)) },
       minLines = 2,
       modifier = Modifier.fillMaxWidth(),
     )

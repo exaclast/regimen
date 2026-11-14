@@ -108,7 +108,16 @@ object IndicationTimeline {
     status = IndicationStatus.ACTIVE,
     diagnosedDateIso = today.toString(),
     providerIds = previous.providerIds,
+    primaryIds = previous.primaryIds,
   )
+
+  /** The indications [indication] is secondary to, ignoring ones that no longer exist. */
+  fun primariesOf(indication: Indication, all: List<Indication>): List<Indication> =
+    all.filter { it.id in indication.primaryIds && it.id != indication.id }
+
+  /** The indications that are secondary to [indication]. */
+  fun secondariesOf(indication: Indication, all: List<Indication>): List<Indication> =
+    all.filter { indication.id in it.primaryIds && it.id != indication.id }
 
   private fun parse(iso: String?): LocalDate? = iso?.let { runCatching { LocalDate.parse(it.trim()) }.getOrNull() }
 }

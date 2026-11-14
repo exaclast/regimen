@@ -1,5 +1,6 @@
 package com.exaclast.regimen.ui.navigation
 
+import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.CheckCircle
@@ -8,6 +9,7 @@ import androidx.compose.material.icons.filled.Medication
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
+import com.exaclast.regimen.R
 import kotlinx.serialization.Serializable
 
 /** Every navigable destination. Keys are serializable so the back stack survives process death. */
@@ -57,11 +59,11 @@ sealed interface Route : NavKey {
 }
 
 /** Bottom-bar destinations. */
-enum class TopLevel(val route: Route, val label: String, val icon: ImageVector) {
-  TODAY(Route.Today, "Today", Icons.Default.CheckCircle),
-  MEDICATIONS(Route.Medications, "Medications", Icons.Default.Medication),
-  PROVIDERS(Route.Providers, "Providers", Icons.Default.Badge),
-  INDICATIONS(Route.Indications, "Indications", Icons.Default.Favorite),
+enum class TopLevel(val route: Route, @param:StringRes val labelRes: Int, val icon: ImageVector) {
+  TODAY(Route.Today, R.string.today_title, Icons.Default.CheckCircle),
+  MEDICATIONS(Route.Medications, R.string.medications_title, Icons.Default.Medication),
+  PROVIDERS(Route.Providers, R.string.providers_title, Icons.Default.Badge),
+  INDICATIONS(Route.Indications, R.string.indications_title, Icons.Default.Favorite),
 }
 
 /** Full-screen task destinations hide the navigation bar. */
