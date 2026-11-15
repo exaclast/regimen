@@ -617,7 +617,6 @@
     <string name="setup_all_set">All Set</string>
     <string name="setup_done_for_now">Done for Now</string>
     <string name="perm_allow">Allow</string>
-    <string name="perm_exempt">Exempt</string>
     <string name="perm_granted">Granted</string>
     <string name="perm_active">Active</string>
     <string name="perm_notifications">1. Notifications</string>
@@ -629,9 +628,6 @@
     <string name="perm_full_screen">3. Full-Screen Alarms</string>
     <string name="perm_full_screen_granted">Granted — end-of-window alarms open full screen over the lock screen</string>
     <string name="perm_full_screen_needed">Without this, end-of-window alarms only appear as a heads-up notification</string>
-    <string name="perm_battery">4. Unrestricted Background Battery</string>
-    <string name="perm_battery_granted">Granted — exempt from background battery throttling</string>
-    <string name="perm_battery_needed">Recommended so overnight/morning windows wake reliably</string>
     <string name="nano_ready">Gemini Nano is downloaded and ready for on-device label parsing</string>
     <string name="nano_downloading">Downloading model via AICore (~1.5 GB)...</string>
     <string name="nano_downloadable">Ready for download (~1.5 GB) — requires Wi-Fi and power/charging</string>
@@ -1193,4 +1189,38 @@
     <string name="hub_grey">Grey</string>
     <string name="hub_blue_green">Blue-green</string>
     <string name="hub_red">Red</string>
+
+    <!-- v1.0 additions (T-029, T-039, AdjustmentEditor) -->
+    <string name="fda_network_error">Couldn\'t reach OpenFDA. Check your internet connection and try again.</string>
+    <string name="editor_discard_title">Discard changes?</string>
+    <string name="editor_discard_text">Your unsaved changes will be lost.</string>
+    <string name="adjust_delete">Delete change</string>
+
+    <!-- Automatic local backups (T-093) -->
+    <string name="auto_backup_section">Automatic backups</string>
+    <string name="auto_backup_switch">Automatic encrypted backups</string>
+    <string name="auto_backup_switch_help">Save encrypted backups automatically to a folder you choose</string>
+    <string name="auto_backup_folder">Backup folder</string>
+    <string name="auto_backup_folder_not_set">Not selected</string>
+    <string name="auto_backup_frequency">Frequency</string>
+    <string name="auto_backup_freq_daily">Daily</string>
+    <string name="auto_backup_freq_weekly">Weekly</string>
+    <string name="auto_backup_keep_title">Keep recent backups</string>
+    <string name="auto_backup_keep_help">Also keeps the newest backup from each of the last 12 months</string>
+    <string name="auto_backup_keep_option">%1$d</string>
+    <string name="auto_backup_never">No automatic backups yet</string>
+    <string name="auto_backup_running">Backing up…</string>
+    <plurals name="auto_backup_status">
+        <item quantity="one">Last backup: %1$s · %2$d kept</item>
+        <item quantity="other">Last backup: %1$s · %2$d kept</item>
+    </plurals>
+    <string name="auto_backup_now">Back up now</string>
+    <string name="auto_backup_now_help">Write an encrypted backup to your chosen folder right away</string>
+    <string name="auto_backup_err_permission">Folder permission was lost. Choose a backup folder again to resume automatic backups.</string>
+    <string name="auto_backup_err_folder_missing">The backup folder couldn\'t be found. Choose another folder to resume automatic backups.</string>
+    <string name="auto_backup_err_key_lost">Re-enter your backup passphrase so automatic backups can resume.</string>
+    <string name="auto_backup_err_not_configured">Choose a backup folder and passphrase to start automatic backups.</string>
+    <string name="auto_backup_err_write_failed">Last automatic backup failed. Check available storage and try again.</string>
+    <string name="vm_auto_backup_saved">Automatic backup saved</string>
+    <string name="vm_auto_backup_failed">Automatic backup failed</string>
 </resources>

@@ -62,7 +62,6 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -122,7 +121,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.exaclast.regimen.notifications.DoseAlarmTiming
 import com.exaclast.regimen.notifications.DoseNotificationManager
 import com.exaclast.regimen.ui.RegimenUiState
+import com.exaclast.regimen.ui.components.AdaptiveLargeTopAppBar
 import com.exaclast.regimen.ui.components.AppSnackbarHost
+import com.exaclast.regimen.ui.components.CenteredContentBox
 import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.GroupedColumn
@@ -130,7 +131,9 @@ import com.exaclast.regimen.ui.components.LogTimeDialog
 import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.model.texts
 import com.exaclast.regimen.ui.components.UiFormat
+import com.exaclast.regimen.ui.components.addHorizontal
 import com.exaclast.regimen.ui.components.doseText
+import com.exaclast.regimen.ui.components.isLargeFontScale
 import com.exaclast.regimen.ui.components.tabContentInsets
 import com.exaclast.regimen.ui.components.warning
 import com.exaclast.regimen.ui.components.groupListItemColors
@@ -303,7 +306,7 @@ fun TodayScreen(
     modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
     contentWindowInsets = tabContentInsets(),
     topBar = {
-      LargeFlexibleTopAppBar(
+      AdaptiveLargeTopAppBar(
         title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         subtitle = { Text(subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         actions = {
@@ -344,15 +347,18 @@ fun TodayScreen(
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
-    LazyColumn(
-      state = listState,
+    CenteredContentBox(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding),
-      // Bottom room so the last card can scroll clear of the button.
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
+    ) { extra ->
+      LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        // Bottom room so the last card can scroll clear of the button.
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp).addHorizontal(extra),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
       if (!settings.notificationsEnabled) {
         item(key = "reminders-off") {
           NoticeCard(
@@ -457,6 +463,7 @@ fun TodayScreen(
           )
         }
       }
+    }
     }
   }
 
@@ -727,7 +734,7 @@ private fun WindowSection(
                 MaterialTheme.typography.titleMedium
               },
               fontWeight = FontWeight.SemiBold,
-              maxLines = 1,
+              maxLines = 2,
               overflow = TextOverflow.Ellipsis,
               modifier = Modifier.weight(1f, fill = false),
             )
@@ -913,6 +920,9 @@ private fun DoseCard(
       }
     }
     if (canSnooze) add(CustomAccessibilityAction(pluralStringResource(R.plurals.a11y_snooze_minutes, snoozeMinutes, snoozeMinutes)) { onSnooze(); true })
+    if (canAct && med.activeSites.size > 1) {
+      add(CustomAccessibilityAction(stringResource(R.string.take_different_site)) { onChangeSite(); true })
+    }
     if (canAct) add(CustomAccessibilityAction(stringResource(R.string.action_skip)) { onSkip(); true })
     if (canMarkTaken) {
       if (markTakenOnTimeAt != null) {
@@ -1055,41 +1065,85 @@ private fun DoseCard(
 
         if (canAct) {
           Spacer(Modifier.height(4.dp))
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            when {
-              canLogOnTime && isPastDay -> {
-                Button(onClick = onTakenOnTime, modifier = Modifier.weight(1f)) {
+          val takenOnTimeLabel = stringResource(R.string.taken_on_time)
+          val takeNowLabel = stringResource(R.string.take_now)
+          val snoozeLabel = stringResource(R.string.action_snooze)
+          if (isLargeFontScale()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+              when {
+                canLogOnTime && isPastDay -> {
+                  Button(onClick = onTakenOnTime, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(takenOnTimeLabel, textAlign = TextAlign.Center)
+                  }
+                  OutlinedButton(onClick = onTake, modifier = Modifier.fillMaxWidth()) {
+                    Text(takeNowLabel, textAlign = TextAlign.Center)
+                  }
+                }
+                canLogOnTime -> {
+                  Button(onClick = onTake, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(takeLabel, textAlign = TextAlign.Center)
+                  }
+                  OutlinedButton(onClick = onTakenOnTime, modifier = Modifier.fillMaxWidth()) {
+                    Text(takenOnTimeLabel, textAlign = TextAlign.Center)
+                  }
+                }
+                !item.pacing.canTakeNow || phase == WindowPhase.UPCOMING ->
+                  OutlinedButton(onClick = onTake, modifier = Modifier.fillMaxWidth()) { Text(takeLabel, textAlign = TextAlign.Center) }
+                else -> Button(onClick = onTake, modifier = Modifier.fillMaxWidth()) {
                   Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                   Spacer(Modifier.width(8.dp))
-                  Text(stringResource(R.string.taken_on_time), maxLines = 1)
-                }
-                OutlinedButton(onClick = onTake, modifier = Modifier.weight(1f)) {
-                  Text(stringResource(R.string.take_now), maxLines = 1)
+                  Text(takeLabel, textAlign = TextAlign.Center)
                 }
               }
-              canLogOnTime -> {
-                Button(onClick = onTake, modifier = Modifier.weight(1f)) {
-                  Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+              if (canSnooze) {
+                FilledTonalButton(onClick = onSnooze, modifier = Modifier.fillMaxWidth()) {
+                  Icon(Icons.Default.Snooze, contentDescription = null, modifier = Modifier.size(18.dp))
                   Spacer(Modifier.width(8.dp))
-                  Text(takeLabel, maxLines = 1)
+                  Text(snoozeLabel, textAlign = TextAlign.Center)
                 }
-                OutlinedButton(onClick = onTakenOnTime, modifier = Modifier.weight(1f)) {
-                  Text(stringResource(R.string.taken_on_time), maxLines = 1)
-                }
-              }
-              !item.pacing.canTakeNow || phase == WindowPhase.UPCOMING ->
-                OutlinedButton(onClick = onTake, modifier = Modifier.weight(1f)) { Text(takeLabel) }
-              else -> Button(onClick = onTake, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(takeLabel)
               }
             }
-            if (canSnooze) {
-              FilledTonalButton(onClick = onSnooze) {
-                Icon(Icons.Default.Snooze, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.action_snooze))
+          } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+              when {
+                canLogOnTime && isPastDay -> {
+                  Button(onClick = onTakenOnTime, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(takenOnTimeLabel, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
+                  }
+                  OutlinedButton(onClick = onTake, modifier = Modifier.weight(1f)) {
+                    Text(takeNowLabel, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
+                  }
+                }
+                canLogOnTime -> {
+                  Button(onClick = onTake, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(takeLabel, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
+                  }
+                  OutlinedButton(onClick = onTakenOnTime, modifier = Modifier.weight(1f)) {
+                    Text(takenOnTimeLabel, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
+                  }
+                }
+                !item.pacing.canTakeNow || phase == WindowPhase.UPCOMING ->
+                  OutlinedButton(onClick = onTake, modifier = Modifier.weight(1f)) { Text(takeLabel, textAlign = TextAlign.Center) }
+                else -> Button(onClick = onTake, modifier = Modifier.weight(1f)) {
+                  Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                  Spacer(Modifier.width(8.dp))
+                  Text(takeLabel, textAlign = TextAlign.Center)
+                }
+              }
+              if (canSnooze) {
+                FilledTonalButton(onClick = onSnooze) {
+                  Icon(Icons.Default.Snooze, contentDescription = null, modifier = Modifier.size(18.dp))
+                  Spacer(Modifier.width(8.dp))
+                  Text(snoozeLabel)
+                }
               }
             }
           }
@@ -1171,17 +1225,16 @@ private fun PrnCard(
         StatusLine(icon = Icons.Default.Check, text = listOfNotNull(readyLabel, dailyNote).joinToString(" · "))
       }
       if (enabled) {
-        Row(
+        FlowRow(
           modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.End,
-          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+          verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
           TextButton(onClick = onLogAtOtherTime) { Text(stringResource(R.string.log_time_other)) }
-          Spacer(Modifier.width(4.dp))
           if (warning != null) {
-            OutlinedButton(onClick = onLog) { Text(stringResource(R.string.prn_log_anyway, logLabel)) }
+            OutlinedButton(onClick = onLog) { Text(stringResource(R.string.prn_log_anyway, logLabel), textAlign = TextAlign.Center) }
           } else {
-            FilledTonalButton(onClick = onLog) { Text(logLabel) }
+            FilledTonalButton(onClick = onLog) { Text(logLabel, textAlign = TextAlign.Center) }
           }
         }
       }

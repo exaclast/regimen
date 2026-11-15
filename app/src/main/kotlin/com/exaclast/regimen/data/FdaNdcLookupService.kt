@@ -75,6 +75,7 @@ sealed class CrossReferenceOutcome {
     val candidates: List<CrossReferencedFdaCandidate>,
   ) : CrossReferenceOutcome()
   data class NoMatch(val message: Message) : CrossReferenceOutcome()
+  data class Error(val message: Message) : CrossReferenceOutcome()
 }
 
 @Serializable
@@ -107,6 +108,8 @@ internal data class OpenFdaPackaging(
 )
 
 object FdaNdcLookupService {
+
+  private class FdaNetworkException : MessageException(Message(R.string.fda_network_error))
 
   private val BARE_PER_ONE_REGEX = Regex("""/\s*1(?![\d.])(?!\s*[A-Za-z\[])""")
 
@@ -351,7 +354,13 @@ object FdaNdcLookupService {
   /**
    * Queries OpenFDA `/drug/ndc.json` for the given NDC-11, 10-digit NDC, or scanned barcode.
    */
-  suspend fun lookupByNdc(rawNdc: String): Result<FdaDrugLookupResult> = withContext(Dispatchers.IO) {
+  suspend fun lookupByNdc(rawNdc: String): Result<FdaDrugLookupResult> =
+    lookupByNdcWithFetcher(rawNdc, ::fetchHttpUrlOrNullIfNotFound)
+
+  internal suspend fun lookupByNdcWithFetcher(
+    rawNdc: String,
+    fetch: (String) -> String?,
+  ): Result<FdaDrugLookupResult> = withContext(Dispatchers.IO) {
     runCatching {
       val parsedBarcode = parseDrugBarcode(rawNdc)
       val candidates = candidateNdc11s(rawNdc)
@@ -366,9 +375,13 @@ object FdaNdcLookupService {
       // 2. Only if no package matches (e.g. a size the FDA no longer lists), widen to the product
       //    and keep the entered package code.
       for (includeProducts in listOf(false, true)) {
-        val responseBody = runCatching {
-          fetchHttpUrl(ndcSearchUrl(buildOpenFdaSearchQuery(rawNdc, includeProducts)))
-        }.getOrNull() ?: continue
+        val responseBody = try {
+          fetch(ndcSearchUrl(buildOpenFdaSearchQuery(rawNdc, includeProducts)))
+        } catch (e: MessageException) {
+          throw e
+        } catch (_: Exception) {
+          throw FdaNetworkException()
+        } ?: continue
         val parsed = parseOpenFdaJson(responseBody, candidates) ?: continue
         return@runCatching parsed.copy(
           expirationDateIso = parsedBarcode.expirationDateIso,
@@ -402,10 +415,20 @@ object FdaNdcLookupService {
    */
   suspend fun searchAndCrossReference(
     criteria: DrugCrossReferenceCriteria,
+  ): CrossReferenceOutcome = searchAndCrossReferenceWithFetcher(criteria, ::fetchHttpUrlOrNullIfNotFound)
+
+  internal suspend fun searchAndCrossReferenceWithFetcher(
+    criteria: DrugCrossReferenceCriteria,
+    fetch: (String) -> String?,
   ): CrossReferenceOutcome = withContext(Dispatchers.IO) {
     // Priority 1: Check explicit NDC first if available
     if (!criteria.ndc.isNullOrBlank()) {
-      val ndcResult = lookupByNdc(criteria.ndc).getOrNull()
+      val ndcLookup = lookupByNdcWithFetcher(criteria.ndc, fetch)
+      val ndcError = ndcLookup.exceptionOrNull()
+      if (ndcError is FdaNetworkException) {
+        return@withContext CrossReferenceOutcome.Error(ndcError.text)
+      }
+      val ndcResult = ndcLookup.getOrNull()
       if (ndcResult != null) {
         val scored = scoreCandidateAgainstCriteria(ndcResult, criteria)
         if (ndcMatchIsConclusive(scored, criteria)) {
@@ -471,11 +494,15 @@ object FdaNdcLookupService {
       .replace("%2A", "*")
     val urlString = "https://api.fda.gov/drug/ndc.json?search=$encodedSearch&limit=40"
 
-    val apiResults = mutableListOf<FdaDrugLookupResult>()
-    val responseBody = runCatching { fetchHttpUrl(urlString) }.getOrNull()
-    if (responseBody != null) {
-      apiResults.addAll(parseAllOpenFdaItems(responseBody))
+    val responseBody = try {
+      fetch(urlString)
+    } catch (e: MessageException) {
+      return@withContext CrossReferenceOutcome.Error(e.text)
+    } catch (_: Exception) {
+      return@withContext CrossReferenceOutcome.Error(Message(R.string.fda_network_error))
     }
+
+    val apiResults = if (responseBody != null) parseAllOpenFdaItems(responseBody) else emptyList()
 
     val scoredCandidates = scoreAndFilterCandidates(apiResults, criteria)
     if (scoredCandidates.isEmpty()) {
@@ -882,21 +909,34 @@ object FdaNdcLookupService {
     )
   }
 
-  private fun fetchHttpUrl(urlString: String): String {
-    val connection = (URL(urlString).openConnection() as HttpURLConnection).apply {
-      requestMethod = "GET"
-      connectTimeout = 8_000
-      readTimeout = 8_000
-      setRequestProperty("Accept", "application/json")
-      setRequestProperty("User-Agent", "RegimenAndroid/1.0")
+  /**
+   * Fetches a URL from OpenFDA. Returns `null` on HTTP 404 (OpenFDA's documented empty-match status),
+   * and throws [MessageException] for connectivity, timeout, or non-404 HTTP errors so offline
+   * failures are never misreported as "no matching FDA record".
+   */
+  private fun fetchHttpUrlOrNullIfNotFound(urlString: String): String? {
+    val connection = try {
+      (URL(urlString).openConnection() as HttpURLConnection).apply {
+        requestMethod = "GET"
+        connectTimeout = 8_000
+        readTimeout = 8_000
+        setRequestProperty("Accept", "application/json")
+        setRequestProperty("User-Agent", "RegimenAndroid/1.0")
+      }
+    } catch (_: Exception) {
+      throw FdaNetworkException()
     }
     try {
       val code = connection.responseCode
-      if (code in 200..299) {
-        return connection.inputStream.bufferedReader().use { it.readText() }
-      } else {
-        throw IllegalStateException("HTTP $code from OpenFDA API")
+      return when {
+        code in 200..299 -> connection.inputStream.bufferedReader().use { it.readText() }
+        code == HttpURLConnection.HTTP_NOT_FOUND -> null
+        else -> throw FdaNetworkException()
       }
+    } catch (e: MessageException) {
+      throw e
+    } catch (_: Exception) {
+      throw FdaNetworkException()
     } finally {
       connection.disconnect()
     }

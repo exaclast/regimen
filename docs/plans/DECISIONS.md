@@ -100,8 +100,12 @@ When a decision is made, add it here with the date. When one is reversed, say so
 - **Debug builds use the application id `com.exaclast.regimen.debug`** and are labelled "Regimen Debug" (D-6, 2026-11-10),
   so they install beside a release. Each has its own data.
 
+### Permissions and Play Policy
+
+- **Remove `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`, keep `USE_FULL_SCREEN_INTENT` and `SCHEDULE_EXACT_ALARM` (`T-056`, 2026-11-15).** Regimen schedules dose alarms via `AlarmManager.setAlarmClock` and `setExactAndAllowWhileIdle` and schedules automatic local backups via `WorkManager`, which do not need a battery optimization exemption (which Google Play restricts to narrow exempt categories). `USE_FULL_SCREEN_INTENT` (for `DoseAlarmActivity`) and `SCHEDULE_EXACT_ALARM` are retained with Play Console justifications and graceful fallbacks (`docs/play-store-compliance.md`).
+
 ### UI and tooling
 
-- **Material 3 is pinned to `1.5.0-beta02`** for Expressive APIs, which requires `compileSdk` 37. `targetSdk` is now 37.
+- **Material 3 is pinned to `1.5.0-rc01`** for Expressive APIs (`1.5.0` stable is not yet released), which requires `compileSdk` 37. `targetSdk` is now 37.
 - **`minSdk` is 35.**
 - **Commit directly to `main`** until there's a stable build. Commit and push only when asked.

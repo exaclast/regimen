@@ -539,4 +539,34 @@ class FdaNdcLookupServiceTest {
     assertEquals(1, allResults.size)
     assertNull(allResults[0].ndc11)
   }
+
+  @Test
+  fun lookupAndCrossReference_distinguishNetworkErrorsFromEmptyResults() = kotlinx.coroutines.runBlocking {
+    val networkFailure: (String) -> String? = { throw java.io.IOException("Offline") }
+    val notFound404: (String) -> String? = { null }
+
+    val ndcNet = FdaNdcLookupService.lookupByNdcWithFetcher("00517-0031-25", networkFailure)
+    assertTrue(ndcNet.isFailure)
+    val ndcNetMsg = (ndcNet.exceptionOrNull() as? com.exaclast.regimen.model.MessageException)
+      ?.text?.resolve(TestTexts).orEmpty()
+    assertTrue("Expected network error message, got: $ndcNetMsg", ndcNetMsg.contains("connect", ignoreCase = true))
+
+    val ndcEmpty = FdaNdcLookupService.lookupByNdcWithFetcher("00517-0031-25", notFound404)
+    assertTrue(ndcEmpty.isFailure)
+    val ndcEmptyMsg = (ndcEmpty.exceptionOrNull() as? com.exaclast.regimen.model.MessageException)
+      ?.text?.resolve(TestTexts).orEmpty()
+    assertTrue("Expected no matching record message, got: $ndcEmptyMsg", ndcEmptyMsg.contains("No matching FDA NDC record", ignoreCase = true))
+
+    val xrefNet = FdaNdcLookupService.searchAndCrossReferenceWithFetcher(
+      DrugCrossReferenceCriteria(formulaName = "Ibuprofen"),
+      networkFailure,
+    )
+    assertTrue("Expected Error outcome on IOException, got $xrefNet", xrefNet is CrossReferenceOutcome.Error)
+
+    val xrefEmpty = FdaNdcLookupService.searchAndCrossReferenceWithFetcher(
+      DrugCrossReferenceCriteria(formulaName = "Ibuprofen"),
+      notFound404,
+    )
+    assertTrue("Expected NoMatch outcome on 404, got $xrefEmpty", xrefEmpty is CrossReferenceOutcome.NoMatch)
+  }
 }

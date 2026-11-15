@@ -22,9 +22,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -40,7 +37,9 @@ import com.exaclast.regimen.R
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
+import com.exaclast.regimen.ui.components.AdaptiveSingleChoiceRow
 import com.exaclast.regimen.ui.components.AppSnackbarHost
+import com.exaclast.regimen.ui.components.CenteredContentBox
 import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.GroupedColumn
@@ -74,12 +73,15 @@ fun SettingsRemindersScreen(
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
-    LazyColumn(
+    CenteredContentBox(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
-    ) {
+    ) { extra ->
+      LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp + extra, end = 16.dp + extra, bottom = 32.dp),
+      ) {
       item(key = "reminders-section") {
         SectionHeader(stringResource(R.string.settings_reminders))
         GroupedColumn {
@@ -110,17 +112,12 @@ fun SettingsRemindersScreen(
               )
               Spacer(Modifier.height(8.dp))
               val presets = AppSettings.SNOOZE_PRESETS
-              SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                presets.forEachIndexed { i, mins ->
-                  SegmentedButton(
-                    selected = settings.snoozeMinutes == mins,
-                    onClick = { onSaveSettings(settings.copy(snoozeMinutes = mins)) },
-                    shape = SegmentedButtonDefaults.itemShape(index = i, count = presets.size),
-                    icon = {},
-                    label = { Text(stringResource(R.string.settings_minutes_short, mins), maxLines = 1) },
-                  )
-                }
-              }
+              AdaptiveSingleChoiceRow(
+                options = presets,
+                selected = settings.snoozeMinutes,
+                onSelect = { onSaveSettings(settings.copy(snoozeMinutes = it)) },
+                label = { stringResource(R.string.settings_minutes_short, it) },
+              )
             }
           }
           GroupItem(3, 5) {
@@ -133,17 +130,12 @@ fun SettingsRemindersScreen(
               )
               Spacer(Modifier.height(8.dp))
               val repeatPresets = AppSettings.REPEAT_PRESETS
-              SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                repeatPresets.forEachIndexed { i, mins ->
-                  SegmentedButton(
-                    selected = settings.reminderRepeatMinutes == mins,
-                    onClick = { onSaveSettings(settings.copy(reminderRepeatMinutes = mins)) },
-                    shape = SegmentedButtonDefaults.itemShape(index = i, count = repeatPresets.size),
-                    icon = {},
-                    label = { Text(if (mins == 0) stringResource(R.string.value_off) else stringResource(R.string.settings_minutes_tiny, mins), maxLines = 1) },
-                  )
-                }
-              }
+              AdaptiveSingleChoiceRow(
+                options = repeatPresets,
+                selected = settings.reminderRepeatMinutes,
+                onSelect = { onSaveSettings(settings.copy(reminderRepeatMinutes = it)) },
+                label = { if (it == 0) stringResource(R.string.value_off) else stringResource(R.string.settings_minutes_tiny, it) },
+              )
             }
           }
           GroupItem(4, 5) {
@@ -189,6 +181,7 @@ fun SettingsRemindersScreen(
         SectionHeader(stringResource(R.string.settings_permissions))
         PermissionsChecklistSection(onPermissionStateChanged = onPermissionsChanged)
       }
+    }
     }
   }
 

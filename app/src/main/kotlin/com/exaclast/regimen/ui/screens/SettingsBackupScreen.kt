@@ -5,21 +5,27 @@ package com.exaclast.regimen.ui.screens
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -30,15 +36,24 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.R
+import com.exaclast.regimen.data.AutoBackupError
+import com.exaclast.regimen.data.AutoBackupFrequency
+import com.exaclast.regimen.data.AutoBackupStatus
+import com.exaclast.regimen.sync.AutoBackupRetention
 import com.exaclast.regimen.sync.BackupFiles
+import com.exaclast.regimen.ui.components.AdaptiveSingleChoiceRow
 import com.exaclast.regimen.ui.components.AppSnackbarHost
+import com.exaclast.regimen.ui.components.CenteredContentBox
 import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.GroupedColumn
 import com.exaclast.regimen.ui.components.SectionHeader
+import com.exaclast.regimen.ui.components.SwitchRow
+import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.groupListItemColors
 import com.exaclast.regimen.ui.navigation.BackupEncryptionMode
 
@@ -53,6 +68,17 @@ fun SettingsBackupScreen(
   onRestoreFilePicked: (Uri) -> Unit,
   onOpenBackupEncryption: (BackupEncryptionMode) -> Unit,
   onRequestExportAfterSetup: () -> Unit,
+  autoBackupStatus: AutoBackupStatus,
+  autoBackupBusy: Boolean,
+  pendingAutoBackupSetup: Boolean,
+  onConsumePendingAutoBackupSetup: () -> Unit,
+  onRequestAutoBackupAfterSetup: () -> Unit,
+  onEnableAutoBackupWithFolder: (Uri) -> Unit,
+  onSetAutoBackupFolder: (Uri) -> Unit,
+  onSetAutoBackupEnabled: (Boolean) -> Unit,
+  onSetAutoBackupFrequency: (AutoBackupFrequency) -> Unit,
+  onSetAutoBackupKeepCount: (Int) -> Unit,
+  onBackUpNow: () -> Unit,
   onClearAllData: () -> Unit,
   onResetSampleData: (() -> Unit)? = null,
   onBack: () -> Unit,
@@ -67,6 +93,21 @@ fun SettingsBackupScreen(
   val restoreLauncher = rememberLauncherForActivityResult(
     ActivityResultContracts.OpenDocument(),
   ) { uri -> uri?.let(onRestoreFilePicked) }
+
+  var pickingFolderToEnable by remember { mutableStateOf(false) }
+  val folderPickerLauncher = rememberLauncherForActivityResult(
+    ActivityResultContracts.OpenDocumentTree(),
+  ) { uri ->
+    val enableOnPick = pickingFolderToEnable
+    pickingFolderToEnable = false
+    if (uri != null) {
+      if (enableOnPick || !autoBackupStatus.enabled || autoBackupStatus.treeUri == null) {
+        onEnableAutoBackupWithFolder(uri)
+      } else {
+        onSetAutoBackupFolder(uri)
+      }
+    }
+  }
   var confirmPlainExport by remember { mutableStateOf(false) }
 
   // Export was tapped before a passphrase existed (or while the device key was lost): continue once unlocked.
@@ -75,6 +116,23 @@ fun SettingsBackupScreen(
     onConsumePendingExport()
     exportEncryptedLauncher.launch(suggestedBackupFileName(true))
   }
+
+  val needsFolderSelection = autoBackupStatus.treeUri == null ||
+    autoBackupStatus.lastError == AutoBackupError.PERMISSION_LOST ||
+    autoBackupStatus.lastError == AutoBackupError.FOLDER_MISSING
+
+  // Auto-backup was toggled on before a passphrase existed (or while the device key was lost).
+  LaunchedEffect(pendingAutoBackupSetup, backupEncryptionConfigured) {
+    if (!pendingAutoBackupSetup || !backupEncryptionConfigured) return@LaunchedEffect
+    onConsumePendingAutoBackupSetup()
+    if (needsFolderSelection) {
+      pickingFolderToEnable = true
+      folderPickerLauncher.launch(null)
+    } else {
+      onSetAutoBackupEnabled(true)
+    }
+  }
+
   var confirmClear by remember { mutableStateOf(false) }
   var confirmDemo by remember { mutableStateOf(false) }
 
@@ -91,12 +149,15 @@ fun SettingsBackupScreen(
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
-    LazyColumn(
+    CenteredContentBox(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
-    ) {
+    ) { extra ->
+      LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp + extra, end = 16.dp + extra, bottom = 32.dp),
+      ) {
       item(key = "backup-section") {
         SectionHeader(stringResource(R.string.settings_backup))
         GroupedColumn {
@@ -192,6 +253,173 @@ fun SettingsBackupScreen(
         }
       }
 
+      item(key = "auto-backup-section") {
+        Spacer(Modifier.height(16.dp))
+        SectionHeader(stringResource(R.string.auto_backup_section))
+        val showConfigRows = autoBackupStatus.enabled || autoBackupStatus.treeUri != null
+        val canRunNow = autoBackupStatus.treeUri != null &&
+          backupEncryptionConfigured &&
+          autoBackupStatus.lastError != AutoBackupError.PERMISSION_LOST &&
+          autoBackupStatus.lastError != AutoBackupError.FOLDER_MISSING
+        val rowCount = if (showConfigRows) 5 else 1
+
+        GroupedColumn {
+          GroupItem(0, rowCount) {
+            SwitchRow(
+              title = stringResource(R.string.auto_backup_switch),
+              subtitle = stringResource(R.string.auto_backup_switch_help),
+              checked = autoBackupStatus.enabled,
+              onCheckedChange = { wantEnabled ->
+                if (!wantEnabled) {
+                  onSetAutoBackupEnabled(false)
+                } else {
+                  when {
+                    !backupEncryptionConfigured -> {
+                      onRequestAutoBackupAfterSetup()
+                      onOpenBackupEncryption(
+                        if (backupKeyLost) BackupEncryptionMode.UNLOCK_DEVICE else BackupEncryptionMode.SETUP,
+                      )
+                    }
+                    needsFolderSelection -> {
+                      pickingFolderToEnable = true
+                      folderPickerLauncher.launch(null)
+                    }
+                    else -> onSetAutoBackupEnabled(true)
+                  }
+                }
+              },
+            )
+          }
+          if (showConfigRows) {
+            GroupItem(1, rowCount, onClick = {
+              pickingFolderToEnable = !autoBackupStatus.enabled
+              folderPickerLauncher.launch(null)
+            }) {
+              ListItem(
+                supportingContent = {
+                  Text(autoBackupStatus.folderLabel ?: stringResource(R.string.auto_backup_folder_not_set))
+                },
+                colors = groupListItemColors(),
+              ) { Text(stringResource(R.string.auto_backup_folder)) }
+            }
+            GroupItem(2, rowCount) {
+              Column(modifier = Modifier.padding(16.dp)) {
+                Text(stringResource(R.string.auto_backup_frequency), style = MaterialTheme.typography.bodyLarge)
+                Spacer(Modifier.height(8.dp))
+                AdaptiveSingleChoiceRow(
+                  options = AutoBackupFrequency.entries,
+                  selected = autoBackupStatus.frequency,
+                  onSelect = onSetAutoBackupFrequency,
+                  label = { freq ->
+                    stringResource(
+                      when (freq) {
+                        AutoBackupFrequency.DAILY -> R.string.auto_backup_freq_daily
+                        AutoBackupFrequency.WEEKLY -> R.string.auto_backup_freq_weekly
+                      },
+                    )
+                  },
+                )
+              }
+            }
+            GroupItem(3, rowCount) {
+              Column(modifier = Modifier.padding(16.dp)) {
+                Text(stringResource(R.string.auto_backup_keep_title), style = MaterialTheme.typography.bodyLarge)
+                Text(
+                  stringResource(R.string.auto_backup_keep_help),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                AdaptiveSingleChoiceRow(
+                  options = AutoBackupRetention.KEEP_COUNT_PRESETS,
+                  selected = autoBackupStatus.keepCount,
+                  onSelect = onSetAutoBackupKeepCount,
+                  label = { count -> stringResource(R.string.auto_backup_keep_option, count) },
+                )
+              }
+            }
+            GroupItem(
+              index = 4,
+              count = rowCount,
+              onClick = if (canRunNow && !autoBackupBusy) onBackUpNow else null,
+            ) {
+              val lastSuccess = autoBackupStatus.lastSuccessEpochMillis
+              val lastKept = autoBackupStatus.lastKeptCount
+              val statusText = when {
+                autoBackupBusy -> stringResource(R.string.auto_backup_running)
+                lastSuccess != null && lastKept != null -> pluralStringResource(
+                  R.plurals.auto_backup_status,
+                  lastKept,
+                  UiFormat.dateTime(lastSuccess),
+                  lastKept,
+                )
+                else -> stringResource(R.string.auto_backup_never)
+              }
+              ListItem(
+                supportingContent = { Text(statusText) },
+                trailingContent = if (autoBackupBusy) {
+                  { CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp) }
+                } else {
+                  null
+                },
+                colors = groupListItemColors(),
+              ) { Text(stringResource(R.string.auto_backup_now)) }
+            }
+          }
+        }
+
+        val effectiveError = when {
+          autoBackupStatus.lastError != AutoBackupError.NONE -> autoBackupStatus.lastError
+          autoBackupStatus.enabled && backupKeyLost -> AutoBackupError.KEY_LOST
+          else -> AutoBackupError.NONE
+        }
+        if (effectiveError != AutoBackupError.NONE) {
+          val errorRes = when (effectiveError) {
+            AutoBackupError.PERMISSION_LOST -> R.string.auto_backup_err_permission
+            AutoBackupError.FOLDER_MISSING -> R.string.auto_backup_err_folder_missing
+            AutoBackupError.KEY_LOST -> R.string.auto_backup_err_key_lost
+            AutoBackupError.NOT_CONFIGURED -> R.string.auto_backup_err_not_configured
+            AutoBackupError.WRITE_FAILED -> R.string.auto_backup_err_write_failed
+            AutoBackupError.NONE -> null
+          }
+          val onErrorClick: (() -> Unit)? = when (effectiveError) {
+            AutoBackupError.KEY_LOST -> ({ onOpenBackupEncryption(BackupEncryptionMode.UNLOCK_DEVICE) })
+            AutoBackupError.PERMISSION_LOST,
+            AutoBackupError.FOLDER_MISSING,
+            -> ({
+              pickingFolderToEnable = true
+              folderPickerLauncher.launch(null)
+            })
+            else -> null
+          }
+          errorRes?.let { resId ->
+            Spacer(Modifier.height(8.dp))
+            if (onErrorClick != null) {
+              Surface(
+                onClick = onErrorClick,
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+              ) {
+                Text(
+                  text = stringResource(resId),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onErrorContainer,
+                  modifier = Modifier.padding(12.dp),
+                )
+              }
+            } else {
+              Text(
+                text = stringResource(resId),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 4.dp),
+              )
+            }
+          }
+        }
+      }
+
       item(key = "danger-section") {
         Spacer(Modifier.height(16.dp))
         SectionHeader(stringResource(R.string.settings_danger))
@@ -219,6 +447,7 @@ fun SettingsBackupScreen(
           }
         }
       }
+    }
     }
   }
 

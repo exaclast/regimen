@@ -106,18 +106,28 @@ class BackupManager(context: Context, private val repository: RegimenRepository)
   fun suggestedFileName(encrypted: Boolean, today: LocalDate = LocalDate.now()): String =
     "Regimen backup $today." + if (encrypted) BackupFiles.FILE_EXTENSION else "json"
 
-  /** Encrypted export of everything on this device. */
-  fun exportEncrypted(uri: Uri) {
+  /** Encrypted export bytes of everything on this device (runs integrity checks first). */
+  fun exportEncryptedBytes(): ByteArray {
     verifyExportIntegrity()
     val dataKey = keys.dataKey() ?: throw MessageException(
       Message(if (keys.isKeyLost) R.string.backup_err_key_lost else R.string.backup_err_set_passphrase_first),
     )
-    val file = try {
+    return try {
       BundleCrypto.encrypt(BackupFiles.encode(repository.currentBundle()), dataKey, keys.envelope())
     } finally {
       dataKey.fill(0)
     }
-    write(uri, file)
+  }
+
+  /** Encrypted export of everything on this device. */
+  fun exportEncrypted(outputStream: java.io.OutputStream) {
+    val file = exportEncryptedBytes()
+    outputStream.use { it.write(file) }
+  }
+
+  /** Encrypted export of everything on this device. */
+  fun exportEncrypted(uri: Uri) {
+    write(uri, exportEncryptedBytes())
   }
 
   /** Unencrypted, human-readable JSON (for inspection or other tools). */

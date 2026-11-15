@@ -48,6 +48,7 @@ import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.ui.ScheduleText
+import com.exaclast.regimen.ui.components.AdaptiveFieldPair
 import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.EditorScaffold
 import com.exaclast.regimen.ui.components.GroupItem
@@ -55,6 +56,22 @@ import com.exaclast.regimen.ui.components.GroupedColumn
 import com.exaclast.regimen.ui.components.SwitchRow
 import com.exaclast.regimen.ui.components.TimePickerField
 import java.util.UUID
+
+/** Default `(startHour, startMinute, endHour, endMinute)` matching `R.array.window_name_presets`. */
+internal data class WindowPresetTimes(val startHour: Int, val startMinute: Int, val endHour: Int, val endMinute: Int)
+
+internal fun presetWindowTimes(presetIndex: Int): WindowPresetTimes? = when (presetIndex) {
+  0 -> WindowPresetTimes(7, 0, 10, 0)    // Morning
+  1 -> WindowPresetTimes(7, 30, 9, 30)   // Breakfast
+  2 -> WindowPresetTimes(11, 30, 13, 30) // Midday
+  3 -> WindowPresetTimes(12, 0, 14, 0)   // Lunch
+  4 -> WindowPresetTimes(12, 0, 15, 0)   // Afternoon
+  5 -> WindowPresetTimes(18, 0, 20, 0)   // Dinner
+  6 -> WindowPresetTimes(17, 0, 20, 0)   // Evening
+  7 -> WindowPresetTimes(21, 0, 23, 30)  // Bedtime
+  8 -> WindowPresetTimes(23, 0, 1, 0)    // Late night
+  else -> null
+}
 
 fun windowSummary(res: Resources, bucket: TimeOfDayBucket, settings: AppSettings): String {
   val reminder = res.getString(
@@ -87,9 +104,18 @@ fun DoseWindowEditorScreen(
   var startMinute by rememberSaveable { mutableIntStateOf(initialBucket?.minute ?: 0) }
   var endHour by rememberSaveable { mutableIntStateOf(initialBucket?.endHour ?: 10) }
   var endMinute by rememberSaveable { mutableIntStateOf(initialBucket?.endMinute ?: 0) }
+  var timesEdited by rememberSaveable { mutableStateOf(initialBucket != null) }
   var notifEnabled by rememberSaveable { mutableStateOf(initialBucket?.notificationsEnabled ?: true) }
   var alarmAtEnd by rememberSaveable { mutableStateOf(initialBucket?.alarmAtWindowEnd ?: true) }
   var confirmDelete by remember { mutableStateOf(false) }
+
+  val hasUnsavedChanges = name != initialBucket?.name.orEmpty() ||
+    startHour != (initialBucket?.hour ?: 8) ||
+    startMinute != (initialBucket?.minute ?: 0) ||
+    endHour != (initialBucket?.endHour ?: 10) ||
+    endMinute != (initialBucket?.endMinute ?: 0) ||
+    notifEnabled != (initialBucket?.notificationsEnabled ?: true) ||
+    alarmAtEnd != (initialBucket?.alarmAtWindowEnd ?: true)
 
   val startTotal = startHour * 60 + startMinute
   val endTotal = endHour * 60 + endMinute
@@ -105,6 +131,7 @@ fun DoseWindowEditorScreen(
     title = stringResource(if (initialBucket == null) R.string.window_add else R.string.window_edit),
     onClose = onClose,
     saveEnabled = name.isNotBlank() && timeError == null,
+    hasUnsavedChanges = hasUnsavedChanges,
     onSave = {
       onSave(
         TimeOfDayBucket(
@@ -130,31 +157,45 @@ fun DoseWindowEditorScreen(
     )
     if (initialBucket == null) {
       FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        stringArrayResource(R.array.window_name_presets).forEach { preset ->
+        stringArrayResource(R.array.window_name_presets).forEachIndexed { index, preset ->
           FilterChip(
             selected = name.equals(preset, ignoreCase = true),
-            onClick = { name = preset },
+            onClick = {
+              name = preset
+              if (!timesEdited) {
+                presetWindowTimes(index)?.let { (sh, sm, eh, em) ->
+                  startHour = sh
+                  startMinute = sm
+                  endHour = eh
+                  endMinute = em
+                }
+              }
+            },
             label = { Text(preset) },
           )
         }
       }
     }
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-      TimePickerField(
-        label = stringResource(R.string.window_starts),
-        hour = startHour,
-        minute = startMinute,
-        onTimeChange = { h, m -> startHour = h; startMinute = m },
-        modifier = Modifier.weight(1f),
-      )
-      TimePickerField(
-        label = stringResource(R.string.field_ends),
-        hour = endHour,
-        minute = endMinute,
-        onTimeChange = { h, m -> endHour = h; endMinute = m },
-        modifier = Modifier.weight(1f),
-      )
-    }
+    AdaptiveFieldPair(
+      first = { fieldModifier ->
+        TimePickerField(
+          label = stringResource(R.string.window_starts),
+          hour = startHour,
+          minute = startMinute,
+          onTimeChange = { h, m -> startHour = h; startMinute = m; timesEdited = true },
+          modifier = fieldModifier,
+        )
+      },
+      second = { fieldModifier ->
+        TimePickerField(
+          label = stringResource(R.string.field_ends),
+          hour = endHour,
+          minute = endMinute,
+          onTimeChange = { h, m -> endHour = h; endMinute = m; timesEdited = true },
+          modifier = fieldModifier,
+        )
+      },
+    )
     Text(
       text = timeError ?: if (crossesMidnight) stringResource(R.string.window_ends_next_morning, durationText) else durationText,
       style = MaterialTheme.typography.bodyMedium,

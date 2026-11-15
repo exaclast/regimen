@@ -18,10 +18,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -61,9 +63,6 @@ import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -89,6 +88,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
@@ -123,6 +126,8 @@ import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.model.formatExact
 import com.exaclast.regimen.model.formatNum
+import com.exaclast.regimen.ui.components.AdaptiveFieldPair
+import com.exaclast.regimen.ui.components.AdaptiveSingleChoiceRow
 import com.exaclast.regimen.ui.components.DatePickerField
 import com.exaclast.regimen.ui.components.DateRangePickerDialog
 import com.exaclast.regimen.ui.components.EditorScaffold
@@ -141,6 +146,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -481,6 +487,9 @@ fun MedicationEditorScreen(
             ndcStatusText = outcome.message.resolve(resources.texts())
           }
         }
+        is CrossReferenceOutcome.Error -> {
+          ndcErrorText = outcome.message.resolve(resources.texts())
+        }
       }
     }
   }
@@ -726,11 +735,60 @@ fun MedicationEditorScreen(
     onSave(savedMed)
   }
 
+  val initialForm = initialMedication?.form ?: MedicationForm.TABLET
+  val initialRoute = initInj?.route ?: InjectionRoute.IM
+  val initialSiteMode = initialMedication?.siteMode ?: initialForm.defaultSiteMode
+  val initialSites = remember(initialMedication?.id) {
+    initialMedication?.sites ?: Medication.defaultSites(initialForm, initialRoute)
+  }
+  val initialDoseAmountText = remember(initialMedication?.id) {
+    initialMedication?.defaultDoseAmount?.let { formatExact(it) } ?: "1"
+  }
+  val initialDoseUnit = initialMedication?.defaultDoseUnit ?: DoseUnit.TABLET
+  val initialSyringeType = remember(initialMedication?.id) {
+    initInj?.syringeType
+      ?: SyringeType.infer(initInj?.syringeDescription)
+      ?: SyringeType.OTHER.takeIf { initInj?.syringeVolumeMl != null }
+  }
+  val initialMinIntervalHoursText = remember(initialMedication?.id) {
+    initialMedication?.minIntervalMinutes?.let { formatNum(it / 60.0) }.orEmpty()
+  }
+  val hasUnsavedChanges =
+    formulaName != initialMedication?.formulaName.orEmpty() ||
+      brandName != initialMedication?.brandName.orEmpty() ||
+      manufacturer != initialMedication?.manufacturer.orEmpty() ||
+      ndc11 != initialMedication?.ndc11.orEmpty() ||
+      strength != initialMedication?.strength.orEmpty() ||
+      form != initialForm ||
+      defaultDoseAmountText != initialDoseAmountText ||
+      defaultDoseUnit != initialDoseUnit ||
+      route != initialRoute ||
+      vialVolumeText != initInj?.vialVolumeMl?.let { formatExact(it) }.orEmpty() ||
+      syringeVolumeText != initInj?.syringeVolumeMl?.let { formatExact(it) }.orEmpty() ||
+      syringeType != initialSyringeType ||
+      syringeDesc != initInj?.syringeDescription.orEmpty() ||
+      drawGaugeText != initInj?.drawNeedleGauge?.toString().orEmpty() ||
+      drawLengthText != initInj?.drawNeedleLengthInches?.let { formatExact(it) }.orEmpty() ||
+      injectGaugeText != initInj?.injectNeedleGauge?.toString().orEmpty() ||
+      injectLengthText != initInj?.injectNeedleLengthInches?.let { formatExact(it) }.orEmpty() ||
+      siteMode != initialSiteMode ||
+      sites.toList() != initialSites ||
+      newCustomSite.isNotEmpty() ||
+      minIntervalHoursText != initialMinIntervalHoursText ||
+      maxDailyDosesText != initialMedication?.maxDailyDoses?.let { formatExact(it) }.orEmpty() ||
+      maxDailyAmountText != initialMedication?.maxDailyAmount?.let { formatExact(it) }.orEmpty() ||
+      selectedIndicationIds != initialMedication?.indicationIds.orEmpty() ||
+      indicationText != initialMedication?.indicationText.orEmpty() ||
+      selectedPrescriberId != initialMedication?.prescriberId ||
+      prescribedDateIso != initialMedication?.prescribedDateIso.orEmpty() ||
+      notes != initialMedication?.notes.orEmpty()
+
   EditorScaffold(
     title = stringResource(if (initialMedication == null) R.string.medications_add else R.string.med_edit),
     onClose = onDismiss,
     onSave = { saveMedication() },
     saveEnabled = formulaName.isNotBlank() && strength.isNotBlank() && invalidFieldLabels.isEmpty(),
+    hasUnsavedChanges = hasUnsavedChanges,
     banner = if (invalidFieldLabels.isNotEmpty()) {
       {
         Text(
@@ -881,61 +939,63 @@ fun MedicationEditorScreen(
             modifier = Modifier.fillMaxWidth(),
           )
 
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            OutlinedTextField(
-              value = strength,
-              onValueChange = { strength = it },
-              label = { Text(stringResource(R.string.editor_strength)) },
-              placeholder = { Text(stringResource(R.string.editor_strength_hint)) },
-              singleLine = true,
-              modifier = Modifier.weight(0.45f),
-            )
-            DropdownSelectorField(
-              label = stringResource(R.string.editor_form),
-              selectedText = form.label(),
-              options = MedicationForm.entries,
-              optionLabel = { resources.label(it) },
-              onOptionSelected = { selectedForm ->
-                form = selectedForm
-                if (selectedForm.isInjectable && defaultDoseUnit == DoseUnit.TABLET) {
-                  defaultDoseUnit = DoseUnit.MG
-                } else if (selectedForm == MedicationForm.TOPICAL) {
-                  defaultDoseUnit = DoseUnit.APPLICATION
-                } else if (selectedForm == MedicationForm.CAPSULE && defaultDoseUnit == DoseUnit.TABLET) {
-                  defaultDoseUnit = DoseUnit.CAPSULE
-                }
-              },
-              modifier = Modifier.weight(0.55f),
-            )
-          }
+          AdaptiveFieldPair(
+            firstWeight = 0.45f,
+            first = { fieldModifier ->
+              OutlinedTextField(
+                value = strength,
+                onValueChange = { strength = it },
+                label = { Text(stringResource(R.string.editor_strength)) },
+                placeholder = { Text(stringResource(R.string.editor_strength_hint)) },
+                singleLine = true,
+                modifier = fieldModifier,
+              )
+            },
+            second = { fieldModifier ->
+              DropdownSelectorField(
+                label = stringResource(R.string.editor_form),
+                selectedText = form.label(),
+                options = MedicationForm.entries,
+                optionLabel = { resources.label(it) },
+                onOptionSelected = { selectedForm ->
+                  form = selectedForm
+                  if (selectedForm.isInjectable && defaultDoseUnit == DoseUnit.TABLET) {
+                    defaultDoseUnit = DoseUnit.MG
+                  } else if (selectedForm == MedicationForm.TOPICAL) {
+                    defaultDoseUnit = DoseUnit.APPLICATION
+                  } else if (selectedForm == MedicationForm.CAPSULE && defaultDoseUnit == DoseUnit.TABLET) {
+                    defaultDoseUnit = DoseUnit.CAPSULE
+                  }
+                },
+                modifier = fieldModifier,
+              )
+            },
+          )
 
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            ValidatedNumberField(
-              check = doseCheck,
-              keyboardType = KeyboardType.Decimal,
-              value = defaultDoseAmountText,
-              onValueChange = { defaultDoseAmountText = it },
-              label = { Text(stringResource(R.string.editor_default_dose)) },
-              singleLine = true,
-              modifier = Modifier.weight(0.45f),
-            )
-            DropdownSelectorField(
-              label = stringResource(R.string.editor_unit),
-              selectedText = "${defaultDoseUnit.symbol} (${defaultDoseUnit.label()})",
-              options = DoseUnit.entries,
-              optionLabel = { "${it.symbol} — ${resources.label(it)}" },
-              onOptionSelected = { defaultDoseUnit = it },
-              modifier = Modifier.weight(0.55f),
-            )
-          }
+          AdaptiveFieldPair(
+            firstWeight = 0.45f,
+            first = { fieldModifier ->
+              ValidatedNumberField(
+                check = doseCheck,
+                keyboardType = KeyboardType.Decimal,
+                value = defaultDoseAmountText,
+                onValueChange = { defaultDoseAmountText = it },
+                label = { Text(stringResource(R.string.editor_default_dose)) },
+                singleLine = true,
+                modifier = fieldModifier,
+              )
+            },
+            second = { fieldModifier ->
+              DropdownSelectorField(
+                label = stringResource(R.string.editor_unit),
+                selectedText = "${defaultDoseUnit.symbol} (${defaultDoseUnit.label()})",
+                options = DoseUnit.entries,
+                optionLabel = { "${it.symbol} — ${resources.label(it)}" },
+                onOptionSelected = { defaultDoseUnit = it },
+                modifier = fieldModifier,
+              )
+            },
+          )
 
           // Volumes come from the strength, so there's no separate concentration to keep in step.
           if (form == MedicationForm.INJECTABLE_VIAL || form == MedicationForm.LIQUID) {
@@ -1158,20 +1218,15 @@ fun MedicationEditorScreen(
                   fontWeight = FontWeight.Bold,
                   color = MaterialTheme.colorScheme.primary,
                 )
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                  SiteMode.entries.forEachIndexed { i, mode ->
-                    SegmentedButton(
-                      selected = siteMode == mode,
-                      onClick = {
-                        siteMode = mode
-                        siteModeChosen = true
-                      },
-                      shape = SegmentedButtonDefaults.itemShape(index = i, count = SiteMode.entries.size),
-                      icon = {},
-                      label = { Text(mode.label(), maxLines = 1) },
-                    )
-                  }
-                }
+                AdaptiveSingleChoiceRow(
+                  options = SiteMode.entries,
+                  selected = siteMode,
+                  onSelect = { mode ->
+                    siteMode = mode
+                    siteModeChosen = true
+                  },
+                  label = { it.label() },
+                )
                 Text(
                   text = stringResource(siteMode.descriptionRes),
                   style = MaterialTheme.typography.bodySmall,
@@ -1225,9 +1280,8 @@ fun MedicationEditorScreen(
                               }
                             },
                             enabled = idx > 0,
-                            modifier = Modifier.size(32.dp),
                           ) {
-                            Icon(Icons.Default.ArrowUpward, contentDescription = stringResource(R.string.editor_move_up), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.ArrowUpward, contentDescription = stringResource(R.string.editor_move_up), modifier = Modifier.size(18.dp))
                           }
                           IconButton(
                             onClick = {
@@ -1238,9 +1292,8 @@ fun MedicationEditorScreen(
                               }
                             },
                             enabled = idx < sites.lastIndex,
-                            modifier = Modifier.size(32.dp),
                           ) {
-                            Icon(Icons.Default.ArrowDownward, contentDescription = stringResource(R.string.editor_move_down), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.ArrowDownward, contentDescription = stringResource(R.string.editor_move_down), modifier = Modifier.size(18.dp))
                           }
                         }
                         IconButton(
@@ -1248,9 +1301,8 @@ fun MedicationEditorScreen(
                             sites.removeAt(idx)
                             sitesChosen = true
                           },
-                          modifier = Modifier.size(32.dp),
                         ) {
-                          Icon(Icons.Default.Close, contentDescription = stringResource(R.string.editor_remove_site), modifier = Modifier.size(16.dp))
+                          Icon(Icons.Default.Close, contentDescription = stringResource(R.string.editor_remove_site), modifier = Modifier.size(18.dp))
                         }
                       }
                     }
@@ -1715,7 +1767,12 @@ fun SpecificDatesPicker(
     val daysOfWeekLabels = remember {
       (0L..6L).map { DayOfWeek.SUNDAY.plus(it).getDisplayName(TextStyle.NARROW, Locale.getDefault()) }
     }
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .clearAndSetSemantics {},
+      horizontalArrangement = Arrangement.SpaceAround,
+    ) {
       daysOfWeekLabels.forEach { label ->
         Text(
           text = label,
@@ -1746,11 +1803,15 @@ fun SpecificDatesPicker(
               val dateIso = date.toString()
               val isSelected = selectedDates.contains(dateIso)
               val isToday = dateIso == todayIso
+              val fullDateDescription = remember(date) {
+                date.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL))
+              }
 
               Box(
                 modifier = Modifier
                   .weight(1f)
                   .aspectRatio(1f)
+                  .heightIn(min = 40.dp)
                   .padding(2.dp)
                   .clip(CircleShape)
                   .background(
@@ -1760,13 +1821,18 @@ fun SpecificDatesPicker(
                       else -> Color.Transparent
                     }
                   )
-                  .clickable {
-                    if (isSelected) {
-                      selectedDates.remove(dateIso)
-                    } else {
-                      selectedDates.add(dateIso)
-                    }
-                  },
+                  .toggleable(
+                    value = isSelected,
+                    role = Role.Checkbox,
+                    onValueChange = { checked ->
+                      if (checked) {
+                        if (!selectedDates.contains(dateIso)) selectedDates.add(dateIso)
+                      } else {
+                        selectedDates.remove(dateIso)
+                      }
+                    },
+                  )
+                  .semantics { contentDescription = fullDateDescription },
                 contentAlignment = Alignment.Center,
               ) {
                 Text(
@@ -1778,6 +1844,7 @@ fun SpecificDatesPicker(
                     isToday -> MaterialTheme.colorScheme.primary
                     else -> MaterialTheme.colorScheme.onSurface
                   },
+                  modifier = Modifier.clearAndSetSemantics {},
                 )
               }
             } else {
@@ -1879,21 +1946,28 @@ fun ScheduleEditorScreen(
   onDismiss: () -> Unit,
   onSave: (MedicationSchedule) -> Unit,
 ) {
+  val initialFrequencyType = initialSchedule?.frequencyType ?: ScheduleFrequencyType.DAILY
   var frequencyType by rememberSaveable {
-    mutableStateOf(initialSchedule?.frequencyType ?: ScheduleFrequencyType.DAILY)
+    mutableStateOf(initialFrequencyType)
   }
   val orderedBuckets = remember(buckets) { buckets.chronological() }
-  val selectedBucketIds = rememberSavableList {
+  val initialBucketIds = remember(initialSchedule?.id, orderedBuckets) {
     initialSchedule?.bucketIds ?: listOfNotNull(orderedBuckets.firstOrNull()?.id)
   }
-  var doseAmountText by rememberSaveable {
-    mutableStateOf(formatExact(initialSchedule?.doseAmount ?: medication.defaultDoseAmount))
+  val selectedBucketIds = rememberSavableList { initialBucketIds }
+  val initialDoseAmountText = remember(initialSchedule?.id, medication.id) {
+    formatExact(initialSchedule?.doseAmount ?: medication.defaultDoseAmount)
   }
-  var doseUnit by rememberSaveable { mutableStateOf(initialSchedule?.doseUnit ?: medication.defaultDoseUnit) }
-  var intervalDaysText by rememberSaveable { mutableStateOf((initialSchedule?.intervalDays ?: 7).toString()) }
+  var doseAmountText by rememberSaveable { mutableStateOf(initialDoseAmountText) }
+  val initialDoseUnit = initialSchedule?.doseUnit ?: medication.defaultDoseUnit
+  var doseUnit by rememberSaveable { mutableStateOf(initialDoseUnit) }
+  val initialIntervalDaysText = remember(initialSchedule?.id) {
+    (initialSchedule?.intervalDays ?: 7).toString()
+  }
+  var intervalDaysText by rememberSaveable { mutableStateOf(initialIntervalDaysText) }
   // Default start date and start window to the next upcoming window, so a new schedule doesn't
   // start out with "Missed" doses for windows that already ended today.
-  val defaultStartDate = remember(orderedBuckets) {
+  val defaultStartDate = rememberSaveable(orderedBuckets.map { it.id }) {
     val nowMillis = System.currentTimeMillis()
     val today = LocalDate.now()
     val allEndedToday = orderedBuckets.isNotEmpty() && orderedBuckets.all { b ->
@@ -1902,33 +1976,39 @@ fun ScheduleEditorScreen(
     }
     if (allEndedToday) today.plusDays(1).toString() else today.toString()
   }
-  // One start date serves as both the range start and an interval schedule's cycle anchor.
-  var startDateIso by rememberSaveable {
-    mutableStateOf(
-      initialSchedule?.startDateIso
-        ?: initialSchedule?.takeIf {
-          it.frequencyType == ScheduleFrequencyType.EVERY_N_DAYS ||
-            it.frequencyType == ScheduleFrequencyType.RELATIVE_TO_LAST_DOSE
-        }?.anchorDateIso
-        ?: defaultStartDate
-    )
+  val initialStartDateIso = remember(initialSchedule?.id, defaultStartDate) {
+    initialSchedule?.startDateIso
+      ?: initialSchedule?.takeIf {
+        it.frequencyType == ScheduleFrequencyType.EVERY_N_DAYS ||
+          it.frequencyType == ScheduleFrequencyType.RELATIVE_TO_LAST_DOSE
+      }?.anchorDateIso
+      ?: defaultStartDate
   }
+  // One start date serves as both the range start and an interval schedule's cycle anchor.
+  var startDateIso by rememberSaveable { mutableStateOf(initialStartDateIso) }
   var endDateIso by rememberSaveable { mutableStateOf(initialSchedule?.endDateIso.orEmpty()) }
-  val defaultStartBucketId = remember(orderedBuckets, selectedBucketIds) {
+  val defaultStartBucketId = rememberSaveable(orderedBuckets.map { it.id }, initialBucketIds) {
     val nowMillis = System.currentTimeMillis()
     val today = LocalDate.now().toString()
-    val chosen = orderedBuckets.filter { it.id in selectedBucketIds }
+    val chosen = orderedBuckets.filter { it.id in initialBucketIds }
     val nextUpcoming = chosen.firstOrNull { b ->
       val end = DoseAlarmTiming.windowEndMillis(b, today)
       end == null || end > nowMillis
     }
-    nextUpcoming?.id ?: chosen.firstOrNull()?.id
-  }
+    (nextUpcoming?.id ?: chosen.firstOrNull()?.id).orEmpty()
+  }.ifEmpty { null }
+  val initialStartBucketId = initialSchedule?.startBucketId ?: defaultStartBucketId
   // Partial first/last day, e.g. a twice-daily course started with the evening dose.
-  var startBucketId by rememberSaveable { mutableStateOf(initialSchedule?.startBucketId ?: defaultStartBucketId) }
+  var startBucketId by rememberSaveable { mutableStateOf(initialStartBucketId) }
   var endBucketId by rememberSaveable { mutableStateOf(initialSchedule?.endBucketId) }
-  val selectedDaysOfWeek = rememberSavableList { (initialSchedule?.daysOfWeek ?: setOf(1, 2, 3, 4, 5, 6, 7)).toList() }
-  val selectedSpecificDates = rememberSavableList { initialSchedule?.specificDatesIso?.sorted().orEmpty() }
+  val initialDaysOfWeek = remember(initialSchedule?.id) {
+    (initialSchedule?.daysOfWeek ?: setOf(1, 2, 3, 4, 5, 6, 7)).toList()
+  }
+  val selectedDaysOfWeek = rememberSavableList { initialDaysOfWeek }
+  val initialSpecificDates = remember(initialSchedule?.id) {
+    initialSchedule?.specificDatesIso?.sorted().orEmpty()
+  }
+  val selectedSpecificDates = rememberSavableList { initialSpecificDates }
 
   // Strict validation: invalid input blocks Save rather than silently becoming a default.
   // (An unparseable start date used to make an every-N-days schedule due every day.)
@@ -2016,11 +2096,25 @@ fun ScheduleEditorScreen(
   fun windowStartLabel(b: TimeOfDayBucket) =
     resources.getString(R.string.window_name_time, b.name, b.formattedStartTime())
 
+  val hasUnsavedChanges =
+    frequencyType != initialFrequencyType ||
+      selectedBucketIds.toList() != initialBucketIds ||
+      doseAmountText != initialDoseAmountText ||
+      doseUnit != initialDoseUnit ||
+      intervalDaysText != initialIntervalDaysText ||
+      startDateIso != initialStartDateIso ||
+      endDateIso != initialSchedule?.endDateIso.orEmpty() ||
+      startBucketId != initialStartBucketId ||
+      endBucketId != initialSchedule?.endBucketId ||
+      selectedDaysOfWeek.toSet() != initialDaysOfWeek.toSet() ||
+      selectedSpecificDates.toList() != initialSpecificDates
+
   EditorScaffold(
     title = stringResource(if (initialSchedule == null) R.string.med_add_schedule else R.string.schedule_edit),
     onClose = onDismiss,
     onSave = { save() },
     saveEnabled = canSave,
+    hasUnsavedChanges = hasUnsavedChanges,
   ) {
     Text(
       text = medication.primaryName,
@@ -2078,23 +2172,27 @@ fun ScheduleEditorScreen(
     }
 
     if (usesDateRange) {
-      Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        DatePickerField(
-          label = stringResource(R.string.schedule_start_date),
-          valueIso = startDateIso,
-          onValueChange = { startDateIso = it },
-          allowClear = false,
-          supportingText = startError ?: if (usesInterval) stringResource(R.string.schedule_first_dose_cycle) else null,
-          modifier = Modifier.weight(1f),
-        )
-        DatePickerField(
-          label = stringResource(R.string.indication_end_date),
-          valueIso = endDateIso,
-          onValueChange = { endDateIso = it },
-          supportingText = endError ?: stringResource(if (endDateIso.isBlank()) R.string.value_ongoing else R.string.schedule_last_day_inclusive),
-          modifier = Modifier.weight(1f),
-        )
-      }
+      AdaptiveFieldPair(
+        first = { fieldModifier ->
+          DatePickerField(
+            label = stringResource(R.string.schedule_start_date),
+            valueIso = startDateIso,
+            onValueChange = { startDateIso = it },
+            allowClear = false,
+            supportingText = startError ?: if (usesInterval) stringResource(R.string.schedule_first_dose_cycle) else null,
+            modifier = fieldModifier,
+          )
+        },
+        second = { fieldModifier ->
+          DatePickerField(
+            label = stringResource(R.string.indication_end_date),
+            valueIso = endDateIso,
+            onValueChange = { endDateIso = it },
+            supportingText = endError ?: stringResource(if (endDateIso.isBlank()) R.string.value_ongoing else R.string.schedule_last_day_inclusive),
+            modifier = fieldModifier,
+          )
+        },
+      )
     }
 
     if (frequencyType == ScheduleFrequencyType.DAYS_OF_WEEK) {
@@ -2146,25 +2244,38 @@ fun ScheduleEditorScreen(
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
-      Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+      if (endDate != null) {
+        AdaptiveFieldPair(
+          first = { fieldModifier ->
+            DropdownSelectorField(
+              label = stringResource(R.string.schedule_first_dose),
+              selectedText = firstWindow.name,
+              options = chosenWindows,
+              optionLabel = { windowStartLabel(it) },
+              onOptionSelected = { startBucketId = it.id },
+              modifier = fieldModifier,
+            )
+          },
+          second = { fieldModifier ->
+            DropdownSelectorField(
+              label = stringResource(R.string.schedule_last_dose),
+              selectedText = lastWindow.name,
+              options = chosenWindows,
+              optionLabel = { windowStartLabel(it) },
+              onOptionSelected = { endBucketId = it.id },
+              modifier = fieldModifier,
+            )
+          },
+        )
+      } else {
         DropdownSelectorField(
           label = stringResource(R.string.schedule_first_dose),
           selectedText = firstWindow.name,
           options = chosenWindows,
           optionLabel = { windowStartLabel(it) },
           onOptionSelected = { startBucketId = it.id },
-          modifier = Modifier.weight(1f),
+          modifier = Modifier.fillMaxWidth(),
         )
-        if (endDate != null) {
-          DropdownSelectorField(
-            label = stringResource(R.string.schedule_last_dose),
-            selectedText = lastWindow.name,
-            options = chosenWindows,
-            optionLabel = { windowStartLabel(it) },
-            onOptionSelected = { endBucketId = it.id },
-            modifier = Modifier.weight(1f),
-          )
-        }
       }
       boundaryError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
     }

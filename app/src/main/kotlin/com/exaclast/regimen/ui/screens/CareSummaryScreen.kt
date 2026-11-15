@@ -16,7 +16,6 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.MediumFlexibleTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
@@ -26,15 +25,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.R
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.CareSummary
+import com.exaclast.regimen.ui.components.AdaptiveMediumTopAppBar
+import com.exaclast.regimen.ui.components.CenteredContentBox
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.SectionHeader
 import androidx.compose.ui.platform.LocalResources
 import com.exaclast.regimen.model.texts
 import com.exaclast.regimen.ui.components.UiFormat
+import com.exaclast.regimen.ui.components.addHorizontal
 import com.exaclast.regimen.ui.components.groupListItemColors
 import java.time.LocalDate
 
@@ -61,9 +64,9 @@ fun CareSummaryScreen(snapshot: RegimenSnapshot, onBack: () -> Unit) {
   Scaffold(
     modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
     topBar = {
-      MediumFlexibleTopAppBar(
-        title = { Text(subject) },
-        subtitle = { Text(summary.patientName.ifEmpty { stringResource(R.string.summary_as_of_today) }) },
+      AdaptiveMediumTopAppBar(
+        title = { Text(subject, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        subtitle = { Text(summary.patientName.ifEmpty { stringResource(R.string.summary_as_of_today) }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         navigationIcon = {
           IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
         },
@@ -89,21 +92,25 @@ fun CareSummaryScreen(snapshot: RegimenSnapshot, onBack: () -> Unit) {
       EmptyListMessage(stringResource(R.string.summary_empty), Modifier.padding(padding))
       return@Scaffold
     }
-    LazyColumn(
+    CenteredContentBox(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
-      verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
-    ) {
-      summary.sections.forEach { section ->
-        item(key = "header-${section.title}") { SectionHeader(section.title) }
-        itemsIndexed(section.lines, key = { index, _ -> "${section.title}-$index" }) { index, line ->
-          GroupItem(index = index, count = section.lines.size) {
-            ListItem(
-              colors = groupListItemColors(),
-              supportingContent = line.secondary?.let { { Text(it) } },
-            ) { Text(line.primary) }
+    ) { extra ->
+      LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp).addHorizontal(extra),
+        verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp),
+      ) {
+        summary.sections.forEach { section ->
+          item(key = "header-${section.title}") { SectionHeader(section.title) }
+          itemsIndexed(section.lines, key = { index, _ -> "${section.title}-$index" }) { index, line ->
+            GroupItem(index = index, count = section.lines.size) {
+              ListItem(
+                colors = groupListItemColors(),
+                supportingContent = line.secondary?.let { { Text(it) } },
+              ) { Text(line.primary) }
+            }
           }
         }
       }

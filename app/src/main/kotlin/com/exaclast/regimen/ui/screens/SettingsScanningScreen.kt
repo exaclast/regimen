@@ -2,7 +2,6 @@
 
 package com.exaclast.regimen.ui.screens
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -13,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Checkbox
@@ -37,6 +37,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -48,6 +49,7 @@ import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.texts
 import com.exaclast.regimen.model.userMessage
 import com.exaclast.regimen.ui.components.AppSnackbarHost
+import com.exaclast.regimen.ui.components.CenteredContentBox
 import com.exaclast.regimen.ui.components.SectionHeader
 import com.google.mlkit.genai.common.FeatureStatus
 import kotlinx.coroutines.launch
@@ -96,13 +98,16 @@ fun SettingsScanningScreen(
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
-    LazyColumn(
+    CenteredContentBox(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
-      verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
+    ) { extra ->
+      LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp + extra, end = 16.dp + extra, bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+      ) {
       item(key = "scanning-section") {
         SectionHeader(stringResource(R.string.settings_scanning))
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -135,6 +140,7 @@ fun SettingsScanningScreen(
           )
         }
       }
+    }
     }
   }
 }
@@ -191,7 +197,11 @@ fun FdaLookupCard(
     },
     modifier = Modifier
       .fillMaxWidth()
-      .clickable { onAllowFdaLookupChange(!allowFdaLookup) },
+      .toggleable(
+        value = allowFdaLookup,
+        role = Role.Checkbox,
+        onValueChange = onAllowFdaLookupChange,
+      ),
   ) {
     Row(
       modifier = Modifier
@@ -201,7 +211,7 @@ fun FdaLookupCard(
     ) {
       Checkbox(
         checked = allowFdaLookup,
-        onCheckedChange = onAllowFdaLookupChange,
+        onCheckedChange = null,
       )
       Spacer(modifier = Modifier.width(8.dp))
       Column(modifier = Modifier.weight(1f)) {

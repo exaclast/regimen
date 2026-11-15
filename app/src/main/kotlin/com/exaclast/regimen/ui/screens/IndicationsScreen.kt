@@ -41,12 +41,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MediumFlexibleTopAppBar
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -76,7 +72,10 @@ import com.exaclast.regimen.model.AllergenType
 import com.exaclast.regimen.model.Severity
 import com.exaclast.regimen.model.IndicationKind
 import com.exaclast.regimen.model.IndicationStatus
+import com.exaclast.regimen.ui.components.AdaptiveMediumTopAppBar
+import com.exaclast.regimen.ui.components.AdaptiveSingleChoiceRow
 import com.exaclast.regimen.ui.components.AppSnackbarHost
+import com.exaclast.regimen.ui.components.CenteredContentBox
 import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.DatePickerField
 import com.exaclast.regimen.ui.components.EditorScaffold
@@ -87,6 +86,7 @@ import com.exaclast.regimen.ui.components.ListContentPadding
 import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.ui.components.SwitchRow
 import com.exaclast.regimen.ui.components.UiFormat
+import com.exaclast.regimen.ui.components.addHorizontal
 import com.exaclast.regimen.ui.components.groupListItemColors
 import com.exaclast.regimen.ui.components.label
 import com.exaclast.regimen.ui.components.tabContentInsets
@@ -189,93 +189,97 @@ fun IndicationListScreen(
       EmptyListMessage(stringResource(R.string.indications_empty), Modifier.padding(padding))
       return@Scaffold
     }
-    LazyColumn(
-      state = listState,
+    CenteredContentBox(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding),
-      contentPadding = ListContentPadding,
-      verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-      if (pastAll.isNotEmpty() || snapshot.indications.size > 6) {
-        item(key = "search") {
-          OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = { Text(stringResource(R.string.indications_search)) },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            trailingIcon = if (query.isNotEmpty()) {
-              { IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.search_clear)) } }
-            } else null,
-            singleLine = true,
-            modifier = Modifier
-              .fillMaxWidth()
-              .padding(bottom = 12.dp),
-          )
-        }
-      }
-      if (current.isEmpty() && query.isBlank()) {
-        item(key = "no-current") {
-          Text(
-            stringResource(R.string.indications_none_current),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
-          )
-        }
-      }
-      currentGroups.forEach { (title, group) ->
-        item(key = "header-$title") { SectionHeader(stringResource(title)) }
-        itemsIndexed(group, key = { _, c -> c.id }) { index, indication ->
-          GroupItem(index = index, count = group.size, onClick = { onOpenIndication(indication.id) }) {
-            ListItem(
-              supportingContent = { Text(indicationSummary(res, indication, snapshot, archived = false, showKind = false)) },
-              colors = groupListItemColors(),
-            ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+    ) { extra ->
+      LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = ListContentPadding.addHorizontal(extra),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+      ) {
+        if (pastAll.isNotEmpty() || snapshot.indications.size > 6) {
+          item(key = "search") {
+            OutlinedTextField(
+              value = query,
+              onValueChange = { query = it },
+              placeholder = { Text(stringResource(R.string.indications_search)) },
+              leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+              trailingIcon = if (query.isNotEmpty()) {
+                { IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.search_clear)) } }
+              } else null,
+              singleLine = true,
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            )
           }
         }
-      }
-      if (suspectedCurrent.isNotEmpty()) {
-        item(key = "header-suspected") { SectionHeader(stringResource(R.string.indication_suspected)) }
-        itemsIndexed(suspectedCurrent, key = { _, c -> c.id }) { index, indication ->
-          GroupItem(index = index, count = suspectedCurrent.size, onClick = { onOpenIndication(indication.id) }) {
-            ListItem(
-              supportingContent = { Text(indicationSummary(res, indication, snapshot, archived = false, showSuspected = false)) },
-              colors = groupListItemColors(),
-            ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+        if (current.isEmpty() && query.isBlank()) {
+          item(key = "no-current") {
+            Text(
+              stringResource(R.string.indications_none_current),
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+            )
           }
         }
-      }
-      if (pastAll.isNotEmpty()) {
-        item(key = "past-header") {
-          SectionHeader(
-            title = stringResource(R.string.indications_past, if (query.isBlank()) pastAll.size else past.size),
-            action = if (query.isBlank()) {
-              {
-                TextButton(onClick = { showPast = !showPast }) { Text(stringResource(if (showPast) R.string.action_hide else R.string.action_show)) }
-              }
-            } else null,
-          )
-        }
-        if (pastExpanded) {
-          itemsIndexed(past, key = { _, c -> c.id }) { index, indication ->
-            GroupItem(index = index, count = past.size, onClick = { onOpenIndication(indication.id) }) {
+        currentGroups.forEach { (title, group) ->
+          item(key = "header-$title") { SectionHeader(stringResource(title)) }
+          itemsIndexed(group, key = { _, c -> c.id }) { index, indication ->
+            GroupItem(index = index, count = group.size, onClick = { onOpenIndication(indication.id) }) {
               ListItem(
-                supportingContent = { Text(indicationSummary(res, indication, snapshot, archived = true)) },
+                supportingContent = { Text(indicationSummary(res, indication, snapshot, archived = false, showKind = false)) },
                 colors = groupListItemColors(),
               ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
           }
         }
-      }
-      if (query.isNotBlank() && current.isEmpty() && past.isEmpty()) {
-        item(key = "no-results") {
-          Text(
-            stringResource(R.string.indications_no_match, query.trim()),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
-          )
+        if (suspectedCurrent.isNotEmpty()) {
+          item(key = "header-suspected") { SectionHeader(stringResource(R.string.indication_suspected)) }
+          itemsIndexed(suspectedCurrent, key = { _, c -> c.id }) { index, indication ->
+            GroupItem(index = index, count = suspectedCurrent.size, onClick = { onOpenIndication(indication.id) }) {
+              ListItem(
+                supportingContent = { Text(indicationSummary(res, indication, snapshot, archived = false, showSuspected = false)) },
+                colors = groupListItemColors(),
+              ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            }
+          }
+        }
+        if (pastAll.isNotEmpty()) {
+          item(key = "past-header") {
+            SectionHeader(
+              title = stringResource(R.string.indications_past, if (query.isBlank()) pastAll.size else past.size),
+              action = if (query.isBlank()) {
+                {
+                  TextButton(onClick = { showPast = !showPast }) { Text(stringResource(if (showPast) R.string.action_hide else R.string.action_show)) }
+                }
+              } else null,
+            )
+          }
+          if (pastExpanded) {
+            itemsIndexed(past, key = { _, c -> c.id }) { index, indication ->
+              GroupItem(index = index, count = past.size, onClick = { onOpenIndication(indication.id) }) {
+                ListItem(
+                  supportingContent = { Text(indicationSummary(res, indication, snapshot, archived = true)) },
+                  colors = groupListItemColors(),
+                ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+              }
+            }
+          }
+        }
+        if (query.isNotBlank() && current.isEmpty() && past.isEmpty()) {
+          item(key = "no-results") {
+            Text(
+              stringResource(R.string.indications_no_match, query.trim()),
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+            )
+          }
         }
       }
     }
@@ -318,7 +322,7 @@ fun IndicationDetailScreen(
   Scaffold(
     modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
     topBar = {
-      MediumFlexibleTopAppBar(
+      AdaptiveMediumTopAppBar(
         title = { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         subtitle = {
           Text(
@@ -327,6 +331,8 @@ fun IndicationDetailScreen(
               indication.typeLabel(LocalResources.current),
               if (archived) stringResource(R.string.label_past) else stringResource(indication.kind.statusLabelRes(indication.status)),
             ).joinToString(" · "),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
           )
         },
         navigationIcon = {
@@ -346,12 +352,15 @@ fun IndicationDetailScreen(
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
-    LazyColumn(
+    CenteredContentBox(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
-    ) {
+    ) { extra ->
+      LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp + extra, end = 16.dp + extra, bottom = 32.dp),
+      ) {
       if (archived && indication.kind.endsWithCourse) {
         item(key = "again") {
           FilledTonalButton(onClick = onHadAgain, modifier = Modifier.padding(top = 8.dp)) {
@@ -422,6 +431,7 @@ fun IndicationDetailScreen(
         )
         LinkedMedicationGroup(linkedMeds, emptyText = stringResource(R.string.provider_no_medications), onOpenMedication = onOpenMedication)
       }
+    }
     }
   }
 
@@ -563,6 +573,18 @@ fun IndicationEditorScreen(
   val providerOptions = snapshot.providers.filter { !IndicationTimeline.isPast(it, today) || it.id in providerIds }
   val courseEnd = initialIndication?.let { IndicationTimeline.courseEnd(it, snapshot.medications, snapshot.schedules) }
   val endBeforeStart = startDateIso.isNotBlank() && endDateIso.isNotBlank() && endDateIso < startDateIso
+  val hasUnsavedChanges = name != source?.name.orEmpty() ||
+    details != source?.details.orEmpty() ||
+    kind != (source?.kind ?: IndicationKind.CHRONIC) ||
+    status != (source?.status ?: IndicationStatus.ACTIVE) ||
+    suspected != (source?.suspected ?: false) ||
+    allergenType != (source?.allergenType ?: AllergenType.DRUG) ||
+    severity != source?.severity ||
+    reaction != source?.reaction.orEmpty() ||
+    startDateIso != source?.diagnosedDateIso.orEmpty() ||
+    endDateIso != source?.endDateIso.orEmpty() ||
+    providerIds != source?.providerIds.orEmpty() ||
+    primaryIds != source?.primaryIds.orEmpty()
 
   EditorScaffold(
     title = when {
@@ -572,6 +594,7 @@ fun IndicationEditorScreen(
     },
     onClose = onClose,
     saveEnabled = name.isNotBlank() && !endBeforeStart,
+    hasUnsavedChanges = hasUnsavedChanges,
     onSave = {
       onSave(
         Indication(
@@ -651,17 +674,12 @@ fun IndicationEditorScreen(
     if (isAllergy) {
       if (kind == IndicationKind.ALLERGY) {
         Text(stringResource(R.string.indication_allergic_to), style = MaterialTheme.typography.titleSmall)
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-          AllergenType.entries.forEachIndexed { i, type ->
-            SegmentedButton(
-              selected = allergenType == type,
-              onClick = { allergenType = type },
-              shape = SegmentedButtonDefaults.itemShape(index = i, count = AllergenType.entries.size),
-              icon = {},
-              label = { Text(type.label(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-            )
-          }
-        }
+        AdaptiveSingleChoiceRow(
+          options = AllergenType.entries,
+          selected = allergenType,
+          onSelect = { allergenType = it },
+          label = { it.label() },
+        )
       }
       OutlinedTextField(
         value = reaction,
@@ -711,17 +729,18 @@ fun IndicationEditorScreen(
     }
     Text(stringResource(R.string.field_status), style = MaterialTheme.typography.titleSmall)
     val statuses = kind.statuses
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-      statuses.forEachIndexed { i, s ->
-        SegmentedButton(
-          selected = status == s,
-          onClick = { status = s },
-          shape = SegmentedButtonDefaults.itemShape(index = i, count = statuses.size),
-          icon = {},
-          label = { Text(kind.shortStatusLabel(LocalResources.current, s), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        )
-      }
-    }
+    val res = LocalResources.current
+    AdaptiveSingleChoiceRow(
+      options = statuses,
+      selected = status,
+      onSelect = { s ->
+        if (status == IndicationStatus.RESOLVED && s != IndicationStatus.RESOLVED) {
+          endDateIso = ""
+        }
+        status = s
+      },
+      label = { kind.shortStatusLabel(res, it) },
+    )
     if (kind.canBeSuspected) SwitchRow(
       title = stringResource(R.string.indication_suspected),
       subtitle = stringResource(R.string.indication_suspected_help),

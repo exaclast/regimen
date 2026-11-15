@@ -10,9 +10,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -64,15 +61,14 @@ fun LogTimeDialog(
         verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
         Text(doseLabel, style = MaterialTheme.typography.bodyLarge)
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-          listOf(stringResource(R.string.log_time_now), stringResource(R.string.log_time_other)).forEachIndexed { index, label ->
-            SegmentedButton(
-              selected = otherTime == (index == 1),
-              onClick = { otherTime = index == 1 },
-              shape = SegmentedButtonDefaults.itemShape(index, 2),
-            ) { Text(label) }
-          }
-        }
+        val nowLabel = stringResource(R.string.log_time_now)
+        val otherLabel = stringResource(R.string.log_time_other)
+        AdaptiveSingleChoiceRow(
+          options = listOf(false, true),
+          selected = otherTime,
+          onSelect = { otherTime = it },
+          label = { if (it) otherLabel else nowLabel },
+        )
         if (otherTime) {
           DatePickerField(label = stringResource(R.string.field_date), valueIso = dateIso, onValueChange = { dateIso = it }, allowClear = false)
           TimePickerField(label = stringResource(R.string.field_time), hour = hour, minute = minute, onTimeChange = { h, m -> hour = h; minute = m })

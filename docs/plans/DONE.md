@@ -13,6 +13,40 @@ resolve.
 
 Newest first.
 
+- **T-056** (Play policy compliance and Data Safety documentation; uncommitted v1.0 / M5):
+  - Removed `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` from `AndroidManifest.xml`, `DoseNotificationManager.kt`, `StartupPermissionsDialog.kt`, and `strings.xml` (eliminating the Lint `BatteryLife` Play policy violation; `setAlarmClock`, `setExactAndAllowWhileIdle`, and `WorkManager` handle wake-ups and backups without battery exemptions).
+  - Documented Play Console restricted permission justifications (`USE_FULL_SCREEN_INTENT` with graceful heads-up fallback and `SCHEDULE_EXACT_ALARM`), Data Safety answers (optional OpenFDA lookup, local AES-GCM backups, Auto Backup exclusions, and ML Kit SDK diagnostics note), and submission checklist in `docs/play-store-compliance.md`.
+  Proof: `lintDebug` (0 errors, `BatteryLife` resolved), `testDebugUnitTest` (287 passed), verified 3-item permissions checklist on Pixel (`57181FDCH0072D`).
+
+- **T-087** (R8 code & resource shrinking and ProGuard rules; "Complete M5 (v1.0): auto backups, adaptive layout, and release gates"):
+  - Enabled `isMinifyEnabled = true` and `isShrinkResources = true` in `app/build.gradle.kts` `release` build type.
+  - Added `app/proguard-rules.pro` keeping `com.exaclast.regimen.ui.navigation.Route**` for Navigation 3 `NavKey` state restoration (while relying on bundled consumer rules for Kotlin Serialization, Room, WorkManager, and ML Kit).
+  Proof: `app:assembleRelease` succeeded cleanly.
+
+- **T-090** (dependency updates and unused dependency cleanup; "Complete M5 (v1.0): auto backups, adaptive layout, and release gates"):
+  - Updated `kotlinx-serialization-json` (`1.13.0`), `androidxCore` (`1.19.1`), `androidxLifecycle` (`2.11.0`), `androidxComposeBom` (`2026.09.00`), `androidxWindow` (`1.5.1`), `coroutines` (`1.11.0`), `nav3Core` (`1.2.1`), `material3` (`1.5.0-rc01`, latest pre-1.5-stable for Expressive APIs), `mlkitGenaiPrompt` (`1.0.0-beta5`), and Kotlin (`2.4.21`) in `gradle/libs.versions.toml`.
+  - Removed unused `androidx-lifecycle-viewmodel-navigation3` and `androidx-compose-ui-tooling-preview` while keeping `androidx.window` and adaptive libraries for M2.
+  Proof: `studio_gradle_sync`, `testDebugUnitTest` (287 passed), `assembleDebug`, `assembleRelease`, live smoke test on Pixel (`57181FDCH0072D`).
+
+- **T-093** (automatic encrypted local backups; "Complete M5 (v1.0): auto backups, adaptive layout, and release gates"):
+  - Added `androidx.documentfile` and `androidx.work:work-runtime-ktx`, and excluded `regimen_auto_backup.xml` from `backup_rules.xml` and `data_extraction_rules.xml`.
+  - Implemented `AutoBackupRetention.kt` (collision-safe naming, retention keeping last `N` backups plus newest per calendar month for 12 months, ignoring non-Regimen files), `AutoBackupPreferences.kt`, `AutoBackupManager.kt`, `AutoBackupWorker.kt`, and byte/stream export helpers on `BackupManager`.
+  - Wired debounced automatic backup scheduling from `RegimenRepository.reloadSnapshot`, view-model actions (`RegimenViewModel.kt`, `RegimenApp.kt`), and folder/frequency/retention/"Back up now" controls in `SettingsBackupScreen.kt`.
+  Proof: `testDebugUnitTest` (287 passed, including `AutoBackupRetentionTest` and `AutoBackupManagerTest`), verified Backup screen UI on Pixel (`57181FDCH0072D`).
+
+- **T-066, T-072, T-078, T-079** (adaptive width cap, compact top bar, 200% font scale & TalkBack accessibility; "Complete M5 (v1.0): auto backups, adaptive layout, and release gates"):
+  - **T-066**: Added `ContentMaxWidth = 720.dp` and `CenteredContentBox` / `addHorizontal` in `Components.kt`, centering single-column content on wide windows across Today, list/detail tabs, `CareSummaryScreen`, `BackupScreens`, `DoseAlarmActivity`, and all Settings screens while keeping scroll containers full-width.
+  - **T-072**: Added `isCompactWindowHeight()`, `AdaptiveLargeTopAppBar`, and `AdaptiveMediumTopAppBar` to switch from `LargeFlexibleTopAppBar` / `MediumFlexibleTopAppBar` to compact `TopAppBar` on short windows.
+  - **T-078, T-079**: Added `isLargeFontScale()`, `AdaptiveSingleChoiceRow`, and `AdaptiveFieldPair` so segmented bars and paired fields stack/wrap at $\ge 1.35\times$ font scale; added "Take at a different site" `CustomAccessibilityAction` (`T-079`) on dose cards and `Role.Checkbox` + `FormatStyle.FULL` labels on specific-dates calendar cells (partial `T-080`).
+  Proof: `testDebugUnitTest` (287 passed), `lintDebug` (0 errors).
+
+- **T-029, T-039, T-040, T-044** (v1.0 release-gate bug fixes; "Complete M5 (v1.0): auto backups, adaptive layout, and release gates"):
+  - **T-029**: Separated `FdaNetworkException` / network error handling from empty OpenFDA search results in `FdaNdcLookupService.kt` (`CrossReferenceOutcome.Error`) with unit tests in `FdaNdcLookupServiceTest.kt`.
+  - **T-039**: Added `hasUnsavedChanges` tracking and discard confirmation (`BackHandler` + close prompt) to `EditorScaffold` (`Components.kt`) and editors.
+  - **T-040**: Cleared `endDateIso` when toggling a resolved indication back to Active in `IndicationsScreen.kt` so it returns to the Active list.
+  - **T-044**: Added `presetWindowTimes` in `DoseWindowEditorScreen.kt` so picking a window name preset chip updates default start/end times unless the user already edited times.
+  Proof: `testDebugUnitTest` (287 passed, including updated `FdaNdcLookupServiceTest`).
+
 - **T-085** (Robolectric test suite for repository and receivers; "Complete M3 (v0.9): foundations, schedule versioning, and tests"):
   - Added Robolectric `4.18` and `androidx.test:core` with `isIncludeAndroidResources = true` in `app/build.gradle.kts` and `gradle/libs.versions.toml`, plus `@VisibleForTesting internal fun resetForTests()` on `RegimenRepository` and `DoseNotificationManager`.
   - Added `RegimenRepositoryTest` (7 Robolectric tests covering backup bundle validation, SQLite trigger mid-transaction rollback preserving prior DB rows and prefs, soft-deleted `time_buckets` tombstone & restore, `PrimaryClaim`/`SyncDevice` persistence & merge convergence, tombstone preservation & random UUIDs across demo/clear, batch `logDoses` + `restoreAndDeleteDoseLogs`, and atomic `saveScheduleEdit`).

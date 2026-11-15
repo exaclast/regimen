@@ -26,11 +26,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -77,7 +79,10 @@ import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.ScheduledDoseItem
 import com.exaclast.regimen.model.ClockPreferences
 import com.exaclast.regimen.model.DoseStatus
+import com.exaclast.regimen.ui.components.ContentMaxWidth
 import com.exaclast.regimen.ui.components.UiFormat
+import com.exaclast.regimen.ui.components.isCompactWindowHeight
+import com.exaclast.regimen.ui.components.isLargeFontScale
 import com.exaclast.regimen.ui.theme.RegimenTheme
 import java.time.LocalDate
 import kotlinx.coroutines.CoroutineScope
@@ -358,76 +363,88 @@ fun DoseAlarmScreen(
     label = "pulse_scale",
   )
 
+  val compactHeight = isCompactWindowHeight()
+  val largeFontScale = isLargeFontScale()
+
   Surface(
     modifier = Modifier.fillMaxSize(),
     color = MaterialTheme.colorScheme.surfaceContainerHighest,
   ) {
-    Column(
+    Box(
       modifier = Modifier
         .fillMaxSize()
         .statusBarsPadding()
-        .navigationBarsPadding()
-        .padding(horizontal = 24.dp, vertical = 16.dp),
-      horizontalAlignment = Alignment.CenterHorizontally,
+        .navigationBarsPadding(),
+      contentAlignment = Alignment.TopCenter,
     ) {
-      Spacer(Modifier.height(16.dp))
-
-      // Urgent animated pulsing bell
-      Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier.size(96.dp),
+      Column(
+        modifier = Modifier
+          .widthIn(max = ContentMaxWidth)
+          .fillMaxSize()
+          .padding(horizontal = 24.dp, vertical = if (compactHeight) 8.dp else 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
       ) {
-        Box(
-          modifier = Modifier
-            .size(88.dp)
-            .scale(pulseScale)
-            .background(
-              color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f),
-              shape = CircleShape,
-            )
-        )
-        Box(
-          modifier = Modifier
-            .size(72.dp)
-            .background(
-              color = MaterialTheme.colorScheme.errorContainer,
-              shape = CircleShape,
-            ),
-          contentAlignment = Alignment.Center,
-        ) {
-          Icon(
-            imageVector = Icons.Default.NotificationsActive,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onErrorContainer,
-            modifier = Modifier.size(36.dp),
-          )
+        if (!compactHeight) {
+          Spacer(Modifier.height(16.dp))
         }
-      }
 
-      Spacer(Modifier.height(16.dp))
+        // Urgent animated pulsing bell
+        Box(
+          contentAlignment = Alignment.Center,
+          modifier = Modifier.size(if (compactHeight) 56.dp else 96.dp),
+        ) {
+          Box(
+            modifier = Modifier
+              .size(if (compactHeight) 52.dp else 88.dp)
+              .scale(pulseScale)
+              .background(
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f),
+                shape = CircleShape,
+              )
+          )
+          Box(
+            modifier = Modifier
+              .size(if (compactHeight) 44.dp else 72.dp)
+              .background(
+                color = MaterialTheme.colorScheme.errorContainer,
+                shape = CircleShape,
+              ),
+            contentAlignment = Alignment.Center,
+          ) {
+            Icon(
+              imageVector = Icons.Default.NotificationsActive,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.onErrorContainer,
+              modifier = Modifier.size(if (compactHeight) 24.dp else 36.dp),
+            )
+          }
+        }
 
-      // Current Time
-      Text(
-        text = currentTimeText,
-        style = MaterialTheme.typography.displayMedium.copy(
-          fontWeight = FontWeight.Bold,
-          letterSpacing = 1.sp,
-        ),
-        color = MaterialTheme.colorScheme.onSurface,
-      )
+        Spacer(Modifier.height(if (compactHeight) 8.dp else 16.dp))
 
-      val bucketTitle = bucket?.name ?: stringResource(R.string.alarm_dose_window)
-      Text(
-        text = stringResource(R.string.alarm_window_ended, bucketTitle),
-        style = MaterialTheme.typography.labelLarge.copy(
-          fontWeight = FontWeight.Bold,
-          letterSpacing = 1.2.sp,
-        ),
-        color = MaterialTheme.colorScheme.error,
-        modifier = Modifier.padding(top = 4.dp),
-      )
+        // Current Time
+        Text(
+          text = currentTimeText,
+          style = (if (compactHeight) MaterialTheme.typography.headlineLarge else MaterialTheme.typography.displayMedium).copy(
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp,
+          ),
+          color = MaterialTheme.colorScheme.onSurface,
+        )
 
-      Spacer(Modifier.height(16.dp))
+        val bucketTitle = bucket?.name ?: stringResource(R.string.alarm_dose_window)
+        Text(
+          text = stringResource(R.string.alarm_window_ended, bucketTitle),
+          style = MaterialTheme.typography.labelLarge.copy(
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.2.sp,
+          ),
+          color = MaterialTheme.colorScheme.error,
+          textAlign = TextAlign.Center,
+          modifier = Modifier.padding(top = 4.dp),
+        )
+
+        Spacer(Modifier.height(if (compactHeight) 10.dp else 16.dp))
 
       if (activeItems.isEmpty()) {
         Card(
@@ -454,7 +471,7 @@ fun DoseAlarmScreen(
           onClick = onDismiss,
           modifier = Modifier
             .fillMaxWidth()
-            .height(56.dp),
+            .heightIn(min = 56.dp),
           shape = RoundedCornerShape(16.dp),
         ) {
           Text(stringResource(R.string.action_dismiss))
@@ -494,12 +511,13 @@ fun DoseAlarmScreen(
               onClick = onRequestUnlock,
               modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp),
+                .heightIn(min = 56.dp),
               shape = RoundedCornerShape(16.dp),
             ) {
               Text(
                 text = stringResource(R.string.alarm_discreet_unlock),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                textAlign = TextAlign.Center,
               )
             }
           }
@@ -508,34 +526,13 @@ fun DoseAlarmScreen(
         Spacer(Modifier.height(16.dp))
 
         val snoozeLabel = stringResource(R.string.alarm_snooze, snapshot.settings.snoozeMinutes)
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-          FilledTonalButton(
-            onClick = { onSnooze(activeItems, snapshot.settings.snoozeMinutes) },
-            modifier = Modifier
-              .weight(1f)
-              .height(50.dp),
-            shape = RoundedCornerShape(14.dp),
-          ) {
-            Icon(Icons.Default.Alarm, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(snoozeLabel, maxLines = 1)
-          }
-
-          OutlinedButton(
-            onClick = onDismiss,
-            modifier = Modifier
-              .weight(1f)
-              .height(50.dp),
-            shape = RoundedCornerShape(14.dp),
-          ) {
-            Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.action_dismiss), maxLines = 1)
-          }
-        }
+        AlarmSecondaryActions(
+          largeFontScale = largeFontScale,
+          snoozeLabel = snoozeLabel,
+          dismissLabel = stringResource(R.string.action_dismiss),
+          onSnooze = { onSnooze(activeItems, snapshot.settings.snoozeMinutes) },
+          onSecondary = onDismiss,
+        )
       } else {
         // Items list
         LazyColumn(
@@ -549,7 +546,7 @@ fun DoseAlarmScreen(
           }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(if (compactHeight) 10.dp else 16.dp))
 
         // Action Buttons
         val count = activeItems.size
@@ -572,7 +569,7 @@ fun DoseAlarmScreen(
             onClick = { if (readyItems.isEmpty()) onOpenApp() else onTake(readyItems) },
             modifier = Modifier
               .fillMaxWidth()
-              .height(56.dp),
+              .heightIn(min = 56.dp),
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(
               containerColor = MaterialTheme.colorScheme.primary,
@@ -581,38 +578,91 @@ fun DoseAlarmScreen(
           ) {
             Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(8.dp))
-            Text(takeLabel, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+            Text(
+              takeLabel,
+              style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+              textAlign = TextAlign.Center,
+            )
           }
 
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-          ) {
-            FilledTonalButton(
-              onClick = { onSnooze(activeItems, snapshot.settings.snoozeMinutes) },
-              modifier = Modifier
-                .weight(1f)
-                .height(50.dp),
-              shape = RoundedCornerShape(14.dp),
-            ) {
-              Icon(Icons.Default.Alarm, contentDescription = null, modifier = Modifier.size(18.dp))
-              Spacer(Modifier.width(6.dp))
-              Text(snoozeLabel, maxLines = 1)
-            }
-
-            OutlinedButton(
-              onClick = { onSkip(activeItems) },
-              modifier = Modifier
-                .weight(1f)
-                .height(50.dp),
-              shape = RoundedCornerShape(14.dp),
-            ) {
-              Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-              Spacer(Modifier.width(6.dp))
-              Text(skipLabel, maxLines = 1)
-            }
-          }
+          AlarmSecondaryActions(
+            largeFontScale = largeFontScale,
+            snoozeLabel = snoozeLabel,
+            dismissLabel = skipLabel,
+            onSnooze = { onSnooze(activeItems, snapshot.settings.snoozeMinutes) },
+            onSecondary = { onSkip(activeItems) },
+          )
         }
+      }
+      }
+    }
+  }
+}
+
+@Composable
+private fun AlarmSecondaryActions(
+  largeFontScale: Boolean,
+  snoozeLabel: String,
+  dismissLabel: String,
+  onSnooze: () -> Unit,
+  onSecondary: () -> Unit,
+) {
+  if (largeFontScale) {
+    Column(
+      modifier = Modifier.fillMaxWidth(),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      FilledTonalButton(
+        onClick = onSnooze,
+        modifier = Modifier
+          .fillMaxWidth()
+          .heightIn(min = 50.dp),
+        shape = RoundedCornerShape(14.dp),
+      ) {
+        Icon(Icons.Default.Alarm, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(snoozeLabel, textAlign = TextAlign.Center)
+      }
+
+      OutlinedButton(
+        onClick = onSecondary,
+        modifier = Modifier
+          .fillMaxWidth()
+          .heightIn(min = 50.dp),
+        shape = RoundedCornerShape(14.dp),
+      ) {
+        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(dismissLabel, textAlign = TextAlign.Center)
+      }
+    }
+  } else {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      FilledTonalButton(
+        onClick = onSnooze,
+        modifier = Modifier
+          .weight(1f)
+          .heightIn(min = 50.dp),
+        shape = RoundedCornerShape(14.dp),
+      ) {
+        Icon(Icons.Default.Alarm, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(snoozeLabel, maxLines = 2, textAlign = TextAlign.Center)
+      }
+
+      OutlinedButton(
+        onClick = onSecondary,
+        modifier = Modifier
+          .weight(1f)
+          .heightIn(min = 50.dp),
+        shape = RoundedCornerShape(14.dp),
+      ) {
+        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(dismissLabel, maxLines = 2, textAlign = TextAlign.Center)
       }
     }
   }

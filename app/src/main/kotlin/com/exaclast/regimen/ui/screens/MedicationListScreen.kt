@@ -1,13 +1,15 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 
 package com.exaclast.regimen.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -65,9 +67,12 @@ import com.exaclast.regimen.ui.ScheduleText
 import androidx.compose.ui.platform.LocalResources
 import com.exaclast.regimen.model.texts
 import com.exaclast.regimen.ui.components.AppSnackbarHost
+import com.exaclast.regimen.ui.components.CenteredContentBox
+import com.exaclast.regimen.ui.components.ContentMaxWidth
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.ListContentPadding
 import com.exaclast.regimen.ui.components.SectionHeader
+import com.exaclast.regimen.ui.components.addHorizontal
 import com.exaclast.regimen.ui.components.groupListItemColors
 import com.exaclast.regimen.ui.components.tabContentInsets
 import com.exaclast.regimen.ui.components.label
@@ -139,25 +144,31 @@ fun MedicationListScreen(
       )
       return@Scaffold
     }
-    LazyColumn(
-      state = listState,
+    CenteredContentBox(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding),
-      contentPadding = ListContentPadding,
-      verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-      item(key = "grouping") {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          groupingOptions.forEach { option ->
-            FilterChip(
-              selected = option == activeGrouping,
-              onClick = { onGroupingChange(option) },
-              label = { Text(option.label()) },
-            )
+    ) { extra ->
+      LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = ListContentPadding.addHorizontal(extra),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+      ) {
+        item(key = "grouping") {
+          FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            groupingOptions.forEach { option ->
+              FilterChip(
+                selected = option == activeGrouping,
+                onClick = { onGroupingChange(option) },
+                label = { Text(option.label()) },
+              )
+            }
           }
         }
-      }
       if (grouped.sections.isEmpty() && grouped.finished.isEmpty()) {
         item { Text(stringResource(R.string.list_no_matches, query), modifier = Modifier.padding(16.dp)) }
       }
@@ -188,6 +199,7 @@ fun MedicationListScreen(
         }
       }
     }
+    }
   }
 }
 
@@ -206,7 +218,7 @@ private fun MedicationListItem(med: Medication, snapshot: RegimenSnapshot) {
       )
     },
     colors = groupListItemColors(),
-  ) { Text(med.primaryName, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+  ) { Text(med.primaryName, maxLines = 2, overflow = TextOverflow.Ellipsis) }
 }
 
 /** Form icon in a tonal circle. */
@@ -262,7 +274,7 @@ fun SearchableTopBar(
         )
         LaunchedEffect(Unit) { focusRequester.requestFocus() }
       } else {
-        Text(title)
+        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
       }
     },
     navigationIcon = {
@@ -292,6 +304,11 @@ fun EmptyListMessage(text: String, modifier: Modifier = Modifier) {
       .padding(32.dp),
     contentAlignment = Alignment.Center,
   ) {
-    Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(
+      text = text,
+      style = MaterialTheme.typography.bodyLarge,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.widthIn(max = ContentMaxWidth),
+    )
   }
 }

@@ -12,6 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -53,19 +54,17 @@ fun AdjustmentEditorScreen(
   onSave: (MedicationAdjustment) -> Unit,
   onDelete: (() -> Unit)?,
 ) {
-  var dateIso by rememberSaveable {
-    mutableStateOf(initial?.effectiveDateIso ?: LocalDate.now().plusDays(1).toString())
-  }
+  val initialDateIso = rememberSaveable { initial?.effectiveDateIso ?: LocalDate.now().plusDays(1).toString() }
+  var dateIso by rememberSaveable { mutableStateOf(initialDateIso) }
   var note by rememberSaveable { mutableStateOf(initial?.note.orEmpty()) }
   var strength by rememberSaveable { mutableStateOf(initial?.strength.orEmpty()) }
   // Blank here is not "keep": a new strength clears the NDC (see below), so only a typed one is shown.
   var ndcText by rememberSaveable { mutableStateOf(initial?.ndc11.orEmpty()) }
   var defaultDoseText by rememberSaveable { mutableStateOf(initial?.defaultDose?.amount?.let(::formatExact).orEmpty()) }
-  var doseTexts by rememberSaveable {
-    mutableStateOf(
-      schedules.map { s -> initial?.scheduleDoses?.firstOrNull { it.scheduleId == s.id }?.amount?.let(::formatExact).orEmpty() },
-    )
+  val initialDoseTexts = remember(schedules, initial?.id) {
+    schedules.map { s -> initial?.scheduleDoses?.firstOrNull { it.scheduleId == s.id }?.amount?.let(::formatExact).orEmpty() }
   }
+  var doseTexts by rememberSaveable { mutableStateOf(initialDoseTexts) }
   var keepInjection by rememberSaveable { mutableStateOf(initial?.injectableDetails != null) }
 
   // "Before" values: what applies the day before this change, so blanks are clear about what carries over.
@@ -106,11 +105,20 @@ fun AdjustmentEditorScreen(
 
   val allValid = date != null && defaultDoseCheck.isValid && doseChecks.all { it.isValid }
   val candidate = build()
+  val hasUnsavedChanges = dateIso != initialDateIso ||
+    note != initial?.note.orEmpty() ||
+    strength != initial?.strength.orEmpty() ||
+    ndcText != initial?.ndc11.orEmpty() ||
+    defaultDoseText != initial?.defaultDose?.amount?.let(::formatExact).orEmpty() ||
+    doseTexts != initialDoseTexts ||
+    keepInjection != (initial?.injectableDetails != null)
+
   EditorScaffold(
     title = stringResource(if (initial == null) R.string.adjust_plan_title else R.string.adjust_edit_title),
     onClose = onClose,
     onSave = { onSave(candidate) },
     saveEnabled = allValid && !candidate.isEmpty,
+    hasUnsavedChanges = hasUnsavedChanges,
   ) {
     Text(medication.primaryName, style = MaterialTheme.typography.titleMedium)
     DatePickerField(label = stringResource(R.string.change_or_fix_starting), valueIso = dateIso, onValueChange = { dateIso = it }, allowClear = false)
@@ -196,7 +204,7 @@ fun AdjustmentEditorScreen(
     if (onDelete != null) {
       OutlinedButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
         Icon(Icons.Default.Delete, contentDescription = null)
-        Text("  Delete change")
+        Text("  " + stringResource(R.string.adjust_delete))
       }
     }
   }

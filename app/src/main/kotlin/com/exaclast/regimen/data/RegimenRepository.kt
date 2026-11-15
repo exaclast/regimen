@@ -153,10 +153,13 @@ class RegimenRepository private constructor(context: Context) {
   }
 
   @Synchronized
-  fun reloadSnapshot() {
+  fun reloadSnapshot(notifyAutoBackup: Boolean = true) {
     val nextSnapshot = readSnapshot()
     _snapshot.value = nextSnapshot
     DoseNotificationManager.refresh(appContext, nextSnapshot)
+    if (notifyAutoBackup) {
+      AutoBackupManager.notifyDataChanged(appContext)
+    }
   }
 
   @Synchronized
@@ -655,7 +658,7 @@ class RegimenRepository private constructor(context: Context) {
   fun clearAllUserData() {
     DoseNotificationManager.cancelAllNotifications(appContext)
     softDeleteAllUserRecords(System.currentTimeMillis())
-    reloadSnapshot()
+    reloadSnapshot(notifyAutoBackup = false)
   }
 
   @Synchronized

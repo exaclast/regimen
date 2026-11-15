@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
 
 package com.exaclast.regimen.ui.screens
 
@@ -6,6 +6,8 @@ import android.content.res.Resources
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,7 +39,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MediumFlexibleTopAppBar
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -58,6 +59,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.R
@@ -77,7 +79,9 @@ import com.exaclast.regimen.model.formatNum
 import com.exaclast.regimen.notifications.DoseAlarmTiming
 import com.exaclast.regimen.ui.ScheduleText
 import com.exaclast.regimen.model.texts
+import com.exaclast.regimen.ui.components.AdaptiveMediumTopAppBar
 import com.exaclast.regimen.ui.components.AppSnackbarHost
+import com.exaclast.regimen.ui.components.CenteredContentBox
 import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.GroupedColumn
@@ -85,6 +89,7 @@ import com.exaclast.regimen.ui.components.InfoRow
 import com.exaclast.regimen.ui.components.LogTimeDialog
 import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.ui.components.UiFormat
+import com.exaclast.regimen.ui.components.addHorizontal
 import com.exaclast.regimen.ui.components.groupListItemColors
 import com.exaclast.regimen.ui.components.doseText
 import com.exaclast.regimen.ui.components.label
@@ -184,7 +189,7 @@ fun MedicationDetailScreen(
   Scaffold(
     modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
     topBar = {
-      MediumFlexibleTopAppBar(
+      AdaptiveMediumTopAppBar(
         title = { Text(medication.primaryName, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         subtitle = medication.secondaryName?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
         navigationIcon = {
@@ -208,12 +213,15 @@ fun MedicationDetailScreen(
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
-    LazyColumn(
+    CenteredContentBox(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
-    ) {
+    ) { extra ->
+      LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp).addHorizontal(extra),
+      ) {
       item(key = "hero") {
         Surface(
           color = MaterialTheme.colorScheme.primaryContainer,
@@ -253,16 +261,19 @@ fun MedicationDetailScreen(
             }
             if (warning != null) {
               OutlinedButton(onClick = { startLogging(extra = false) }, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.prn_log_anyway, logLabel))
+                Text(stringResource(R.string.prn_log_anyway, logLabel), textAlign = TextAlign.Center)
               }
             } else {
               Button(onClick = { startLogging(extra = false) }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(logLabel)
+                Text(logLabel, textAlign = TextAlign.Center)
               }
             }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+            FlowRow(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            ) {
               val buttonColors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
               TextButton(
                 onClick = { timeChoice = TimeChoice(extra = false, startWithOtherTime = true) },
@@ -548,6 +559,7 @@ fun MedicationDetailScreen(
           }
         }
       }
+    }
     }
   }
 

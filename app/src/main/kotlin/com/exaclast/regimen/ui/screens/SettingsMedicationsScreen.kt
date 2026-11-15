@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.R
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.ui.components.AppSnackbarHost
+import com.exaclast.regimen.ui.components.CenteredContentBox
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.GroupedColumn
 import com.exaclast.regimen.ui.components.SectionHeader
@@ -62,12 +63,15 @@ fun SettingsMedicationsScreen(
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
-    LazyColumn(
+    CenteredContentBox(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
-    ) {
+    ) { extra ->
+      LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp + extra, end = 16.dp + extra, bottom = 32.dp),
+      ) {
       item(key = "tracking-section") {
         SectionHeader(stringResource(R.string.settings_tracking))
         GroupedColumn {
@@ -115,6 +119,7 @@ fun SettingsMedicationsScreen(
           onSave = { onSaveSettings(settings.copy(patientName = it)) },
         )
       }
+    }
     }
   }
 }

@@ -39,7 +39,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MediumFlexibleTopAppBar
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -71,7 +70,9 @@ import com.exaclast.regimen.domain.IndicationTimeline
 import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.Provider
+import com.exaclast.regimen.ui.components.AdaptiveMediumTopAppBar
 import com.exaclast.regimen.ui.components.AppSnackbarHost
+import com.exaclast.regimen.ui.components.CenteredContentBox
 import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.DatePickerField
 import com.exaclast.regimen.ui.components.EditorScaffold
@@ -82,6 +83,7 @@ import com.exaclast.regimen.ui.components.ListContentPadding
 import com.exaclast.regimen.ui.components.SectionHeader
 import com.exaclast.regimen.ui.components.SwitchRow
 import com.exaclast.regimen.ui.components.UiFormat
+import com.exaclast.regimen.ui.components.addHorizontal
 import com.exaclast.regimen.ui.components.groupListItemColors
 import com.exaclast.regimen.ui.components.tabContentInsets
 import java.time.LocalDate
@@ -117,33 +119,37 @@ fun ProviderListScreen(
       EmptyListMessage(stringResource(R.string.providers_empty), Modifier.padding(padding))
       return@Scaffold
     }
-    LazyColumn(
-      state = listState,
+    CenteredContentBox(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding),
-      contentPadding = ListContentPadding,
-      verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-      listOf(regularTitle to regular, asNeededTitle to asNeeded).filter { it.second.isNotEmpty() }.forEach { (title, group) ->
-        item(key = "header-$title") { SectionHeader(title) }
-        itemsIndexed(group, key = { _, p -> p.id }) { index, doc ->
-          GroupItem(index = index, count = group.size, onClick = { onOpenProvider(doc.id) }) {
-            ProviderListItem(doc, snapshot, past = false)
+    ) { extra ->
+      LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = ListContentPadding.addHorizontal(extra),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+      ) {
+        listOf(regularTitle to regular, asNeededTitle to asNeeded).filter { it.second.isNotEmpty() }.forEach { (title, group) ->
+          item(key = "header-$title") { SectionHeader(title) }
+          itemsIndexed(group, key = { _, p -> p.id }) { index, doc ->
+            GroupItem(index = index, count = group.size, onClick = { onOpenProvider(doc.id) }) {
+              ProviderListItem(doc, snapshot, past = false)
+            }
           }
         }
-      }
-      if (past.isNotEmpty()) {
-        item(key = "past-header") {
-          SectionHeader(
-            title = stringResource(R.string.providers_past, past.size),
-            action = { TextButton(onClick = { showPast = !showPast }) { Text(stringResource(if (showPast) R.string.action_hide else R.string.action_show)) } },
-          )
-        }
-        if (showPast) {
-          itemsIndexed(past, key = { _, p -> p.id }) { index, doc ->
-            GroupItem(index = index, count = past.size, onClick = { onOpenProvider(doc.id) }) {
-              ProviderListItem(doc, snapshot, past = true)
+        if (past.isNotEmpty()) {
+          item(key = "past-header") {
+            SectionHeader(
+              title = stringResource(R.string.providers_past, past.size),
+              action = { TextButton(onClick = { showPast = !showPast }) { Text(stringResource(if (showPast) R.string.action_hide else R.string.action_show)) } },
+            )
+          }
+          if (showPast) {
+            itemsIndexed(past, key = { _, p -> p.id }) { index, doc ->
+              GroupItem(index = index, count = past.size, onClick = { onOpenProvider(doc.id) }) {
+                ProviderListItem(doc, snapshot, past = true)
+              }
             }
           }
         }
@@ -220,7 +226,7 @@ fun ProviderDetailScreen(
   Scaffold(
     modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
     topBar = {
-      MediumFlexibleTopAppBar(
+      AdaptiveMediumTopAppBar(
         title = { Text(provider.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         subtitle = {
           Text(
@@ -253,12 +259,15 @@ fun ProviderDetailScreen(
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
-    LazyColumn(
+    CenteredContentBox(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding),
-      contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 32.dp),
-    ) {
+    ) { extra ->
+      LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp + extra, end = 16.dp + extra, bottom = 32.dp),
+      ) {
       item(key = "contact") {
         SectionHeader(stringResource(R.string.provider_contact))
         val practiceLabel = stringResource(R.string.field_practice)
@@ -337,6 +346,7 @@ fun ProviderDetailScreen(
         SectionHeader(stringResource(R.string.provider_medications))
         LinkedMedicationGroup(linkedMeds, emptyText = stringResource(R.string.provider_no_medications), onOpenMedication = onOpenMedication)
       }
+    }
     }
   }
 
@@ -489,11 +499,22 @@ fun ProviderEditorScreen(
   var startDate by rememberSaveable { mutableStateOf(initialProvider?.careStartDateIso.orEmpty()) }
   var endDate by rememberSaveable { mutableStateOf(initialProvider?.careEndDateIso.orEmpty()) }
   var notes by rememberSaveable { mutableStateOf(initialProvider?.notes.orEmpty()) }
+  val hasUnsavedChanges = name != initialProvider?.name.orEmpty() ||
+    specialty != initialProvider?.specialty.orEmpty() ||
+    practice != initialProvider?.practice.orEmpty() ||
+    phone != initialProvider?.phone.orEmpty() ||
+    email != initialProvider?.email.orEmpty() ||
+    isPcp != (initialProvider?.isPcp ?: false) ||
+    seenRegularly != (initialProvider?.seenRegularly ?: false) ||
+    startDate != initialProvider?.careStartDateIso.orEmpty() ||
+    endDate != initialProvider?.careEndDateIso.orEmpty() ||
+    notes != initialProvider?.notes.orEmpty()
 
   EditorScaffold(
     title = stringResource(if (initialProvider == null) R.string.providers_add else R.string.provider_edit),
     onClose = onClose,
     saveEnabled = name.isNotBlank(),
+    hasUnsavedChanges = hasUnsavedChanges,
     onSave = {
       onSave(
         Provider(

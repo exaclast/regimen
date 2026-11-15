@@ -95,6 +95,9 @@ fun RegimenApp(
   val backupEncryptionConfigured by viewModel.backupEncryptionConfigured.collectAsStateWithLifecycle()
   val backupKeyLost by viewModel.backupKeyLost.collectAsStateWithLifecycle()
   val pendingExport by viewModel.pendingExport.collectAsStateWithLifecycle()
+  val autoBackupStatus by viewModel.autoBackupStatus.collectAsStateWithLifecycle()
+  val autoBackupBusy by viewModel.autoBackupBusy.collectAsStateWithLifecycle()
+  val pendingAutoBackupSetup by viewModel.pendingAutoBackupSetup.collectAsStateWithLifecycle()
   val settings = snapshot.settings
   val backStack = rememberNavBackStack(Route.Today)
   val navigator = remember(backStack) { Navigator(backStack) }
@@ -554,6 +557,17 @@ fun RegimenApp(
                 },
                 onOpenBackupEncryption = { mode -> navigator.navigate(Route.BackupEncryption(mode)) },
                 onRequestExportAfterSetup = viewModel::requestExportAfterSetup,
+                autoBackupStatus = autoBackupStatus,
+                autoBackupBusy = autoBackupBusy,
+                pendingAutoBackupSetup = pendingAutoBackupSetup,
+                onConsumePendingAutoBackupSetup = viewModel::consumePendingAutoBackupSetup,
+                onRequestAutoBackupAfterSetup = viewModel::requestAutoBackupAfterSetup,
+                onEnableAutoBackupWithFolder = viewModel::enableAutoBackupWithFolder,
+                onSetAutoBackupFolder = viewModel::setAutoBackupFolder,
+                onSetAutoBackupEnabled = viewModel::setAutoBackupEnabled,
+                onSetAutoBackupFrequency = viewModel::setAutoBackupFrequency,
+                onSetAutoBackupKeepCount = viewModel::setAutoBackupKeepCount,
+                onBackUpNow = viewModel::backUpNow,
                 onClearAllData = viewModel::clearAllUserData,
                 onResetSampleData = if (isDebugBuild) viewModel::resetToSampleData else null,
                 onBack = navigator::back,
@@ -627,8 +641,11 @@ fun RegimenApp(
                   navigator.back()
                 },
                 onClose = {
-                  // Leaving setup without a passphrase cancels a pending export.
-                  if (!backupEncryptionConfigured) viewModel.consumePendingExport()
+                  // Leaving setup without a passphrase cancels a pending export or auto-backup enable.
+                  if (!backupEncryptionConfigured) {
+                    viewModel.consumePendingExport()
+                    viewModel.consumePendingAutoBackupSetup()
+                  }
                   navigator.back()
                 },
               )

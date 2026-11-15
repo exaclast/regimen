@@ -10,9 +10,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -54,17 +51,14 @@ fun ChangeOrFixDialog(
         verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
         Text(stringResource(R.string.change_or_fix_you_changed, what), style = MaterialTheme.typography.bodyLarge)
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-          listOf(stringResource(R.string.change_or_fix_from_date), stringResource(R.string.change_or_fix_correction)).forEachIndexed { index, label ->
-            SegmentedButton(
-              selected = isChange == (index == 0),
-              onClick = { isChange = index == 0 },
-              shape = SegmentedButtonDefaults.itemShape(index, 2),
-              // No check mark: it squeezes the label in a dialog this narrow.
-              icon = {},
-            ) { Text(label, maxLines = 1) }
-          }
-        }
+        val fromDateLabel = stringResource(R.string.change_or_fix_from_date)
+        val correctionLabel = stringResource(R.string.change_or_fix_correction)
+        AdaptiveSingleChoiceRow(
+          options = listOf(true, false),
+          selected = isChange,
+          onSelect = { isChange = it },
+          label = { if (it) fromDateLabel else correctionLabel },
+        )
         if (isChange) {
           Text(
             stringResource(R.string.change_or_fix_from_date_help),

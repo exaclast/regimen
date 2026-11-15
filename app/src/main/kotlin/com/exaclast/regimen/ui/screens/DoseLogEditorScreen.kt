@@ -70,11 +70,16 @@ fun DoseLogEditorScreen(
   val takenAt = if (timeChanged) newTime else log.actionTimestampMillis
   val inFuture = taken && timeChanged && newTime != null && newTime > System.currentTimeMillis()
   val showSite = taken && (medication.tracksSites || log.siteUsed != null)
+  val hasUnsavedChanges = timeChanged ||
+    amountText != formatExact(log.amountTaken) ||
+    site != log.siteUsed.orEmpty() ||
+    notes != log.notes.orEmpty()
 
   EditorScaffold(
     title = stringResource(R.string.dose_log_edit_title, medication.primaryName),
     onClose = onClose,
     saveEnabled = !taken || (amountCheck.validOrNull() != null && takenAt != null && !inFuture),
+    hasUnsavedChanges = hasUnsavedChanges,
     onSave = {
       onSave(
         DoseLogEdits.edit(

@@ -6,6 +6,9 @@ import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import android.net.Uri
+import com.exaclast.regimen.data.AutoBackupFrequency
+import com.exaclast.regimen.data.AutoBackupManager
+import com.exaclast.regimen.data.AutoBackupStatus
 import com.exaclast.regimen.data.BackupManager
 import com.exaclast.regimen.data.RegimenRepository
 import com.exaclast.regimen.data.RegimenSnapshot
@@ -500,6 +503,15 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
   // region Backup
 
   private val backup = BackupManager.getInstance(application)
+  private val autoBackup = AutoBackupManager.getInstance(application)
+
+  val autoBackupStatus: StateFlow<AutoBackupStatus> = autoBackup.status
+
+  private val _autoBackupBusy = MutableStateFlow(false)
+  val autoBackupBusy: StateFlow<Boolean> = _autoBackupBusy
+
+  private val _pendingAutoBackupSetup = MutableStateFlow(false)
+  val pendingAutoBackupSetup: StateFlow<Boolean> = _pendingAutoBackupSetup
 
   private val _backupEncryptionConfigured = MutableStateFlow(false)
   val backupEncryptionConfigured: StateFlow<Boolean> = _backupEncryptionConfigured
@@ -518,6 +530,9 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     val status = backup.keys.status()
     _backupEncryptionConfigured.value = status == com.exaclast.regimen.data.BackupKeyStore.KeyStatus.CONFIGURED
     _backupKeyLost.value = status == com.exaclast.regimen.data.BackupKeyStore.KeyStatus.KEY_LOST
+    if (status == com.exaclast.regimen.data.BackupKeyStore.KeyStatus.CONFIGURED) {
+      autoBackup.onEncryptionReady()
+    }
   }
 
   fun suggestedBackupFileName(encrypted: Boolean): String = backup.suggestedFileName(encrypted)
@@ -528,6 +543,72 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
 
   fun consumePendingExport() {
     _pendingExport.value = false
+  }
+
+  fun requestAutoBackupAfterSetup() {
+    _pendingAutoBackupSetup.value = true
+  }
+
+  fun consumePendingAutoBackupSetup() {
+    _pendingAutoBackupSetup.value = false
+  }
+
+  fun enableAutoBackupWithFolder(uri: Uri) {
+    viewModelScope.launch {
+      _autoBackupBusy.value = true
+      val result = withContext(Dispatchers.IO) {
+        autoBackup.enableWithFolder(uri)
+        autoBackup.runBackupNow()
+      }
+      _autoBackupBusy.value = false
+      if (result == AutoBackupManager.RunResult.Success) {
+        post(str(R.string.vm_auto_backup_saved))
+      } else if (result != AutoBackupManager.RunResult.Skipped) {
+        post(str(R.string.vm_auto_backup_failed))
+      }
+    }
+  }
+
+  fun setAutoBackupFolder(uri: Uri) {
+    viewModelScope.launch(Dispatchers.IO) {
+      autoBackup.setFolder(uri)
+    }
+  }
+
+  fun setAutoBackupEnabled(enabled: Boolean) {
+    viewModelScope.launch(Dispatchers.IO) {
+      autoBackup.setEnabled(enabled)
+    }
+  }
+
+  fun setAutoBackupFrequency(frequency: AutoBackupFrequency) {
+    viewModelScope.launch(Dispatchers.IO) {
+      autoBackup.setFrequency(frequency)
+    }
+  }
+
+  fun setAutoBackupKeepCount(keepCount: Int) {
+    viewModelScope.launch(Dispatchers.IO) {
+      autoBackup.setKeepCount(keepCount)
+    }
+  }
+
+  fun backUpNow() {
+    if (_autoBackupBusy.value) return
+    viewModelScope.launch {
+      _autoBackupBusy.value = true
+      val result = withContext(Dispatchers.IO) {
+        autoBackup.runBackupNow()
+      }
+      _autoBackupBusy.value = false
+      refreshBackupKeyStatus()
+      when (result) {
+        AutoBackupManager.RunResult.Success -> post(str(R.string.vm_auto_backup_saved))
+        AutoBackupManager.RunResult.Skipped -> {}
+        AutoBackupManager.RunResult.RetryableFailure,
+        AutoBackupManager.RunResult.PermanentFailure -> post(str(R.string.vm_auto_backup_failed))
+      }
+    }
   }
 
   /** Runs a passphrase operation (slow key derivation) off the main thread. */

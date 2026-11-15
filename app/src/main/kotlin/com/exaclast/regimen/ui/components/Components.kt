@@ -3,21 +3,26 @@
 package com.exaclast.regimen.ui.components
 
 import android.text.format.DateFormat
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.exclude
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
@@ -33,16 +38,23 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DateRangePicker
-import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MediumFlexibleTopAppBar
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -52,7 +64,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TimePicker
 import androidx.compose.material3.TimePickerDialog
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarScrollBehavior
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -64,10 +79,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.window.core.layout.WindowSizeClass
 import com.exaclast.regimen.R
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.ui.NumberInput
@@ -101,6 +123,213 @@ fun tabContentInsets(): WindowInsets {
   }
 }
 
+/**
+ * Maximum width of single-column reading and form content on wide windows (tablets, foldables, desktop).
+ * Matches the Pixel Fold inner pane (~730 dp) so wide screens stay scannable.
+ */
+val ContentMaxWidth = 720.dp
+
+fun PaddingValues.addHorizontal(extra: Dp): PaddingValues = object : PaddingValues {
+  override fun calculateLeftPadding(layoutDirection: LayoutDirection): Dp =
+    this@addHorizontal.calculateLeftPadding(layoutDirection) + extra
+
+  override fun calculateTopPadding(): Dp = this@addHorizontal.calculateTopPadding()
+
+  override fun calculateRightPadding(layoutDirection: LayoutDirection): Dp =
+    this@addHorizontal.calculateRightPadding(layoutDirection) + extra
+
+  override fun calculateBottomPadding(): Dp = this@addHorizontal.calculateBottomPadding()
+}
+
+/**
+ * Provides the horizontal extra padding needed to center a column capped at [maxWidth] while
+ * keeping scrollable containers full-width so side-gutter scrolling and edge scrollbars still work.
+ */
+@Composable
+fun CenteredContentBox(
+  modifier: Modifier = Modifier,
+  maxWidth: Dp = ContentMaxWidth,
+  content: @Composable (horizontalExtraPadding: Dp) -> Unit,
+) {
+  BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+    val extra = ((this.maxWidth - maxWidth) / 2f).coerceAtLeast(0.dp)
+    content(extra)
+  }
+}
+
+@Composable
+fun isCompactWindowHeight(): Boolean =
+  !currentWindowAdaptiveInfo().windowSizeClass.isHeightAtLeastBreakpoint(WindowSizeClass.HEIGHT_DP_MEDIUM_LOWER_BOUND)
+
+@Composable
+fun isLargeFontScale(): Boolean = LocalDensity.current.fontScale >= 1.35f
+
+@Composable
+private fun CompactTitleTopAppBar(
+  title: @Composable () -> Unit,
+  subtitle: (@Composable () -> Unit)?,
+  navigationIcon: @Composable () -> Unit,
+  actions: @Composable RowScope.() -> Unit,
+  scrollBehavior: TopAppBarScrollBehavior?,
+  modifier: Modifier = Modifier,
+) {
+  TopAppBar(
+    modifier = modifier,
+    title = {
+      Column {
+        if (subtitle != null) {
+          ProvideTextStyle(MaterialTheme.typography.titleMedium) { title() }
+          ProvideTextStyle(
+            MaterialTheme.typography.bodySmall.copy(
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            ),
+          ) {
+            subtitle()
+          }
+        } else {
+          title()
+        }
+      }
+    },
+    navigationIcon = navigationIcon,
+    actions = actions,
+    scrollBehavior = scrollBehavior,
+  )
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun AdaptiveLargeTopAppBar(
+  title: @Composable () -> Unit,
+  modifier: Modifier = Modifier,
+  subtitle: (@Composable () -> Unit)? = null,
+  navigationIcon: @Composable () -> Unit = {},
+  actions: @Composable RowScope.() -> Unit = {},
+  scrollBehavior: TopAppBarScrollBehavior? = null,
+) {
+  if (isCompactWindowHeight()) {
+    CompactTitleTopAppBar(
+      title = title,
+      subtitle = subtitle,
+      navigationIcon = navigationIcon,
+      actions = actions,
+      scrollBehavior = scrollBehavior,
+      modifier = modifier,
+    )
+  } else {
+    LargeFlexibleTopAppBar(
+      title = title,
+      subtitle = subtitle,
+      navigationIcon = navigationIcon,
+      actions = actions,
+      scrollBehavior = scrollBehavior,
+      modifier = modifier,
+    )
+  }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+fun AdaptiveMediumTopAppBar(
+  title: @Composable () -> Unit,
+  modifier: Modifier = Modifier,
+  subtitle: (@Composable () -> Unit)? = null,
+  navigationIcon: @Composable () -> Unit = {},
+  actions: @Composable RowScope.() -> Unit = {},
+  scrollBehavior: TopAppBarScrollBehavior? = null,
+) {
+  if (isCompactWindowHeight()) {
+    CompactTitleTopAppBar(
+      title = title,
+      subtitle = subtitle,
+      navigationIcon = navigationIcon,
+      actions = actions,
+      scrollBehavior = scrollBehavior,
+      modifier = modifier,
+    )
+  } else {
+    MediumFlexibleTopAppBar(
+      title = title,
+      subtitle = subtitle,
+      navigationIcon = navigationIcon,
+      actions = actions,
+      scrollBehavior = scrollBehavior,
+      modifier = modifier,
+    )
+  }
+}
+
+/**
+ * Single-choice segmented bar at normal font sizes, collapsing into wrapped FilterChips at large
+ * accessibility font scales so multi-word or 4-5 way options never clip horizontally.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun <T> AdaptiveSingleChoiceRow(
+  options: List<T>,
+  selected: T,
+  onSelect: (T) -> Unit,
+  label: @Composable (T) -> String,
+  modifier: Modifier = Modifier,
+) {
+  if (isLargeFontScale()) {
+    FlowRow(
+      modifier = modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+      options.forEach { option ->
+        FilterChip(
+          selected = option == selected,
+          onClick = { onSelect(option) },
+          label = { Text(label(option)) },
+        )
+      }
+    }
+  } else {
+    SingleChoiceSegmentedButtonRow(modifier = modifier.fillMaxWidth()) {
+      options.forEachIndexed { i, option ->
+        SegmentedButton(
+          selected = option == selected,
+          onClick = { onSelect(option) },
+          shape = SegmentedButtonDefaults.itemShape(index = i, count = options.size),
+          icon = {},
+          label = { Text(label(option), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        )
+      }
+    }
+  }
+}
+
+/**
+ * Places two related fields side-by-side at normal font sizes and stacks them vertically at large
+ * accessibility font scales so labels and values never clip in half-width fields.
+ */
+@Composable
+fun AdaptiveFieldPair(
+  first: @Composable (Modifier) -> Unit,
+  second: @Composable (Modifier) -> Unit,
+  modifier: Modifier = Modifier,
+  firstWeight: Float = 0.5f,
+  gap: Dp = 12.dp,
+) {
+  if (isLargeFontScale()) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(gap)) {
+      first(Modifier.fillMaxWidth())
+      second(Modifier.fillMaxWidth())
+    }
+  } else {
+    Row(
+      modifier = modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(gap),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      first(Modifier.weight(firstWeight))
+      second(Modifier.weight(1f - firstWeight))
+    }
+  }
+}
+
 // region Grouped lists (Material 3 Expressive grouped-list look)
 
 private val GroupOuterRadius = 20.dp
@@ -130,7 +359,9 @@ fun SectionHeader(
       style = MaterialTheme.typography.titleSmall,
       color = MaterialTheme.colorScheme.primary,
       fontWeight = FontWeight.SemiBold,
-      modifier = Modifier.weight(1f),
+      modifier = Modifier
+        .weight(1f)
+        .semantics { heading() },
     )
     action?.invoke()
   }
@@ -259,16 +490,25 @@ fun EditorScaffold(
   saveEnabled: Boolean,
   modifier: Modifier = Modifier,
   saveLabel: String = stringResource(R.string.action_save),
+  hasUnsavedChanges: Boolean = false,
   banner: (@Composable () -> Unit)? = null,
   content: @Composable ColumnScope.() -> Unit,
 ) {
+  var confirmDiscard by rememberSaveable { mutableStateOf(false) }
+  val handleClose = {
+    if (hasUnsavedChanges) confirmDiscard = true else onClose()
+  }
+  BackHandler(enabled = hasUnsavedChanges) {
+    confirmDiscard = true
+  }
+
   Scaffold(
     modifier = modifier,
     topBar = {
       TopAppBar(
-        title = { Text(title, maxLines = 1) },
+        title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         navigationIcon = {
-          IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_close)) }
+          IconButton(onClick = handleClose) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_close)) }
         },
         actions = {
           TextButton(onClick = onSave, enabled = saveEnabled) { Text(saveLabel) }
@@ -277,22 +517,46 @@ fun EditorScaffold(
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
-    Column(
+    CenteredContentBox(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding)
         .imePadding(),
-    ) {
-      banner?.invoke()
-      Column(
-        modifier = Modifier
-          .fillMaxSize()
-          .verticalScroll(rememberScrollState())
-          .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        content = content,
-      )
+    ) { extra ->
+      Column(modifier = Modifier.fillMaxSize()) {
+        banner?.let {
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = extra),
+          ) {
+            it()
+          }
+        }
+        Column(
+          modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp + extra, vertical = 12.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp),
+          content = content,
+        )
+      }
     }
+  }
+
+  if (confirmDiscard) {
+    ConfirmDialog(
+      title = stringResource(R.string.editor_discard_title),
+      text = stringResource(R.string.editor_discard_text),
+      confirmLabel = stringResource(R.string.action_discard),
+      destructive = true,
+      onConfirm = {
+        confirmDiscard = false
+        onClose()
+      },
+      onDismiss = { confirmDiscard = false },
+    )
   }
 }
 

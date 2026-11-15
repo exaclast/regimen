@@ -4,6 +4,7 @@
 <full-backup-content>
     <exclude domain="sharedpref" path="regimen_device.xml" />
     <exclude domain="sharedpref" path="regimen_backup_keys.xml" />
+    <exclude domain="sharedpref" path="regimen_auto_backup.xml" />
     <exclude domain="database" path="regimen_store.db" />
     <exclude domain="database" path="regimen_store.db-wal" />
     <exclude domain="database" path="regimen_store.db-shm" />

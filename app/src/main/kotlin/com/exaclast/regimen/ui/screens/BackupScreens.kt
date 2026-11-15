@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -42,9 +43,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,6 +63,7 @@ import com.exaclast.regimen.model.texts
 import com.exaclast.regimen.model.userMessage
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -76,7 +75,9 @@ import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.R
 import com.exaclast.regimen.sync.BackupFiles
 import com.exaclast.regimen.ui.RestoreUiState
+import com.exaclast.regimen.ui.components.AdaptiveSingleChoiceRow
 import com.exaclast.regimen.ui.components.AppSnackbarHost
+import com.exaclast.regimen.ui.components.CenteredContentBox
 import com.exaclast.regimen.ui.components.EditorScaffold
 import com.exaclast.regimen.ui.components.GroupItem
 import com.exaclast.regimen.ui.components.GroupedColumn
@@ -178,9 +179,23 @@ fun BackupEncryptionScreen(
       )
       RecoveryCodeCard(code)
       if (mustConfirm) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          Checkbox(checked = savedConfirmed, onCheckedChange = { savedConfirmed = it })
-          Text(stringResource(R.string.backup_code_saved), style = MaterialTheme.typography.bodyLarge)
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+              value = savedConfirmed,
+              role = Role.Checkbox,
+              onValueChange = { savedConfirmed = it },
+            )
+            .padding(vertical = 4.dp),
+        ) {
+          Checkbox(checked = savedConfirmed, onCheckedChange = null)
+          Text(
+            stringResource(R.string.backup_code_saved),
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(start = 8.dp),
+          )
         }
       }
     }
@@ -403,20 +418,25 @@ fun BackupRestoreScreen(
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
-    Column(
+    CenteredContentBox(
       modifier = Modifier
         .fillMaxSize()
         .padding(padding)
-        .imePadding()
-        .verticalScroll(rememberScrollState())
-        .padding(horizontal = 16.dp, vertical = 12.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      when (state) {
-        is RestoreUiState.Locked -> UnlockContent(state, onUnlock)
-        is RestoreUiState.Preview -> PreviewContent(state, onApply)
-        is RestoreUiState.SetNewPassphrase -> SetNewPassphraseContent(state, onSetPassphrase, onSkipPassphrase)
-        else -> BusyRow(stringResource(R.string.backup_opening))
+        .imePadding(),
+    ) { extra ->
+      Column(
+        modifier = Modifier
+          .fillMaxSize()
+          .verticalScroll(rememberScrollState())
+          .padding(horizontal = 16.dp + extra, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        when (state) {
+          is RestoreUiState.Locked -> UnlockContent(state, onUnlock)
+          is RestoreUiState.Preview -> PreviewContent(state, onApply)
+          is RestoreUiState.SetNewPassphrase -> SetNewPassphraseContent(state, onSetPassphrase, onSkipPassphrase)
+          else -> BusyRow(stringResource(R.string.backup_opening))
+        }
       }
     }
   }
@@ -489,15 +509,17 @@ private fun ColumnScope.UnlockContent(state: RestoreUiState.Locked, onUnlock: (S
   state.locked.header.createdAtEpochMillis.takeIf { it > 0 }?.let {
     Text(stringResource(R.string.backup_backed_up, UiFormat.dateTime(it)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
   }
-  SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-    listOf(stringResource(R.string.backup_passphrase), stringResource(R.string.backup_recovery_code)).forEachIndexed { i, label ->
-      SegmentedButton(
-        selected = useRecoveryCode == (i == 1),
-        onClick = { useRecoveryCode = i == 1; secret = "" },
-        shape = SegmentedButtonDefaults.itemShape(i, 2),
-      ) { Text(label) }
-    }
-  }
+  val passphraseLabel = stringResource(R.string.backup_passphrase)
+  val recoveryCodeLabel = stringResource(R.string.backup_recovery_code)
+  AdaptiveSingleChoiceRow(
+    options = listOf(false, true),
+    selected = useRecoveryCode,
+    onSelect = {
+      useRecoveryCode = it
+      secret = ""
+    },
+    label = { if (it) recoveryCodeLabel else passphraseLabel },
+  )
   PassphraseField(
     value = secret,
     onValueChange = { secret = it },

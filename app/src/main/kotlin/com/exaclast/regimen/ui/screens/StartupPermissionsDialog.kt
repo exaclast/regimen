@@ -39,6 +39,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -88,8 +90,8 @@ fun StartupPermissionsDialog(
   val allCoreGranted = remember(refreshTick) {
     DoseNotificationManager.areCorePermissionsGranted(context)
   }
-  val batteryUnrestricted = remember(refreshTick) {
-    DoseNotificationManager.isIgnoringBatteryOptimizations(context)
+  val fullScreenGranted = remember(refreshTick) {
+    DoseNotificationManager.canUseFullScreenIntent(context)
   }
 
   var nanoStatus by remember { mutableStateOf<Int?>(null) }
@@ -133,6 +135,7 @@ fun StartupPermissionsDialog(
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.semantics { heading() },
           )
           PermissionsChecklistSection(
             onPermissionStateChanged = {
@@ -148,6 +151,7 @@ fun StartupPermissionsDialog(
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.semantics { heading() },
           )
           Text(
             text = stringResource(R.string.setup_track_help),
@@ -174,6 +178,7 @@ fun StartupPermissionsDialog(
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.semantics { heading() },
           )
           if (isNanoSupported) {
             Text(
@@ -220,7 +225,9 @@ fun StartupPermissionsDialog(
               style = MaterialTheme.typography.titleSmall,
               fontWeight = FontWeight.Bold,
               color = MaterialTheme.colorScheme.primary,
-              modifier = Modifier.padding(top = 6.dp),
+              modifier = Modifier
+                .padding(top = 6.dp)
+                .semantics { heading() },
             )
             Text(
               text = stringResource(R.string.setup_name_help),
@@ -247,7 +254,7 @@ fun StartupPermissionsDialog(
       Button(onClick = ::finish) {
         Text(
           stringResource(
-            if (allCoreGranted && batteryUnrestricted) {
+            if (allCoreGranted && fullScreenGranted) {
               R.string.setup_all_set
             } else if (allCoreGranted) {
               R.string.action_continue
@@ -289,9 +296,6 @@ fun PermissionsChecklistSection(
   val fullScreenGranted = remember(refreshTick) {
     DoseNotificationManager.canUseFullScreenIntent(context)
   }
-  val batteryUnrestricted = remember(refreshTick) {
-    DoseNotificationManager.isIgnoringBatteryOptimizations(context)
-  }
 
   val notifPermissionLauncher = rememberLauncherForActivityResult(
     contract = ActivityResultContracts.RequestPermission(),
@@ -331,16 +335,6 @@ fun PermissionsChecklistSection(
       actionLabel = stringResource(R.string.perm_allow),
       onActionClick = {
         DoseNotificationManager.openFullScreenIntentSettings(context)
-      },
-    )
-
-    PermissionItemCard(
-      title = stringResource(R.string.perm_battery),
-      subtitle = stringResource(if (batteryUnrestricted) R.string.perm_battery_granted else R.string.perm_battery_needed),
-      isGranted = batteryUnrestricted,
-      actionLabel = stringResource(R.string.perm_exempt),
-      onActionClick = {
-        DoseNotificationManager.requestIgnoreBatteryOptimizations(context)
       },
     )
   }
@@ -399,7 +393,7 @@ fun PermissionItemCard(
         Row(verticalAlignment = Alignment.CenterVertically) {
           Icon(
             Icons.Default.CheckCircle,
-            contentDescription = stringResource(R.string.perm_granted),
+            contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(18.dp),
           )
