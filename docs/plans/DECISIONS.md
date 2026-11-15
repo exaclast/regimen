@@ -65,6 +65,7 @@ When a decision is made, add it here with the date. When one is reversed, say so
 - **A complete NDC that resolves to an FDA record overrides the strength read from a label.** The name must still match
   exactly.
 - **FDA autofill never applies a non-exact name without asking.**
+- **Prefer NDC + manufacturer when evidence matches; otherwise fall back to RxCUI (`T-124`, 2026-11-15).** OpenFDA NDC lookup stays authoritative when an NDC or an exact/probable match including manufacturer is present (supplying `ndc11`, manufacturer, and package/vial volume). When package or labeler signals are missing or ambiguous, resolve at the RxNorm (`RxCUI` SCD/SBD) level instead of guessing a manufacturer or `ndc11`.
 - **No separate concentration field** (2026-11-12, T-112). It duplicated the strength. The amount per mL is worked out
   from the strength, which stays the one thing typed.
 - **Sites have three modes: Off, Record, Rotate** (2026-11-12, T-111), on every form that has sites. Recording where a
@@ -93,6 +94,7 @@ When a decision is made, add it here with the date. When one is reversed, say so
   Finished medications collapse under every grouping.
 - **Short-term comes before Ongoing** in the schedule grouping, matching Acute first.
 - **Regular providers are a manual switch,** because nothing recorded tells a regular provider from an occasional one.
+- **Keep `Organization` and `Specialty` attributes on `Provider` (`T-126`, 2026-11-15).** A patient typically sees only one or a few providers per clinic, so adding separate organization or specialty tables would add sync and picker complexity for little gain. Store optional `npi`, `taxonomyCode` (NUCC), `credential`, and `practiceNpi` on `Provider` alongside `specialty`, `practice`, `phone`, and `email`; keep specific match fields when NPPES/input confirms them, and synthesize/deduplicate FHIR `Organization` resources by `practiceNpi` or `practice` name on export.
 
 ### Project
 
