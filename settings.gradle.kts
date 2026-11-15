@@ -7,6 +7,9 @@ pluginManagement {
         includeGroupByRegex("com\\.google.*")
       }
     }
+    if (System.getenv("CI") == "true") {
+      maven(url = "https://maven-central.storage-download.googleapis.com/maven2")
+    }
     mavenCentral()
     gradlePluginPortal()
   }
@@ -21,6 +24,9 @@ dependencyResolutionManagement {
         includeGroupByRegex("com\\.android.*")
         includeGroupByRegex("com\\.google.*")
       }
+    }
+    if (System.getenv("CI") == "true") {
+      maven(url = "https://maven-central.storage-download.googleapis.com/maven2")
     }
     mavenCentral()
   }
