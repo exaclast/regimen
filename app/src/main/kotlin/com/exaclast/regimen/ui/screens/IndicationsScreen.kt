@@ -376,7 +376,7 @@ fun IndicationDetailScreen(
         )
         val endValue = when {
           end == null -> stringResource(if (indication.kind == IndicationKind.ACUTE) R.string.indication_ends_with_course else R.string.value_ongoing)
-          end.fromCourse -> "${UiFormat.date(end.date)} (end of medication course)"
+          end.fromCourse -> stringResource(R.string.indication_end_from_course, UiFormat.date(end.date))
           else -> UiFormat.date(end.date)
         }
         val rows = listOfNotNull(
@@ -572,7 +572,7 @@ fun IndicationEditorScreen(
   // Past providers stay listed only if already linked.
   val providerOptions = snapshot.providers.filter { !IndicationTimeline.isPast(it, today) || it.id in providerIds }
   val courseEnd = initialIndication?.let { IndicationTimeline.courseEnd(it, snapshot.medications, snapshot.schedules) }
-  val endBeforeStart = startDateIso.isNotBlank() && endDateIso.isNotBlank() && endDateIso < startDateIso
+  val endBeforeStart = !isAllergy && startDateIso.isNotBlank() && endDateIso.isNotBlank() && endDateIso < startDateIso
   val hasUnsavedChanges = name != source?.name.orEmpty() ||
     details != source?.details.orEmpty() ||
     kind != (source?.kind ?: IndicationKind.CHRONIC) ||
@@ -609,7 +609,7 @@ fun IndicationEditorScreen(
           severity = severity.takeIf { kind.hasSeverity },
           reaction = reaction.trim().takeIf { isAllergy && it.isNotEmpty() },
           diagnosedDateIso = startDateIso.takeIf { it.isNotBlank() },
-          endDateIso = endDateIso.takeIf { it.isNotBlank() },
+          endDateIso = endDateIso.takeIf { !isAllergy && it.isNotBlank() },
           providerIds = providerIds.filter { id -> snapshot.providers.any { it.id == id } },
           primaryIds = if (kind.canBeSecondary) primaryIds.filter { id -> snapshot.indications.any { it.id == id } } else emptyList(),
           createdAtEpochMillis = initialIndication?.createdAtEpochMillis ?: System.currentTimeMillis(),
@@ -655,6 +655,7 @@ fun IndicationEditorScreen(
           onClick = {
             kind = k
             if (status !in k.statuses) status = IndicationStatus.ACTIVE
+            if (k.isReaction) endDateIso = ""
           },
           label = { Text(k.label()) },
         )
@@ -702,6 +703,10 @@ fun IndicationEditorScreen(
           steps = scale.size - 2,
           trackRange = 0f..(scale.size - 1).toFloat(),
         )
+      }
+      LaunchedEffect(severity) {
+        val target = if (severity in scale) scale.indexOf(severity).toFloat() else 0f
+        if (sliderState.value != target) sliderState.value = target
       }
       // Greyed until a level is chosen, so an unset or unsure severity doesn't look like "Mild".
       Slider(

@@ -1,6 +1,8 @@
 package com.exaclast.regimen.ui.components
 
+import android.content.res.Resources
 import android.text.format.DateFormat
+import com.exaclast.regimen.R
 import com.exaclast.regimen.model.TimeOfDayBucket
 import java.time.Instant
 import java.time.LocalDate
@@ -37,12 +39,12 @@ object UiFormat {
   }
 
   /** "Nov 3, 8:12 AM" — or "Today, 8:12 AM" / "Yesterday, 8:12 AM". */
-  fun dateTime(epochMillis: Long): String {
+  fun dateTime(res: Resources, epochMillis: Long): String {
     val day = Instant.ofEpochMilli(epochMillis).atZone(ZoneId.systemDefault()).toLocalDate()
     val today = LocalDate.now()
     val dayLabel = when (day) {
-      today -> "Today"
-      today.minusDays(1) -> "Yesterday"
+      today -> res.getString(R.string.date_today)
+      today.minusDays(1) -> res.getString(R.string.date_yesterday)
       else -> date(day, withWeekday = false)
     }
     return "$dayLabel, ${time(epochMillis)}"

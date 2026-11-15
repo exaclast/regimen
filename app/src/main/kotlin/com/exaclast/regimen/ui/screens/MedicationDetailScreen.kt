@@ -155,7 +155,9 @@ fun MedicationDetailScreen(
   // When the dose in progress was taken (null = now) and its note, picked in the time dialog.
   var loggingAt by remember { mutableStateOf<Long?>(null) }
   var loggingNote by remember { mutableStateOf<String?>(null) }
-  var timeChoice by remember { mutableStateOf<TimeChoice?>(null) }
+  var timeChoiceOpen by rememberSaveable { mutableStateOf(false) }
+  var timeChoiceExtra by rememberSaveable { mutableStateOf(false) }
+  var timeChoiceOther by rememberSaveable { mutableStateOf(false) }
   val warning = pacing.warning()
   val texts = LocalResources.current.texts()
 
@@ -276,14 +278,14 @@ fun MedicationDetailScreen(
             ) {
               val buttonColors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
               TextButton(
-                onClick = { timeChoice = TimeChoice(extra = false, startWithOtherTime = true) },
+                onClick = { timeChoiceExtra = false; timeChoiceOther = true; timeChoiceOpen = true },
                 colors = buttonColors,
               ) {
                 Text(stringResource(R.string.log_time_other))
               }
               if (dueDose != null) {
                 TextButton(
-                  onClick = { timeChoice = TimeChoice(extra = true, startWithOtherTime = false) },
+                  onClick = { timeChoiceExtra = true; timeChoiceOther = false; timeChoiceOpen = true },
                   colors = buttonColors,
                 ) {
                   Text(stringResource(R.string.med_extra_dose))
@@ -528,6 +530,7 @@ fun MedicationDetailScreen(
       }
 
       item(key = "history") {
+        val resources = LocalResources.current
         SectionHeader(stringResource(R.string.med_recent_doses))
         GroupedColumn {
           if (logs.isEmpty()) {
@@ -543,7 +546,7 @@ fun MedicationDetailScreen(
                 supportingContent = {
                   Text(
                     listOfNotNull(
-                      UiFormat.dateTime(log.actionTimestampMillis),
+                      UiFormat.dateTime(resources, log.actionTimestampMillis),
                       log.siteUsed,
                       log.notes?.takeIf { it.isNotBlank() },
                     ).joinToString(" · "),
@@ -577,17 +580,18 @@ fun MedicationDetailScreen(
     )
   }
 
-  timeChoice?.let { choice ->
-    val duePart = dueDose.takeIf { !choice.extra }
+  if (timeChoiceOpen) {
+    val duePart = dueDose.takeIf { !timeChoiceExtra }
     LogTimeDialog(
       title = duePart?.let { stringResource(R.string.med_log_window_dose, it.bucket.name) } ?: stringResource(R.string.today_log_named, medication.primaryName),
       doseLabel = duePart?.doseText() ?: medication.formattedDefaultDose(),
       defaultDateIso = todayIso,
-      startWithOtherTime = choice.startWithOtherTime,
-      onDismiss = { timeChoice = null },
+      startWithOtherTime = timeChoiceOther,
+      onDismiss = { timeChoiceOpen = false },
       onConfirm = { takenAtMillis, note ->
-        timeChoice = null
-        startLogging(choice.extra, takenAtMillis, note)
+        val wasExtra = timeChoiceExtra
+        timeChoiceOpen = false
+        startLogging(wasExtra, takenAtMillis, note)
       },
     )
   }
@@ -646,8 +650,6 @@ fun MedicationDetailScreen(
   }
 }
 
-/** Which time dialog to open from the medication page: for an extra dose, or for the dose that's due. */
-private data class TimeChoice(val extra: Boolean, val startWithOtherTime: Boolean)
 
 private fun doseCount(res: Resources, value: Double): String {
   val n = formatNum(value)

@@ -53,7 +53,7 @@ fun CareSummaryScreen(snapshot: RegimenSnapshot, onBack: () -> Unit) {
     CareSummary.build(
       resources.texts(),
       snapshot,
-      formatTaken = UiFormat::dateTime,
+      formatTaken = { UiFormat.dateTime(resources, it) },
       formatDate = { UiFormat.date(it, withWeekday = false) },
     )
   }

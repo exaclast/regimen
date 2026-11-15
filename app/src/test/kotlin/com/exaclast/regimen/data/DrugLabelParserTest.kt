@@ -215,6 +215,23 @@ class DrugLabelParserTest {
     assertNull(parseDose("\"defaultDoseAmount\": \"Numeric dose per intake, or null\""))
     assertNull(parseDose("\"strength\": \"500 mg\""))
   }
+
+  @Test
+  fun parseGeminiJsonResponse_shortPatientNameDoesNotStripDistinctDrug_andPreserves10DigitNdc() {
+    val json = """
+      {
+        "patientName": "Mann",
+        "ndc": "0078118522",
+        "formulaName": "Mannitol",
+        "brandName": "Mannitol",
+        "strength": "20%",
+        "form": "LIQUID"
+      }
+    """.trimIndent()
+    val parsed = DrugLabelParser.parseGeminiJsonResponse(rawOutput = json, userConfiguredPatientName = "Mann")
+    assertEquals("Mannitol", parsed.formulaName)
+    assertEquals("0078118522", parsed.extractedNdc)
+  }
 }
 
 

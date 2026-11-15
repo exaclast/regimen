@@ -186,7 +186,7 @@ object DrugLabelParser {
     val canonicalNdc = extracted.ndc
       ?.trim()
       ?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
-      ?.let { FdaNdcLookupService.toCanonicalNdc11(it) }
+      ?.let { FdaNdcLookupService.normalizeIfUnambiguousNdc(it) }
       ?.takeIf { it.count { ch -> ch.isDigit() } in 10..11 }
 
     val mappedForm = mapFormString(extracted.form)
@@ -289,9 +289,12 @@ object DrugLabelParser {
 
   internal fun tokensMatchFuzzy(a: String, b: String): Boolean {
     if (a == b) return true
-    // Short names only match whole words: a patient named Ann shouldn't remove "Mannitol".
+    // Short names only match whole words or 1-typo matches: "Ann" or "Mann" shouldn't drop "Mannitol".
+    // Prefix matching (e.g. "Chris" / "Christopher") requires at least 5 chars on the shorter token.
     if (a.length < 4 || b.length < 4) return false
-    return a.contains(b) || b.contains(a) || levenshteinDistance(a, b) <= 1
+    if (levenshteinDistance(a, b) <= 1) return true
+    val shorter = minOf(a.length, b.length)
+    return shorter >= 5 && (a.startsWith(b) || b.startsWith(a))
   }
 
   internal fun levenshteinDistance(a: String, b: String): Int {

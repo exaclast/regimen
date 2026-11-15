@@ -8,6 +8,8 @@ import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import java.time.format.TextStyle
 
 /** Plain-language schedule descriptions ("Weekly · Morning", "Mon, Wed, Fri · Evening"). */
@@ -42,7 +44,13 @@ object ScheduleText {
       val count = schedule.specificDatesIso.size
       when (count) {
         0 -> texts.get(R.string.sched_specific_dates_none)
-        1 -> texts.get(R.string.sched_on_date, schedule.specificDatesIso.first())
+        1 -> {
+          val raw = schedule.specificDatesIso.first()
+          val formatted = runCatching {
+            LocalDate.parse(raw).format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(texts.locale))
+          }.getOrDefault(raw)
+          texts.get(R.string.sched_on_date, formatted)
+        }
         else -> texts.plural(R.plurals.sched_n_specific_dates, count, count)
       }
     }

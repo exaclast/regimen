@@ -6,10 +6,12 @@ import com.exaclast.regimen.domain.Adjustments
 import com.exaclast.regimen.domain.IndicationTimeline
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.WindowDeletion
+import com.exaclast.regimen.model.AllergenType
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.IndicationKind
 import com.exaclast.regimen.model.IndicationStatus
+import com.exaclast.regimen.model.DoseAmount
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
@@ -24,6 +26,7 @@ import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.RegimenBackupBundle
 import com.exaclast.regimen.model.ScheduleDose
 import com.exaclast.regimen.model.ScheduleFrequencyType
+import com.exaclast.regimen.model.Severity
 import com.exaclast.regimen.model.SiteMode
 import com.exaclast.regimen.model.SyncDevice
 import com.exaclast.regimen.model.SyringeType
@@ -192,6 +195,7 @@ class RegimenRepository private constructor(context: Context) {
   fun deleteMedication(medicationId: String) {
     val now = System.currentTimeMillis()
     val med = _snapshot.value.medications.find { it.id == medicationId } ?: return
+    cancelSnoozeAlarms(_snapshot.value.doseLogs.filter { it.medicationId == medicationId })
     db.upsertMedication(med.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now))
     _snapshot.value.schedules.filter { it.medicationId == medicationId }.forEach { sched ->
       db.upsertSchedule(sched.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now))
@@ -222,6 +226,7 @@ class RegimenRepository private constructor(context: Context) {
   fun deleteSchedule(scheduleId: String) {
     val now = System.currentTimeMillis()
     val sched = _snapshot.value.schedules.find { it.id == scheduleId } ?: return
+    cancelSnoozeAlarms(_snapshot.value.doseLogs.filter { it.scheduleId == scheduleId })
     db.upsertSchedule(sched.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now))
     reloadSnapshot()
   }
@@ -266,9 +271,12 @@ class RegimenRepository private constructor(context: Context) {
   @Synchronized
   fun saveIndication(indication: Indication) {
     val now = System.currentTimeMillis()
-    // Resolving without an end date ends it today, so it files under past indications with a date.
+    // Resolving without an end date ends it today (or on the start date if later), so it files under past indications with a date.
     val ended = if (indication.status == IndicationStatus.RESOLVED && indication.endDateIso.isNullOrBlank()) {
-      indication.copy(endDateIso = LocalDate.now().toString())
+      val today = LocalDate.now()
+      val start = indication.diagnosedDateIso?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+      val resolvedDate = if (start != null && start.isAfter(today)) start else today
+      indication.copy(endDateIso = resolvedDate.toString())
     } else {
       indication
     }
@@ -429,10 +437,11 @@ class RegimenRepository private constructor(context: Context) {
     val medMap = state.medications.associateBy { it.id }
     val scheduleMap = state.schedules.associateBy { it.id }
     val workingLogs = state.doseLogs.toMutableList()
+    val existingById = state.doseLogs.associateBy { it.id }
     val now = System.currentTimeMillis()
 
-    val created = requests.mapNotNull { req ->
-      val stored = medMap[req.medicationId] ?: return@mapNotNull null
+    val created = requests.mapIndexedNotNull { index, req ->
+      val stored = medMap[req.medicationId] ?: return@mapIndexedNotNull null
       // Without an explicit amount, use what applied on the dose's own day (titration steps).
       val day = runCatching { LocalDate.parse(req.scheduledDateIso) }.getOrDefault(LocalDate.now())
       val med = Adjustments.asOf(stored, day)
@@ -444,6 +453,7 @@ class RegimenRepository private constructor(context: Context) {
       } else {
         req.siteUsed
       }
+      val existing = req.existingLogId?.let { existingById[it] }
 
       val log = DoseLog(
         id = req.existingLogId ?: UUID.randomUUID().toString(),
@@ -451,14 +461,14 @@ class RegimenRepository private constructor(context: Context) {
         scheduleId = req.scheduleId,
         bucketId = req.bucketId,
         scheduledDateIso = req.scheduledDateIso,
-        actionTimestampMillis = req.actionTimestampMillis ?: now,
+        actionTimestampMillis = req.actionTimestampMillis ?: (now + index),
         status = req.status,
         snoozedUntilMillis = req.snoozedUntilMillis,
         amountTaken = resolvedAmount,
         amountUnit = resolvedUnit,
         siteUsed = resolvedSite,
         notes = req.notes,
-        createdAtEpochMillis = now,
+        createdAtEpochMillis = existing?.createdAtEpochMillis ?: now,
         updatedAtEpochMillis = now,
       )
       workingLogs.removeAll { it.id == log.id }
@@ -610,6 +620,12 @@ class RegimenRepository private constructor(context: Context) {
       current.withShared(shared)
     }
 
+    val nextLiveSnoozeIds = bundle.doseLogs
+      .filter { it.deletedAtEpochMillis == null && it.status == DoseStatus.SNOOZED }
+      .mapTo(HashSet()) { it.id }
+    val obsoleteSnoozes = db.getAllDoseLogs().filter { log ->
+      log.status == DoseStatus.SNOOZED && (replace || log.id !in nextLiveSnoozeIds)
+    }
     val previousLiveBucketIds = db.getAllBuckets().mapTo(HashSet()) { it.id }
     val removedBucketIds = db.inTransaction {
       if (replace) db.clearUserRecords(includeBuckets = true)
@@ -639,8 +655,19 @@ class RegimenRepository private constructor(context: Context) {
       }
       putString(KEY_SYNC_DEVICES, json.encodeToString(bundle.devices))
     }.commit()
+    cancelSnoozeAlarms(obsoleteSnoozes)
     removedBucketIds.forEach { DoseNotificationManager.cancelBucketAlarms(appContext, it) }
     reloadSnapshot()
+  }
+
+  private fun cancelSnoozeAlarms(logs: Iterable<DoseLog>) {
+    logs.forEach { log ->
+      if (log.status == DoseStatus.SNOOZED && log.scheduleId != null && log.bucketId != null) {
+        val itemKey = "${log.scheduleId}_${log.bucketId}_${log.scheduledDateIso}"
+        DoseNotificationManager.cancelNotificationForItem(appContext, itemKey)
+        DoseNotificationManager.cancelSnoozeAlarm(appContext, itemKey, log.bucketId)
+      }
+    }
   }
 
   /** Soft-deletes every live user record so existing tombstones stay intact for sync. */
@@ -657,6 +684,7 @@ class RegimenRepository private constructor(context: Context) {
   @Synchronized
   fun clearAllUserData() {
     DoseNotificationManager.cancelAllNotifications(appContext)
+    cancelSnoozeAlarms(_snapshot.value.doseLogs)
     softDeleteAllUserRecords(System.currentTimeMillis())
     reloadSnapshot(notifyAutoBackup = false)
   }
@@ -664,6 +692,7 @@ class RegimenRepository private constructor(context: Context) {
   @Synchronized
   fun resetToSampleData() {
     DoseNotificationManager.cancelAllNotifications(appContext)
+    cancelSnoozeAlarms(_snapshot.value.doseLogs)
     val now = System.currentTimeMillis()
     softDeleteAllUserRecords(now)
     seedInitialSampleData(now)
@@ -689,7 +718,7 @@ class RegimenRepository private constructor(context: Context) {
       .filter { it.id in requiredDefaultIds && it.id !in liveBucketIds }
       .forEach { db.upsertBucket(it.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = null)) }
 
-    // 1. Sample Providers
+    // 1. Sample Providers (PCP/regular, regular specialist, as-needed specialist, and past)
     val pcp = Provider(
       id = UUID.randomUUID().toString(),
       name = "Dr. Elena Rostova, MD",
@@ -698,6 +727,7 @@ class RegimenRepository private constructor(context: Context) {
       phone = "555-014-8820",
       email = "erostova@metrohealth.example.org",
       isPcp = true,
+      seenRegularly = true,
       careStartDateIso = today.minusYears(1).toString(),
       notes = "Annual wellness and primary care",
       createdAtEpochMillis = now,
@@ -711,23 +741,65 @@ class RegimenRepository private constructor(context: Context) {
       phone = "555-019-3341",
       email = "mvance@valleyendocrine.example.org",
       isPcp = false,
+      seenRegularly = true,
       careStartDateIso = today.minusMonths(6).toString(),
       notes = "Quarterly diabetic management review",
       createdAtEpochMillis = now,
       updatedAtEpochMillis = now,
     )
+    val allergist = Provider(
+      id = UUID.randomUUID().toString(),
+      name = "Dr. Priya Nair, MD",
+      specialty = "Allergy & Immunology",
+      practice = "Cascade Allergy Clinic",
+      phone = "555-017-4490",
+      isPcp = false,
+      seenRegularly = false,
+      careStartDateIso = today.minusYears(2).toString(),
+      notes = "Consult as needed for allergy action plan updates",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+    val pastOrthopedist = Provider(
+      id = UUID.randomUUID().toString(),
+      name = "Dr. Samuel Park, MD",
+      specialty = "Orthopedic Surgery",
+      practice = "Harbor Orthopedics",
+      phone = "555-012-7703",
+      careStartDateIso = today.minusYears(2).toString(),
+      careEndDateIso = today.minusMonths(8).toString(),
+      notes = "Released from follow-up after ankle recovery",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
     db.upsertProvider(pcp)
     db.upsertProvider(endocrinologist)
+    db.upsertProvider(allergist)
+    db.upsertProvider(pastOrthopedist)
 
-    // 2. Sample Indications
+    // 2. Sample Indications (chronic, secondary, acute, suspected, preventive, allergies, intolerance, resolved)
     val condDiabetes = Indication(
       id = UUID.randomUUID().toString(),
       name = "Type 2 Diabetes Mellitus",
       details = "Glycemic control, fasting blood glucose monitoring, and basal insulin regimen.",
       kind = IndicationKind.CHRONIC,
       status = IndicationStatus.MANAGED,
+      severity = Severity.MODERATE,
       diagnosedDateIso = today.minusMonths(6).toString(),
       providerIds = listOf(endocrinologist.id, pcp.id),
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+    val condNeuropathy = Indication(
+      id = UUID.randomUUID().toString(),
+      name = "Peripheral Neuropathy",
+      details = "Mild tingling in feet secondary to diabetes; B12 supplementation started.",
+      kind = IndicationKind.CHRONIC,
+      status = IndicationStatus.MANAGED,
+      severity = Severity.MILD,
+      diagnosedDateIso = today.minusMonths(3).toString(),
+      primaryIds = listOf(condDiabetes.id),
+      providerIds = listOf(endocrinologist.id),
       createdAtEpochMillis = now,
       updatedAtEpochMillis = now,
     )
@@ -737,7 +809,82 @@ class RegimenRepository private constructor(context: Context) {
       details = "10-day oral antibiotic course for acute bacterial sinus infection.",
       kind = IndicationKind.ACUTE,
       status = IndicationStatus.ACTIVE,
+      severity = Severity.MODERATE,
       diagnosedDateIso = today.minusDays(2).toString(),
+      providerIds = listOf(pcp.id),
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+    val condVertigo = Indication(
+      id = UUID.randomUUID().toString(),
+      name = "Benign Positional Vertigo",
+      details = "Brief dizziness episodes on waking; scheduled for vestibular evaluation.",
+      kind = IndicationKind.CHRONIC,
+      status = IndicationStatus.ACTIVE,
+      suspected = true,
+      severity = Severity.MILD,
+      diagnosedDateIso = today.minusWeeks(2).toString(),
+      providerIds = listOf(pcp.id),
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+    val condAsthmaPrev = Indication(
+      id = UUID.randomUUID().toString(),
+      name = "Seasonal Asthma Prevention",
+      details = "Fall ragweed season airway prophylaxis plan.",
+      kind = IndicationKind.PREVENTIVE,
+      status = IndicationStatus.ACTIVE,
+      diagnosedDateIso = today.minusMonths(1).toString(),
+      providerIds = listOf(pcp.id, allergist.id),
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+    val allergySulfa = Indication(
+      id = UUID.randomUUID().toString(),
+      name = "Sulfamethoxazole (Sulfa drugs)",
+      kind = IndicationKind.ALLERGY,
+      status = IndicationStatus.ACTIVE,
+      allergenType = AllergenType.DRUG,
+      severity = Severity.SEVERE,
+      reaction = "Generalized hives and facial swelling",
+      diagnosedDateIso = today.minusYears(4).toString(),
+      providerIds = listOf(allergist.id, pcp.id),
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+    val allergyPollen = Indication(
+      id = UUID.randomUUID().toString(),
+      name = "Ragweed Pollen",
+      kind = IndicationKind.ALLERGY,
+      status = IndicationStatus.ACTIVE,
+      allergenType = AllergenType.ENVIRONMENTAL,
+      severity = Severity.MODERATE,
+      reaction = "Allergic conjunctivitis and sneezing",
+      providerIds = listOf(allergist.id),
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+    val allergyPeanut = Indication(
+      id = UUID.randomUUID().toString(),
+      name = "Peanuts",
+      kind = IndicationKind.ALLERGY,
+      status = IndicationStatus.ACTIVE,
+      allergenType = AllergenType.FOOD,
+      severity = Severity.LIFE_THREATENING,
+      reaction = "Anaphylaxis — carries epinephrine auto-injector",
+      diagnosedDateIso = today.minusYears(10).toString(),
+      providerIds = listOf(allergist.id),
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+    val intoleranceNsaid = Indication(
+      id = UUID.randomUUID().toString(),
+      name = "Ibuprofen / NSAIDs",
+      kind = IndicationKind.INTOLERANCE,
+      status = IndicationStatus.ACTIVE,
+      allergenType = AllergenType.DRUG,
+      severity = Severity.MODERATE,
+      reaction = "Gastric upset and heartburn",
       providerIds = listOf(pcp.id),
       createdAtEpochMillis = now,
       updatedAtEpochMillis = now,
@@ -749,6 +896,7 @@ class RegimenRepository private constructor(context: Context) {
       details = "Treated with a 10-day amoxicillin course.",
       kind = IndicationKind.ACUTE,
       status = IndicationStatus.RESOLVED,
+      severity = Severity.MODERATE,
       diagnosedDateIso = today.minusMonths(5).toString(),
       endDateIso = today.minusMonths(5).plusDays(10).toString(),
       providerIds = listOf(pcp.id),
@@ -761,18 +909,28 @@ class RegimenRepository private constructor(context: Context) {
       details = "Occasional episodic tension headaches and mild musculoskeletal pain.",
       kind = IndicationKind.CHRONIC,
       status = IndicationStatus.MANAGED,
+      severity = Severity.MILD,
       diagnosedDateIso = today.minusYears(1).toString(),
       providerIds = listOf(pcp.id),
       createdAtEpochMillis = now,
       updatedAtEpochMillis = now,
     )
-    db.upsertIndication(condDiabetes)
-    db.upsertIndication(condSinusitis)
-    db.upsertIndication(condHeadache)
-    db.upsertIndication(condStrep)
+    listOf(
+      condDiabetes,
+      condNeuropathy,
+      condSinusitis,
+      condVertigo,
+      condAsthmaPrev,
+      allergySulfa,
+      allergyPollen,
+      allergyPeanut,
+      intoleranceNsaid,
+      condHeadache,
+      condStrep,
+    ).forEach { db.upsertIndication(it) }
 
     // 3. Sample Medications
-    // 3a. Generic Amox-Clav (Oral tablet antibiotic, twice daily)
+    // 3a. Generic Amox-Clav (Oral tablet antibiotic, 10-day partial course)
     val medAmoxClav = Medication(
       id = UUID.randomUUID().toString(),
       formulaName = "Amoxicillin / Clavulanate Potassium",
@@ -818,7 +976,7 @@ class RegimenRepository private constructor(context: Context) {
       updatedAtEpochMillis = now,
     )
 
-    // 3c. Insulin Glargine (Injectable vial with syringe & site rotation, bedtime basal)
+    // 3c. Insulin Glargine (Injectable vial with U-100 syringe & site rotation, bedtime basal)
     val medInsulin = Medication(
       id = UUID.randomUUID().toString(),
       formulaName = "Insulin Glargine (rDNA origin)",
@@ -852,7 +1010,57 @@ class RegimenRepository private constructor(context: Context) {
       updatedAtEpochMillis = now,
     )
 
-    // 3d. Isotretinoin: a titration. One capsule to start, two from a check-up, three planned.
+    // 3d. Cyanocobalamin / Vitamin B12 (IM Vial with Luer-lock syringe + draw & inject needles + ISO hub colors)
+    val medB12 = Medication(
+      id = UUID.randomUUID().toString(),
+      formulaName = "Cyanocobalamin (Vitamin B12)",
+      manufacturer = "American Regent",
+      ndc11 = "00517-0031-25",
+      strength = "1000 mcg/mL",
+      form = MedicationForm.INJECTABLE_VIAL,
+      defaultDoseAmount = 1000.0,
+      defaultDoseUnit = DoseUnit.MCG,
+      injectableDetails = InjectableDetails(
+        route = InjectionRoute.IM,
+        vialVolumeMl = 10.0,
+        syringeType = SyringeType.LUER_LOCK,
+        syringeVolumeMl = 3.0,
+        drawNeedleGauge = 18,
+        drawNeedleLengthInches = 1.0,
+        injectNeedleGauge = 25,
+        injectNeedleLengthInches = 1.0,
+      ),
+      siteMode = SiteMode.ROTATE,
+      sites = Medication.PRESET_IM_THIGH_SITES,
+      indicationIds = listOf(condNeuropathy.id),
+      prescriberId = endocrinologist.id,
+      prescribedDateIso = today.minusMonths(3).toString(),
+      notes = "Draw 1 mL with 18G needle, switch to 25G needle for IM injection.",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+
+    // 3e. Ketotifen Eye Drops (Drops treating environmental allergy with SiteMode.RECORD)
+    val medEyeDrops = Medication(
+      id = UUID.randomUUID().toString(),
+      formulaName = "Ketotifen Fumarate",
+      brandName = "Zaditor",
+      manufacturer = "Alcon",
+      strength = "0.025%",
+      form = MedicationForm.DROPS,
+      defaultDoseAmount = 1.0,
+      defaultDoseUnit = DoseUnit.DROP,
+      siteMode = SiteMode.RECORD,
+      sites = Medication.PRESET_EYE_SITES,
+      indicationIds = listOf(allergyPollen.id),
+      prescriberId = allergist.id,
+      prescribedDateIso = today.minusMonths(1).toString(),
+      notes = "Remove contact lenses before instilling drops.",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+
+    // 3f. Isotretinoin: a titration. One capsule to start, two starting today, three planned.
     val schedIsotretinoinId = UUID.randomUUID().toString()
     val medIsotretinoin = Medication(
       id = UUID.randomUUID().toString(),
@@ -867,14 +1075,16 @@ class RegimenRepository private constructor(context: Context) {
       adjustments = listOf(
         MedicationAdjustment(
           id = UUID.randomUUID().toString(),
-          effectiveDateIso = today.minusDays(6).toString(),
-          note = "Increased at 2-week check",
+          effectiveDateIso = today.toString(),
+          note = "Increased at 3-week check",
+          defaultDose = DoseAmount(2.0, DoseUnit.CAPSULE),
           scheduleDoses = listOf(ScheduleDose(schedIsotretinoinId, 2.0, DoseUnit.CAPSULE)),
         ),
         MedicationAdjustment(
           id = UUID.randomUUID().toString(),
-          effectiveDateIso = today.plusDays(10).toString(),
+          effectiveDateIso = today.plusDays(14).toString(),
           note = "Planned increase if tolerated",
+          defaultDose = DoseAmount(3.0, DoseUnit.CAPSULE),
           scheduleDoses = listOf(ScheduleDose(schedIsotretinoinId, 3.0, DoseUnit.CAPSULE)),
         ),
       ),
@@ -882,10 +1092,24 @@ class RegimenRepository private constructor(context: Context) {
       updatedAtEpochMillis = now,
     )
 
-    db.upsertMedication(medAmoxClav)
-    db.upsertMedication(medTylenol)
-    db.upsertMedication(medInsulin)
-    db.upsertMedication(medIsotretinoin)
+    // 3g. Prednisone (Finished course with a taken log within 90 days)
+    val medPrednisone = Medication(
+      id = UUID.randomUUID().toString(),
+      formulaName = "Prednisone",
+      strength = "10 mg",
+      form = MedicationForm.TABLET,
+      defaultDoseAmount = 1.0,
+      defaultDoseUnit = DoseUnit.TABLET,
+      prescriberId = pcp.id,
+      prescribedDateIso = today.minusDays(18).toString(),
+      notes = "Completed 5-day burst for acute airway inflammation.",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+
+    listOf(medAmoxClav, medTylenol, medInsulin, medB12, medEyeDrops, medIsotretinoin, medPrednisone).forEach {
+      db.upsertMedication(it)
+    }
 
     // 4. Sample Schedules
     val schedAmoxClavDaily = MedicationSchedule(
@@ -929,6 +1153,33 @@ class RegimenRepository private constructor(context: Context) {
       updatedAtEpochMillis = now,
     )
 
+    val schedB12Days = MedicationSchedule(
+      id = UUID.randomUUID().toString(),
+      startDateIso = today.minusMonths(3).toString(),
+      medicationId = medB12.id,
+      frequencyType = ScheduleFrequencyType.DAYS_OF_WEEK,
+      daysOfWeek = setOf(1, 4), // Monday and Thursday
+      bucketIds = listOf(TimeOfDayBucket.BUCKET_MORNING),
+      doseAmount = 1000.0,
+      doseUnit = DoseUnit.MCG,
+      enabled = true,
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+
+    val schedEyeDropsDaily = MedicationSchedule(
+      id = UUID.randomUUID().toString(),
+      startDateIso = today.minusDays(5).toString(),
+      medicationId = medEyeDrops.id,
+      frequencyType = ScheduleFrequencyType.DAILY,
+      bucketIds = listOf(TimeOfDayBucket.BUCKET_MORNING),
+      doseAmount = 1.0,
+      doseUnit = DoseUnit.DROP,
+      enabled = true,
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+
     val schedIsotretinoin = MedicationSchedule(
       id = schedIsotretinoinId,
       startDateIso = today.minusDays(20).toString(),
@@ -942,12 +1193,34 @@ class RegimenRepository private constructor(context: Context) {
       updatedAtEpochMillis = now,
     )
 
-    db.upsertSchedule(schedAmoxClavDaily)
-    db.upsertSchedule(schedTylenolPrn)
-    db.upsertSchedule(schedInsulinDaily)
-    db.upsertSchedule(schedIsotretinoin)
+    val schedPrednisoneFinished = MedicationSchedule(
+      id = UUID.randomUUID().toString(),
+      startDateIso = today.minusDays(18).toString(),
+      endDateIso = today.minusDays(14).toString(),
+      medicationId = medPrednisone.id,
+      frequencyType = ScheduleFrequencyType.DAILY,
+      bucketIds = listOf(TimeOfDayBucket.BUCKET_MORNING),
+      doseAmount = 1.0,
+      doseUnit = DoseUnit.TABLET,
+      enabled = true,
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
 
-    // 5. Prior Dose Log: Yesterday evening's insulin dose logged on "Abdomen - Left" so today suggests "Abdomen - Right"!
+    listOf(
+      schedAmoxClavDaily,
+      schedTylenolPrn,
+      schedInsulinDaily,
+      schedB12Days,
+      schedEyeDropsDaily,
+      schedIsotretinoin,
+      schedPrednisoneFinished,
+    ).forEach { db.upsertSchedule(it) }
+
+    // 5. Prior Dose Logs:
+    // - Yesterday bedtime insulin on "Abdomen - Left" so today suggests "Abdomen - Right"
+    // - Yesterday morning eye drops on "Both Eyes" so SiteMode.RECORD suggests "Both Eyes"
+    // - Prednisone taken 14 days ago so it appears in "Recently stopped" in Health Summary
     val yesterdayLog = DoseLog(
       id = UUID.randomUUID().toString(),
       medicationId = medInsulin.id,
@@ -963,7 +1236,49 @@ class RegimenRepository private constructor(context: Context) {
       createdAtEpochMillis = now,
       updatedAtEpochMillis = now,
     )
-    db.upsertDoseLog(yesterdayLog)
+    val yesterdayDropsLog = DoseLog(
+      id = UUID.randomUUID().toString(),
+      medicationId = medEyeDrops.id,
+      scheduleId = schedEyeDropsDaily.id,
+      bucketId = TimeOfDayBucket.BUCKET_MORNING,
+      scheduledDateIso = yesterdayIso,
+      actionTimestampMillis = now - (36L * 3600L * 1000L),
+      status = DoseStatus.TAKEN,
+      amountTaken = 1.0,
+      amountUnit = DoseUnit.DROP,
+      siteUsed = "Both Eyes",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+    val prednisoneLog = DoseLog(
+      id = UUID.randomUUID().toString(),
+      medicationId = medPrednisone.id,
+      scheduleId = schedPrednisoneFinished.id,
+      bucketId = TimeOfDayBucket.BUCKET_MORNING,
+      scheduledDateIso = today.minusDays(14).toString(),
+      actionTimestampMillis = now - (14L * 24L * 3600L * 1000L),
+      status = DoseStatus.TAKEN,
+      amountTaken = 1.0,
+      amountUnit = DoseUnit.TABLET,
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+    val b12Day = (1L..6L).map { today.minusDays(it) }.first { it.dayOfWeek.value in setOf(1, 4) }
+    val b12Log = DoseLog(
+      id = UUID.randomUUID().toString(),
+      medicationId = medB12.id,
+      scheduleId = schedB12Days.id,
+      bucketId = TimeOfDayBucket.BUCKET_MORNING,
+      scheduledDateIso = b12Day.toString(),
+      actionTimestampMillis = b12Day.atTime(8, 30).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli(),
+      status = DoseStatus.TAKEN,
+      amountTaken = 1000.0,
+      amountUnit = DoseUnit.MCG,
+      siteUsed = "Left Vastus Lateralis (Thigh)",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+    listOf(yesterdayLog, yesterdayDropsLog, b12Log, prednisoneLog).forEach { db.upsertDoseLog(it) }
   }
 
   companion object {

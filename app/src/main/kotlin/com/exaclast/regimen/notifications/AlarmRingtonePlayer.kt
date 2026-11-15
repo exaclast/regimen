@@ -11,6 +11,7 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 import android.provider.Settings
+import java.util.concurrent.Executors
 
 /**
  * Handles persistent audio and haptic feedback for end-of-window dose alarms.
@@ -19,10 +20,13 @@ import android.provider.Settings
  */
 object AlarmRingtonePlayer {
 
+  private val executor = Executors.newSingleThreadExecutor()
+  @Volatile
   private var mediaPlayer: MediaPlayer? = null
   private var vibrator: Vibrator? = null
   private var audioManager: AudioManager? = null
   private var focusRequest: AudioFocusRequest? = null
+  private var playGeneration: Long = 0L
 
   val isPlaying: Boolean
     get() = mediaPlayer?.isPlaying == true
@@ -30,6 +34,7 @@ object AlarmRingtonePlayer {
   @Synchronized
   fun play(context: Context) {
     stop()
+    val generation = ++playGeneration
     val appContext = context.applicationContext
     audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
 
@@ -45,25 +50,48 @@ object AlarmRingtonePlayer {
     focusRequest = request
     audioManager?.requestAudioFocus(request)
 
-    // 2. Alarm Ringtone Playback: the user's alarm sound, falling back if it is unset or unreadable.
+    // 2. Alarm Ringtone Playback: prepare off the main thread and release any failed attempt.
     val candidates = listOfNotNull(
       RingtoneManager.getActualDefaultRingtoneUri(appContext, RingtoneManager.TYPE_ALARM),
       Settings.System.DEFAULT_ALARM_ALERT_URI,
       RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
     )
-    for (uri in candidates) {
-      val player = runCatching {
-        MediaPlayer().apply {
-          setDataSource(appContext, uri)
-          setAudioAttributes(alarmAttrs)
-          isLooping = true
-          prepare()
-          start()
+    executor.execute {
+      for (uri in candidates) {
+        synchronized(this) {
+          if (generation != playGeneration) return@execute
         }
-      }.getOrNull()
-      if (player != null) {
-        mediaPlayer = player
-        break
+        var player: MediaPlayer? = null
+        val prepared = try {
+          player = MediaPlayer().apply {
+            setDataSource(appContext, uri)
+            setAudioAttributes(alarmAttrs)
+            isLooping = true
+            prepare()
+          }
+          true
+        } catch (_: Exception) {
+          runCatching { player?.release() }
+          false
+        }
+        if (!prepared || player == null) continue
+
+        synchronized(this) {
+          if (generation != playGeneration) {
+            runCatching { player.release() }
+            return@execute
+          }
+          val started = runCatching {
+            player.start()
+            true
+          }.getOrDefault(false)
+          if (started) {
+            mediaPlayer = player
+            return@execute
+          } else {
+            runCatching { player.release() }
+          }
+        }
       }
     }
 
@@ -80,6 +108,7 @@ object AlarmRingtonePlayer {
 
   @Synchronized
   fun stop() {
+    playGeneration++
     runCatching {
       mediaPlayer?.let {
         if (it.isPlaying) {

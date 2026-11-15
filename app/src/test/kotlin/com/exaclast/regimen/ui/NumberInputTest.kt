@@ -42,7 +42,7 @@ class NumberInputTest {
 
   @Test
   fun parseDecimal_rejectsAnythingAmbiguousInsteadOfGuessing() {
-    listOf("", "  ", "4h", "two", "1.2.3", "1/0", "1 3/2", "1,000", "-1", "5 mg", "1e3").forEach { text ->
+    listOf("", "  ", "4h", "two", "1.2.3", "1/0", "1 3/2", "1,000", "-1", "5 mg", "1e3", "9".repeat(400), "${"9".repeat(400)}/2").forEach { text ->
       assertNull(text, NumberInput.parseDecimal(text))
     }
   }

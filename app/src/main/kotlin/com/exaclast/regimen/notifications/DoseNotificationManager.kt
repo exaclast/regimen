@@ -253,10 +253,30 @@ object DoseNotificationManager {
   }
 
   private fun armPendingSnoozes(context: Context, snapshot: RegimenSnapshot, nowMillis: Long) {
-    if (!snapshot.settings.notificationsEnabled) return
-    DoseAlarmTiming.pendingSnoozes(snapshot.doseLogs, nowMillis).forEach { snooze ->
-      scheduleSnoozeAlarm(context, snooze.itemKey, snooze.bucketId, snooze.dateIso, snooze.triggerAtMillis)
-    }
+    val activeMedIds = snapshot.medications.mapTo(HashSet()) { it.id }
+    val activeSchedules = snapshot.schedules.filter { it.enabled }.associateBy { it.id }
+    val activeBuckets = snapshot.buckets.associateBy { it.id }
+    val notificationsEnabled = snapshot.settings.notificationsEnabled
+
+    snapshot.doseLogs
+      .asSequence()
+      .filter { it.deletedAtEpochMillis == null && it.status == DoseStatus.SNOOZED }
+      .forEach { log ->
+        val scheduleId = log.scheduleId ?: return@forEach
+        val bucketId = log.bucketId ?: return@forEach
+        val itemKey = "${scheduleId}_${bucketId}_${log.scheduledDateIso}"
+        val until = log.snoozedUntilMillis ?: 0L
+        val valid = notificationsEnabled &&
+          until > nowMillis &&
+          log.medicationId in activeMedIds &&
+          scheduleId in activeSchedules &&
+          activeBuckets[bucketId]?.notificationsEnabled == true
+        if (valid) {
+          scheduleSnoozeAlarm(context, itemKey, bucketId, log.scheduledDateIso, until)
+        } else {
+          cancelSnoozeAlarm(context, itemKey, bucketId)
+        }
+      }
   }
 
   /** A dose that still needs the user: not taken/skipped and not snoozed beyond [nowMillis]. */

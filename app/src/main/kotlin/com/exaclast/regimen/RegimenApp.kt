@@ -112,7 +112,7 @@ fun RegimenApp(
     viewModel.messages.collectLatest { message ->
       val result = snackbarHostState.showSnackbar(
         message = message.text,
-        actionLabel = if (message.undo != null) "Undo" else null,
+        actionLabel = if (message.undo != null) resources.getString(R.string.action_undo) else null,
         withDismissAction = message.undo != null,
         // Undo needs time to read and reach; Long also honors the system accessibility timeout.
         duration = if (message.undo != null) SnackbarDuration.Long else SnackbarDuration.Short,
@@ -449,14 +449,18 @@ fun RegimenApp(
 
             entry<Route.ProviderEditor> { key ->
               val existing = key.id?.let { id -> snapshot.providers.find { it.id == id } }
-              ProviderEditorScreen(
-                initialProvider = existing,
-                onClose = navigator::back,
-                onSave = { saved ->
-                  viewModel.saveProvider(saved)
-                  if (existing == null) navigator.replace(Route.ProviderDetail(saved.id)) else navigator.back()
-                },
-              )
+              if (key.id != null && existing == null) {
+                LaunchedEffect(key) { navigator.backFrom(key) }
+              } else {
+                ProviderEditorScreen(
+                  initialProvider = existing,
+                  onClose = navigator::back,
+                  onSave = { saved ->
+                    viewModel.saveProvider(saved)
+                    if (existing == null) navigator.replace(Route.ProviderDetail(saved.id)) else navigator.back()
+                  },
+                )
+              }
             }
 
             entry<Route.Indications> {
@@ -487,21 +491,25 @@ fun RegimenApp(
 
             entry<Route.IndicationEditor> { key ->
               val existing = key.id?.let { id -> snapshot.indications.find { it.id == id } }
-              val template = remember(key.copyFromId) {
-                key.copyFromId
-                  ?.let { id -> snapshot.indications.find { it.id == id } }
-                  ?.let { IndicationTimeline.recurrence(it, java.time.LocalDate.now()) }
+              if (key.id != null && existing == null) {
+                LaunchedEffect(key) { navigator.backFrom(key) }
+              } else {
+                val template = remember(key.copyFromId) {
+                  key.copyFromId
+                    ?.let { id -> snapshot.indications.find { it.id == id } }
+                    ?.let { IndicationTimeline.recurrence(it, java.time.LocalDate.now()) }
+                }
+                IndicationEditorScreen(
+                  initialIndication = existing,
+                  template = template,
+                  snapshot = snapshot,
+                  onClose = navigator::back,
+                  onSave = { saved ->
+                    viewModel.saveIndication(saved)
+                    if (existing == null) navigator.replace(Route.IndicationDetail(saved.id)) else navigator.back()
+                  },
+                )
               }
-              IndicationEditorScreen(
-                initialIndication = existing,
-                template = template,
-                snapshot = snapshot,
-                onClose = navigator::back,
-                onSave = { saved ->
-                  viewModel.saveIndication(saved)
-                  if (existing == null) navigator.replace(Route.IndicationDetail(saved.id)) else navigator.back()
-                },
-              )
             }
 
             entry<Route.CareSummary> {
@@ -668,24 +676,28 @@ fun RegimenApp(
 
             entry<Route.DoseWindowEditor> { key ->
               val existing = key.id?.let { id -> snapshot.buckets.find { it.id == id } }
-              DoseWindowEditorScreen(
-                initialBucket = existing,
-                canDelete = snapshot.buckets.size > 1,
-                allWindows = snapshot.buckets,
-                schedules = snapshot.schedules,
-                medications = snapshot.medications,
-                globalNotificationsEnabled = settings.notificationsEnabled,
-                globalAlarmsEnabled = settings.alarmsEnabled,
-                onClose = navigator::back,
-                onSave = {
-                  viewModel.saveBucket(it)
-                  navigator.back()
-                },
-                onDelete = { moveToId ->
-                  existing?.let { viewModel.deleteBucket(it.id, moveToId) }
-                  navigator.back()
-                },
-              )
+              if (key.id != null && existing == null) {
+                LaunchedEffect(key) { navigator.backFrom(key) }
+              } else {
+                DoseWindowEditorScreen(
+                  initialBucket = existing,
+                  canDelete = snapshot.buckets.size > 1,
+                  allWindows = snapshot.buckets,
+                  schedules = snapshot.schedules,
+                  medications = snapshot.medications,
+                  globalNotificationsEnabled = settings.notificationsEnabled,
+                  globalAlarmsEnabled = settings.alarmsEnabled,
+                  onClose = navigator::back,
+                  onSave = {
+                    viewModel.saveBucket(it)
+                    navigator.back()
+                  },
+                  onDelete = { moveToId ->
+                    existing?.let { viewModel.deleteBucket(it.id, moveToId) }
+                    navigator.back()
+                  },
+                )
+              }
             }
           },
         )

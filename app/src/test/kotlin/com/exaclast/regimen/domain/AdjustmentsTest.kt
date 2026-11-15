@@ -206,4 +206,17 @@ class AdjustmentsTest {
     val lines = Adjustments.describe(TestTexts, isotretinoin.adjustments.first { it.id == "a1" }) { if (it == "s1") "Evening" else null }
     assertEquals(listOf("Evening: 2 cap"), lines)
   }
+
+  @Test
+  fun applyMedicationEdit_preservesCreatedAtTimestamp() {
+    val original = isotretinoin.copy(createdAtEpochMillis = 123_456_789L)
+    val edited = original.copy(createdAtEpochMillis = 999_999_999L, notes = "Updated")
+    val saved = Adjustments.applyMedicationEdit(
+      original = original,
+      edited = edited,
+      mode = Adjustments.EditMode.Change("2026-11-15"),
+      today = today,
+    )
+    assertEquals(123_456_789L, saved.createdAtEpochMillis)
+  }
 }

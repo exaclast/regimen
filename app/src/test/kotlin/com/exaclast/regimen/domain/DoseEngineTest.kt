@@ -1,5 +1,6 @@
 package com.exaclast.regimen.domain
 
+import com.exaclast.regimen.TestTexts
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
@@ -629,5 +630,99 @@ class DoseEngineTest {
       providers = emptyList(),
     )
     assertEquals(1, nov10Board.bucketGroups.size)
+  }
+
+  @Test
+  fun amountLimitReachedBeforeDoseLimit_reportsAmountWarningWithoutFalseDoseLimit() {
+    val med = Medication(
+      id = "med_amt",
+      formulaName = "Acetaminophen",
+      strength = "500 mg",
+      defaultDoseAmount = 1.0,
+      defaultDoseUnit = DoseUnit.TABLET,
+      maxDailyDoses = 4.0,
+      maxDailyAmount = 2.0,
+    )
+    val taken = DoseLog(
+      medicationId = med.id,
+      scheduledDateIso = "2026-11-10",
+      actionTimestampMillis = LocalDate.parse("2026-11-10").atTime(9, 0)
+        .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+      status = DoseStatus.TAKEN,
+      amountTaken = 2.0,
+      amountUnit = DoseUnit.TABLET,
+    )
+    val pacing = DoseEngine.evaluatePacing(
+      medication = med,
+      allLogs = listOf(taken),
+      nowMillis = LocalDate.parse("2026-11-10").atTime(12, 0)
+        .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+      todayIso = "2026-11-10",
+      buckets = emptyList(),
+    )
+    assertFalse(pacing.canTakeNow)
+    assertFalse(pacing.isDailyDoseLimitReached)
+    assertTrue(pacing.isDailyAmountLimitReached)
+    val warning = pacing.warningText(TestTexts).orEmpty()
+    assertEquals("Daily amount limit reached", warning)
+  }
+
+  @Test
+  fun snoozedLog_doesNotFreezeSuggestedSiteOrExposeStaleSite() {
+    val morning = TimeOfDayBucket(id = "m", name = "Morning", hour = 7, endHour = 10)
+    val med = Medication(
+      id = "med_inj",
+      formulaName = "Insulin",
+      strength = "100 units/mL",
+      form = MedicationForm.INJECTABLE_VIAL,
+      siteMode = SiteMode.ROTATE,
+      sites = listOf("Left", "Right"),
+    )
+    val sched = MedicationSchedule(id = "s_inj", medicationId = med.id, bucketIds = listOf(morning.id))
+    val snoozed = DoseLog(
+      medicationId = med.id,
+      scheduleId = sched.id,
+      bucketId = morning.id,
+      scheduledDateIso = "2026-11-10",
+      status = DoseStatus.SNOOZED,
+      amountTaken = 1.0,
+      amountUnit = DoseUnit.TABLET,
+      siteUsed = "Left",
+    )
+    val board = DoseEngine.buildDailyBoard(
+      dateIso = "2026-11-10",
+      medications = listOf(med),
+      schedules = listOf(sched),
+      buckets = listOf(morning),
+      logs = listOf(snoozed),
+      indications = emptyList(),
+      providers = emptyList(),
+    )
+    val item = board.bucketGroups.single().items.single()
+    // Without any TAKEN log, suggestSite rotates/starts from the first site, ignoring SNOOZED.
+    assertEquals("Left", item.suggestedSite)
+
+    // With a TAKEN log at "Left", a later SNOOZED log carrying stale "Left" must still suggest "Right".
+    val yesterdayTaken = DoseLog(
+      medicationId = med.id,
+      scheduleId = sched.id,
+      bucketId = morning.id,
+      scheduledDateIso = "2026-11-09",
+      actionTimestampMillis = 1000L,
+      status = DoseStatus.TAKEN,
+      amountTaken = 1.0,
+      amountUnit = DoseUnit.TABLET,
+      siteUsed = "Left",
+    )
+    val boardAfterYesterday = DoseEngine.buildDailyBoard(
+      dateIso = "2026-11-10",
+      medications = listOf(med),
+      schedules = listOf(sched),
+      buckets = listOf(morning),
+      logs = listOf(yesterdayTaken, snoozed),
+      indications = emptyList(),
+      providers = emptyList(),
+    )
+    assertEquals("Right", boardAfterYesterday.bucketGroups.single().items.single().suggestedSite)
   }
 }

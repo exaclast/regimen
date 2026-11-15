@@ -33,10 +33,12 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Medication
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -102,6 +104,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.R
+import com.exaclast.regimen.domain.Adjustments
 import com.exaclast.regimen.domain.BucketDoseGroup
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.DoseTimeline
@@ -206,8 +209,8 @@ fun TodayScreen(
   var confirmPrompt by remember { mutableStateOf<TakeRequest?>(null) }
   var sitePrompt by remember { mutableStateOf<TakeRequest?>(null) }
   var takeAllPrompt by remember { mutableStateOf<List<ScheduledDoseItem>?>(null) }
-  var pickingExtraDose by remember { mutableStateOf(false) }
-  var timePrompt by remember { mutableStateOf<LogTimeRequest?>(null) }
+  var pickingExtraDose by rememberSaveable { mutableStateOf(false) }
+  var timePromptKey by rememberSaveable { mutableStateOf<String?>(null) }
   val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
 
   fun commit(request: TakeRequest, site: String?) {
@@ -244,11 +247,12 @@ fun TodayScreen(
   // as-needed one, and is logged on the day being viewed.
   fun extraDoseItem(medication: Medication): PrnDoseItem {
     val snapshot = uiState.snapshot
+    val adjusted = Adjustments.asOf(medication, LocalDate.parse(uiState.selectedDateIso))
     return PrnDoseItem(
-      medication = medication,
+      medication = adjusted,
       schedule = null,
-      suggestedSite = DoseEngine.suggestSite(medication, snapshot.doseLogs),
-      pacing = DoseEngine.evaluatePacing(medication, snapshot.doseLogs, now, uiState.selectedDateIso, snapshot.buckets),
+      suggestedSite = DoseEngine.suggestSite(adjusted, snapshot.doseLogs),
+      pacing = DoseEngine.evaluatePacing(adjusted, snapshot.doseLogs, now, uiState.selectedDateIso, snapshot.buckets),
       indications = emptyList(),
     )
   }
@@ -356,7 +360,12 @@ fun TodayScreen(
         state = listState,
         modifier = Modifier.fillMaxSize(),
         // Bottom room so the last card can scroll clear of the button.
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp).addHorizontal(extra),
+        contentPadding = PaddingValues(
+          start = 16.dp,
+          end = 16.dp,
+          top = 4.dp,
+          bottom = if (!uiState.isFuture && uiState.snapshot.medications.isNotEmpty()) 112.dp else 16.dp,
+        ).addHorizontal(extra),
         verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
       if (!settings.notificationsEnabled) {
@@ -440,10 +449,10 @@ fun TodayScreen(
               if (uiState.isToday) {
                 requestTake(TakeRequest.Prn(prn))
               } else {
-                timePrompt = LogTimeRequest(prn, startWithOtherTime = true)
+                timePromptKey = "prn|${prn.medication.id}|${prn.schedule?.id ?: ""}|true"
               }
             },
-            onLogAtOtherTime = { timePrompt = LogTimeRequest(prn, startWithOtherTime = true) },
+            onLogAtOtherTime = { timePromptKey = "prn|${prn.medication.id}|${prn.schedule?.id ?: ""}|true" },
             onOpenMedication = { onOpenMedication(prn.medication.id) },
           )
         }
@@ -468,14 +477,38 @@ fun TodayScreen(
   }
 
   if (pickingExtraDose) {
+    val selectedDate = remember(uiState.selectedDateIso) { LocalDate.parse(uiState.selectedDateIso) }
+    val adjustedMeds = remember(uiState.snapshot.medications, selectedDate) {
+      uiState.snapshot.medications.map { Adjustments.asOf(it, selectedDate) }
+    }
     ExtraDosePickerDialog(
-      medications = uiState.snapshot.medications,
+      medications = adjustedMeds,
       onDismiss = { pickingExtraDose = false },
       onPick = {
         pickingExtraDose = false
-        timePrompt = LogTimeRequest(extraDoseItem(it), startWithOtherTime = !uiState.isToday)
+        timePromptKey = "extra|${it.id}|${!uiState.isToday}"
       },
     )
+  }
+
+  val timePrompt: LogTimeRequest? = timePromptKey?.let { key ->
+    val parts = key.split('|')
+    when (parts.getOrNull(0)) {
+      "prn" -> {
+        val medId = parts.getOrNull(1)
+        val schedId = parts.getOrNull(2)
+        val startOther = parts.getOrNull(3)?.toBooleanStrictOrNull() ?: true
+        board.prnItems.firstOrNull { it.medication.id == medId && (it.schedule?.id ?: "") == schedId }
+          ?.let { LogTimeRequest(it, startWithOtherTime = startOther) }
+      }
+      "extra" -> {
+        val medId = parts.getOrNull(1)
+        val startOther = parts.getOrNull(2)?.toBooleanStrictOrNull() ?: false
+        uiState.snapshot.medications.firstOrNull { it.id == medId }
+          ?.let { LogTimeRequest(extraDoseItem(it), startWithOtherTime = startOther) }
+      }
+      else -> null
+    }
   }
 
   timePrompt?.let { request ->
@@ -484,9 +517,9 @@ fun TodayScreen(
       doseLabel = "${formatNum(request.item.doseAmount)} ${request.item.doseUnit.symbol}",
       defaultDateIso = uiState.selectedDateIso,
       startWithOtherTime = request.startWithOtherTime,
-      onDismiss = { timePrompt = null },
+      onDismiss = { timePromptKey = null },
       onConfirm = { takenAtMillis, note ->
-        timePrompt = null
+        timePromptKey = null
         requestPrnDose(request.item, takenAtMillis, note)
       },
     )
@@ -669,15 +702,15 @@ private sealed interface TakeRequest {
 private fun pacingExplanation(res: Resources, pacing: PacingEvaluation, medication: Medication): String {
   val parts = mutableListOf<String>()
   pacing.nextAllowedText(res.texts())?.let { parts.add(res.getString(R.string.pacing_next_dose, it)) }
-  if (pacing.isDailyLimitReached) {
-    val limit = pacing.maxDailyDoses?.let { formatNum(it) }
-    parts.add(
-      if (limit != null) {
-        res.getString(R.string.pacing_daily_limit, pacing.dosesTakenToday, limit)
-      } else {
-        res.getString(R.string.pacing_daily_amount_limit, medication.primaryName)
-      }
-    )
+  val doseLimitReached = pacing.isDailyDoseLimitReached ||
+    (pacing.isDailyLimitReached && !pacing.isDailyAmountLimitReached && pacing.maxDailyDoses != null)
+  val amountLimitReached = pacing.isDailyAmountLimitReached ||
+    (pacing.isDailyLimitReached && !doseLimitReached)
+  if (doseLimitReached && pacing.maxDailyDoses != null) {
+    parts.add(res.getString(R.string.pacing_daily_limit, pacing.dosesTakenToday, formatNum(pacing.maxDailyDoses)))
+  }
+  if (amountLimitReached) {
+    parts.add(res.getString(R.string.pacing_daily_amount_limit, medication.primaryName))
   }
   parts.add(res.getString(R.string.pacing_from_settings))
   return parts.joinToString(" ")
@@ -1029,10 +1062,15 @@ private fun DoseCard(
             if (item.existingLog != null) {
               DropdownMenuItem(
                 text = { Text(stringResource(R.string.mark_not_taken)) },
+                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = null) },
                 onClick = { menuOpen = false; onClearLog() },
               )
             }
-            DropdownMenuItem(text = { Text(stringResource(R.string.view_medication)) }, onClick = { menuOpen = false; onOpenMedication() })
+            DropdownMenuItem(
+              text = { Text(stringResource(R.string.view_medication)) },
+              leadingIcon = { Icon(Icons.Default.Medication, contentDescription = null) },
+              onClick = { menuOpen = false; onOpenMedication() },
+            )
           }
         }
       }

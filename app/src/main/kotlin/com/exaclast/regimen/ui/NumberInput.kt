@@ -41,31 +41,37 @@ object NumberInput {
     val t = text.trim()
     if (t.isEmpty()) return null
 
-    DECIMAL.matchEntire(t)?.let { m ->
-      val raw = m.groupValues[1]
-      // "1,000" is ambiguous (thousands separator vs. decimal comma): reject rather than guess.
-      if (Regex("""^\d+,\d{3}$""").matches(raw)) return null
-      return raw.replace(',', '.').toDoubleOrNull()
+    val value = when {
+      DECIMAL.matches(t) -> {
+        val raw = DECIMAL.matchEntire(t)!!.groupValues[1]
+        // "1,000" is ambiguous (thousands separator vs. decimal comma): reject rather than guess.
+        if (Regex("""^\d+,\d{3}$""").matches(raw)) return null
+        raw.replace(',', '.').toDoubleOrNull()
+      }
+      MIXED.matches(t) -> {
+        val m = MIXED.matchEntire(t)!!
+        val whole = m.groupValues[1].toDoubleOrNull() ?: return null
+        val num = m.groupValues[2].toDoubleOrNull() ?: return null
+        val den = m.groupValues[3].toDoubleOrNull() ?: return null
+        if (den == 0.0 || num >= den) return null
+        whole + num / den
+      }
+      FRACTION.matches(t) -> {
+        val m = FRACTION.matchEntire(t)!!
+        val num = m.groupValues[1].toDoubleOrNull() ?: return null
+        val den = m.groupValues[2].toDoubleOrNull() ?: return null
+        if (den == 0.0) return null
+        num / den
+      }
+      WHOLE_PLUS_UNICODE.matches(t) -> {
+        val m = WHOLE_PLUS_UNICODE.matchEntire(t)!!
+        val whole = m.groupValues[1].takeIf { it.isNotEmpty() }?.toDoubleOrNull() ?: 0.0
+        val frac = UNICODE_FRACTIONS[m.groupValues[2][0]] ?: return null
+        whole + frac
+      }
+      else -> null
     }
-    MIXED.matchEntire(t)?.let { m ->
-      val whole = m.groupValues[1].toDouble()
-      val num = m.groupValues[2].toDouble()
-      val den = m.groupValues[3].toDouble()
-      if (den == 0.0 || num >= den) return null
-      return whole + num / den
-    }
-    FRACTION.matchEntire(t)?.let { m ->
-      val num = m.groupValues[1].toDouble()
-      val den = m.groupValues[2].toDouble()
-      if (den == 0.0) return null
-      return num / den
-    }
-    WHOLE_PLUS_UNICODE.matchEntire(t)?.let { m ->
-      val whole = m.groupValues[1].takeIf { it.isNotEmpty() }?.toDouble() ?: 0.0
-      val frac = UNICODE_FRACTIONS[m.groupValues[2][0]] ?: return null
-      return whole + frac
-    }
-    return null
+    return value?.takeIf { it.isFinite() }
   }
 
   /** Parses a positive whole number (digits only). */

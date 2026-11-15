@@ -68,13 +68,16 @@ object CareSummary {
       Section(texts.get(R.string.summary_section_other_allergies), reactionLines(texts, otherReactions)),
       Section(
         texts.get(R.string.summary_section_current),
-        regimen.sortedBy { it.sortKey() }.map { regimenLine(texts, it, takenByMedication[it.id], formatTaken) },
+        regimen
+          .map { Adjustments.asOf(it, today) }
+          .sortedBy { it.sortKey() }
+          .map { regimenLine(texts, it, takenByMedication[it.id], formatTaken) },
       ),
       Section(
         texts.plural(R.plurals.summary_section_finished, RECENT_DAYS, RECENT_DAYS),
         (other + snapshot.deletedMedications).filter { it.id in takenByMedication }.sortedBy { it.sortKey() }.map { m ->
           val course = MedicationGroups.courseOf(m, snapshot.schedules, snapshot.indications, today)
-          takenLine(texts, m, takenByMedication.getValue(m.id), formatTaken, course = course)
+          takenLine(texts, Adjustments.asOf(m, today), takenByMedication.getValue(m.id), formatTaken, course = course)
         },
       ),
       Section(

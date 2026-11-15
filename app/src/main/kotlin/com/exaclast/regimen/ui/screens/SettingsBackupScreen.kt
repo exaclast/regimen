@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -350,7 +351,7 @@ fun SettingsBackupScreen(
                 lastSuccess != null && lastKept != null -> pluralStringResource(
                   R.plurals.auto_backup_status,
                   lastKept,
-                  UiFormat.dateTime(lastSuccess),
+                  UiFormat.dateTime(LocalResources.current, lastSuccess),
                   lastKept,
                 )
                 else -> stringResource(R.string.auto_backup_never)

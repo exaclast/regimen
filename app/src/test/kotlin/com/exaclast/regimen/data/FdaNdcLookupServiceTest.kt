@@ -569,4 +569,26 @@ class FdaNdcLookupServiceTest {
     )
     assertTrue("Expected NoMatch outcome on 404, got $xrefEmpty", xrefEmpty is CrossReferenceOutcome.NoMatch)
   }
+
+  @Test
+  fun parseDrugBarcode_handlesGs1MonthEndAndInvalidDates() {
+    val nonLeapFeb = FdaNdcLookupService.parseDrugBarcode("(01)00300090085106(17)270200")
+    assertEquals("2027-02-28", nonLeapFeb.expirationDateIso)
+
+    val leapFeb = FdaNdcLookupService.parseDrugBarcode("(01)00300090085106(17)280200")
+    assertEquals("2028-02-29", leapFeb.expirationDateIso)
+
+    val invalidFeb = FdaNdcLookupService.parseDrugBarcode("(01)00300090085106(17)260231")
+    assertNull(invalidFeb.expirationDateIso)
+  }
+
+  @Test
+  fun normalizeIfUnambiguousNdc_and_displayStrength_workAsExpected() {
+    assertEquals("0078118522", FdaNdcLookupService.normalizeIfUnambiguousNdc("0078118522"))
+    assertEquals("00781-1852-20", FdaNdcLookupService.normalizeIfUnambiguousNdc("00781185220"))
+    assertEquals("50580-0496-50", FdaNdcLookupService.normalizeIfUnambiguousNdc("50580-496-50"))
+
+    assertEquals("4 × 2.5 mg", FdaNdcLookupService.displayStrength("2.5 mg / 2.5 mg / 2.5 mg / 2.5 mg"))
+    assertEquals("875 mg / 125 mg", FdaNdcLookupService.displayStrength("875 mg / 125 mg"))
+  }
 }

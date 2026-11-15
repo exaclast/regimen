@@ -225,7 +225,7 @@ class DoseAlarmActivity : ComponentActivity() {
         status = status,
         amountTaken = item.schedule.doseAmount,
         amountUnit = item.schedule.doseUnit,
-        siteUsed = if (status == DoseStatus.SKIPPED) null else item.suggestedSite,
+        siteUsed = if (status == DoseStatus.TAKEN) item.suggestedSite else null,
         snoozedUntilMillis = snoozeUntil,
         existingLogId = item.existingLog?.id,
       )

@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.R
 import com.exaclast.regimen.data.RegimenSnapshot
+import com.exaclast.regimen.domain.Adjustments
 import com.exaclast.regimen.domain.MedicationGroups
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationForm
@@ -205,12 +206,14 @@ fun MedicationListScreen(
 
 @Composable
 private fun MedicationListItem(med: Medication, snapshot: RegimenSnapshot) {
+  val today = remember { LocalDate.now() }
+  val current = remember(med, today) { Adjustments.asOf(med, today) }
   ListItem(
     leadingContent = { FormIcon(med.form) },
     supportingContent = {
       Text(
         text = listOfNotNull(
-          listOfNotNull(med.secondaryName, med.strength).joinToString(" · "),
+          listOfNotNull(current.secondaryName, current.strength).joinToString(" · "),
           ScheduleText.summary(LocalResources.current.texts(), snapshot.schedules.filter { it.medicationId == med.id }, snapshot.buckets),
         ).joinToString("\n"),
         maxLines = 3,
@@ -218,7 +221,7 @@ private fun MedicationListItem(med: Medication, snapshot: RegimenSnapshot) {
       )
     },
     colors = groupListItemColors(),
-  ) { Text(med.primaryName, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+  ) { Text(current.primaryName, maxLines = 2, overflow = TextOverflow.Ellipsis) }
 }
 
 /** Form icon in a tonal circle. */

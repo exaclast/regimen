@@ -340,8 +340,9 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
         )
       } ?: return@launch
       val logged = str(R.string.vm_logged_dose, medication.primaryName, formatNum(log.amountTaken), log.amountUnit.symbol)
+      val resources = getApplication<Application>().resources
       post(
-        listOfNotNull(logged, takenAtMillis?.let { UiFormat.dateTime(it) }, log.siteUsed).joinToString(" · "),
+        listOfNotNull(logged, takenAtMillis?.let { UiFormat.dateTime(resources, it) }, log.siteUsed).joinToString(" · "),
         UndoAction.RestoreLogs(listOf(null to log.id)),
       )
     }

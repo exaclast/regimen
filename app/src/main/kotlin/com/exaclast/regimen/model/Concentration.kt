@@ -42,7 +42,7 @@ data class Concentration(val amountPerMl: Double, val unit: AmountUnit) {
   companion object {
     private const val NUMBER = """(\d*\.?\d+)"""
     // "units", "IU", FDA's "[iU]" and "[USP'U]", and a bare "U".
-    private const val AMOUNT_UNIT = """(g|mg|mcg|µg|ug|units?|\[?iu\]?|\[usp'?u\]|u)"""
+    private const val AMOUNT_UNIT = """(g|mg|mcg|µg|μg|ug|units?|\[?iu\]?|\[usp'?u\]|u)"""
     private val PER_ML = Regex(
       """$NUMBER\s*$AMOUNT_UNIT\s*(?:/|per)\s*$NUMBER?\s*ml\b""",
       RegexOption.IGNORE_CASE,
@@ -67,7 +67,7 @@ data class Concentration(val amountPerMl: Double, val unit: AmountUnit) {
       val (unit, factor) = when (raw) {
         "g" -> AmountUnit.MG to 1000.0
         "mg" -> AmountUnit.MG to 1.0
-        "mcg", "µg", "ug" -> AmountUnit.MCG to 1.0
+        "mcg", "µg", "μg", "ug" -> AmountUnit.MCG to 1.0
         else -> AmountUnit.UNITS to 1.0
       }
       return Concentration(amount * factor / perMl, unit)

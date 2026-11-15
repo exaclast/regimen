@@ -37,7 +37,7 @@ class ScheduleTextTest {
     assertEquals("As needed", ScheduleText.describe(TestTexts, schedule(ScheduleFrequencyType.AS_NEEDED, windows = emptyList()), buckets))
 
     val singleDateSched = schedule(ScheduleFrequencyType.SPECIFIC_DATES).copy(specificDatesIso = setOf("2026-11-04"))
-    assertEquals("On 2026-11-04 · Morning", ScheduleText.describe(TestTexts, singleDateSched, buckets))
+    assertEquals("On Nov 4, 2026 · Morning", ScheduleText.describe(TestTexts, singleDateSched, buckets))
 
     val multiDateSched = schedule(ScheduleFrequencyType.SPECIFIC_DATES).copy(
       specificDatesIso = setOf("2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06", "2026-11-07"),

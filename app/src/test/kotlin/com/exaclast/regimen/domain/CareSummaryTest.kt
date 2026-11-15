@@ -199,6 +199,29 @@ class CareSummaryTest {
   }
 
   @Test
+  fun activeAdjustments_appearInCurrentRegimen() {
+    val titrated = metformin.copy(
+      adjustments = listOf(
+        com.exaclast.regimen.model.MedicationAdjustment(
+          id = "adj1",
+          effectiveDateIso = "2026-11-10",
+          strength = "1000 mg",
+          defaultDose = com.exaclast.regimen.model.DoseAmount(2.0, DoseUnit.TABLET),
+        ),
+      ),
+    )
+    val summary = build(
+      RegimenSnapshot(
+        medications = listOf(titrated),
+        schedules = listOf(scheduled(titrated)),
+      ),
+    )
+    val line = summary.sections.single { it.title == "Current medications" }.lines.single()
+    assertEquals("Metformin 1000 mg", line.primary)
+    assertTrue(line.secondary!!.startsWith("2 tab,"))
+  }
+
+  @Test
   fun emptyData_givesAnEmptySummary() {
     assertTrue(build(RegimenSnapshot()).isEmpty)
   }

@@ -19,6 +19,7 @@ class ConcentrationTest {
     assertEquals(Concentration(200.0, AmountUnit.MG), parsed("200 mg/mL"))
     assertEquals(Concentration(200.0, AmountUnit.MG), parsed("200mg/1mL"))
     assertEquals(Concentration(50.0, AmountUnit.MCG), parsed("50 mcg/mL"))
+    assertEquals(Concentration(50.0, AmountUnit.MCG), parsed("50 \u03BCg/mL"))
   }
 
   @Test

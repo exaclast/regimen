@@ -254,8 +254,10 @@ object FdaNdcLookupService {
     val dd = yymmdd.substring(4, 6).toIntOrNull() ?: return null
     if (mm !in 1..12) return null
     val year = 2000 + yy
-    val day = if (dd == 0) 28 else dd.coerceIn(1, 31)
-    return String.format("%04d-%02d-%02d", year, mm, day)
+    val monthLength = java.time.YearMonth.of(year, mm).lengthOfMonth()
+    val day = if (dd == 0) monthLength else dd
+    if (day !in 1..monthLength) return null
+    return java.time.LocalDate.of(year, mm, day).toString()
   }
 
   /**
@@ -274,6 +276,20 @@ object FdaNdcLookupService {
       return listOf(c442, c532, c541).distinct()
     }
     return listOf(toCanonicalNdc11(target))
+  }
+
+  /**
+   * Normalizes an NDC when its 5-4-2 segmentation is unambiguous (hyphenated 10-digit or 11-digit),
+   * while keeping bare unhyphenated 10-digit NDCs intact so [candidateNdc11s] can try all 3 layouts.
+   */
+  fun normalizeIfUnambiguousNdc(raw: String): String {
+    val parsed = parseDrugBarcode(raw)
+    val trimmed = parsed.extractedNdc.trim()
+    val digits = trimmed.filter { it.isDigit() }
+    if (!trimmed.contains("-") && digits.length == 10) {
+      return digits
+    }
+    return toCanonicalNdc11(trimmed)
   }
 
   /**
@@ -993,6 +1009,28 @@ object FdaNdcLookupService {
       // Only drop a bare "/1" (per dose unit); "/1.5mL" and "/10mL" are real denominators.
       .replace(BARE_PER_ONE_REGEX, "")
       .trim()
+  }
+
+  /**
+   * Collapses repeated identical multi-salt strengths for display in the FDA match dialog
+   * (e.g. "2.5 mg / 2.5 mg / 2.5 mg / 2.5 mg" -> "4 × 2.5 mg") without summing them.
+   */
+  internal fun displayStrength(raw: String): String {
+    val parts = raw.split('/').map { it.trim() }.filter { it.isNotEmpty() }
+    if (parts.size < 2) return raw
+    val collapsed = mutableListOf<String>()
+    var i = 0
+    while (i < parts.size) {
+      val current = parts[i]
+      val key = current.lowercase().replace(Regex("\\s+"), " ")
+      var count = 1
+      while (i + count < parts.size && parts[i + count].lowercase().replace(Regex("\\s+"), " ") == key) {
+        count++
+      }
+      collapsed += if (count > 1) "$count × $current" else current
+      i += count
+    }
+    return collapsed.joinToString(" / ")
   }
 
   private val PARENTERAL_ROUTES = listOf("SUBCUTANEOUS", "INTRAMUSCULAR", "INTRAVENOUS", "INTRADERMAL")

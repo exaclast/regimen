@@ -34,6 +34,8 @@ data class PacingEvaluation(
   /** When the minimum interval elapses (epoch millis), if it hasn't yet. */
   val nextAllowedAtMillis: Long? = null,
   val maxDailyDoses: Double? = null,
+  val isDailyDoseLimitReached: Boolean = false,
+  val isDailyAmountLimitReached: Boolean = false,
 ) {
   /** One line saying why a dose can't be taken yet, or null when it can. */
   fun warningText(
@@ -42,6 +44,12 @@ data class PacingEvaluation(
     zoneId: ZoneId = ZoneId.systemDefault(),
   ): String? {
     if (isDailyLimitReached) {
+      if (isDailyDoseLimitReached && maxDailyDoses != null) {
+        return texts.get(R.string.pacing_limit_reached, dosesTakenToday, formatNum(maxDailyDoses))
+      }
+      if (isDailyAmountLimitReached) {
+        return texts.get(R.string.pacing_amount_limit_reached)
+      }
       val limit = maxDailyDoses?.let { formatNum(it) } ?: return texts.get(R.string.pacing_amount_limit_reached)
       return texts.get(R.string.pacing_limit_reached, dosesTakenToday, limit)
     }
@@ -197,11 +205,16 @@ object DoseEngine {
     )
 
   private fun getLastSiteUsedFromMedLogs(medLiveLogs: List<DoseLog>): String? {
-    return medLiveLogs
-      .asSequence()
-      .filter { it.status == DoseStatus.TAKEN && !it.siteUsed.isNullOrBlank() }
-      .maxByOrNull { it.actionTimestampMillis }
-      ?.siteUsed
+    var best: DoseLog? = null
+    for (log in medLiveLogs) {
+      if (log.status != DoseStatus.TAKEN || log.siteUsed.isNullOrBlank()) continue
+      if (best == null || log.actionTimestampMillis > best.actionTimestampMillis ||
+        (log.actionTimestampMillis == best.actionTimestampMillis && log.updatedAtEpochMillis >= best.updatedAtEpochMillis)
+      ) {
+        best = log
+      }
+    }
+    return best?.siteUsed
   }
 
   /**
@@ -277,6 +290,8 @@ object DoseEngine {
         null
       },
       maxDailyDoses = maxDoses?.takeIf { it > 0 },
+      isDailyDoseLimitReached = doseLimitReached,
+      isDailyAmountLimitReached = amountLimitReached,
     )
   }
 
@@ -509,7 +524,7 @@ object DoseEngine {
           dateIso = dateIso,
           existingLog = existingLog,
           isNewDose = Adjustments.doseChangesOn(stored, schedule, targetDate),
-          suggestedSite = existingLog?.siteUsed ?: ctx.suggestedSite,
+          suggestedSite = existingLog?.takeIf { it.status == DoseStatus.TAKEN }?.siteUsed ?: ctx.suggestedSite,
           lastSiteUsed = ctx.lastSite,
           pacing = ctx.pacing,
           indications = ctx.med.indicationIds.mapNotNull { indicationMap[it] },
@@ -534,7 +549,7 @@ object DoseEngine {
       .filter { med -> prnSchedulesByMed.containsKey(med.id) || !scheduledMedIds.contains(med.id) }
       .map { stored ->
         val ctx = medContext(stored)
-        val prnSchedule = prnSchedulesByMed[stored.id]
+        val prnSchedule = prnSchedulesByMed[stored.id]?.let { Adjustments.scheduleOn(stored, it, targetDate) }
         PrnDoseItem(
           medication = ctx.med,
           schedule = prnSchedule,

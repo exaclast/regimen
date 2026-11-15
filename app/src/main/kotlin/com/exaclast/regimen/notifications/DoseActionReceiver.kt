@@ -212,7 +212,7 @@ class DoseActionReceiver : BroadcastReceiver() {
           status = status,
           amountTaken = item.schedule.doseAmount,
           amountUnit = item.schedule.doseUnit,
-          siteUsed = if (status == DoseStatus.SKIPPED) null else item.suggestedSite,
+          siteUsed = if (status == DoseStatus.TAKEN) item.suggestedSite else null,
           snoozedUntilMillis = if (status == DoseStatus.SNOOZED) snoozeUntil else null,
           existingLogId = item.existingLog?.id,
         )

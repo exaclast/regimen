@@ -377,7 +377,7 @@ fun MedicationEditorScreen(
   ) {
     (initialMedication?.sites ?: emptyList()).toMutableStateList()
   }
-  var sitesChosen by rememberSaveable { mutableStateOf(initialMedication?.sites?.isNotEmpty() == true) }
+  var sitesChosen by rememberSaveable { mutableStateOf(initialMedication?.form?.hasSites == true) }
   var newCustomSite by rememberSaveable { mutableStateOf("") }
 
   fun applyFormDefaults() {
@@ -500,7 +500,7 @@ fun MedicationEditorScreen(
       return
     }
     ndcErrorText = null
-    parsedLabel.extractedNdc?.let { ndc11 = FdaNdcLookupService.toCanonicalNdc11(it) }
+    parsedLabel.extractedNdc?.let { ndc11 = it }
     parsedLabel.brandName?.let { brandName = it }
     parsedLabel.formulaName?.let { formulaName = it }
     parsedLabel.strength?.let { strength = it }
@@ -675,7 +675,7 @@ fun MedicationEditorScreen(
       if (!vialVolumeCheck.isValid) add(stringResource(if (pen) R.string.editor_device_volume else R.string.editor_vial_size))
       // Syringe and draw-needle fields are hidden for prefilled devices, so they can't block Save.
       if (!pen) {
-        if (!syringeVolumeCheck.isValid) add(stringResource(R.string.med_syringe))
+        if (syringeType != null && !syringeVolumeCheck.isValid) add(stringResource(R.string.med_syringe))
         if (!needleAttached && !drawGaugeCheck.isValid) add(stringResource(R.string.editor_draw_gauge))
         if (!needleAttached && !drawLengthCheck.isValid) add(stringResource(R.string.editor_draw_length))
       }
@@ -731,6 +731,7 @@ fun MedicationEditorScreen(
       brandName = brandName.trim().takeIf { it.isNotBlank() },
       manufacturer = manufacturer.trim().takeIf { it.isNotBlank() },
       notes = notes.trim().takeIf { it.isNotBlank() },
+      createdAtEpochMillis = initialMedication?.createdAtEpochMillis ?: System.currentTimeMillis(),
     )
     onSave(savedMed)
   }
@@ -865,6 +866,7 @@ fun MedicationEditorScreen(
                     }
                     if (allowFdaLookup) {
                       OutlinedButton(
+                        enabled = !isLookingUpNdc,
                         onClick = {
                           runCrossReferenceLookup(
                             DrugCrossReferenceCriteria(
@@ -1111,52 +1113,61 @@ fun MedicationEditorScreen(
                       }
                     }
                   } else if (syringeType != null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                      ValidatedNumberField(
-                        check = syringeVolumeCheck,
-                        keyboardType = KeyboardType.Decimal,
-                        value = syringeVolumeText,
-                        onValueChange = { syringeVolumeText = it },
-                        label = { Text(stringResource(R.string.editor_size_ml)) },
-                        placeholder = { Text("1.0") },
-                        singleLine = true,
-                        modifier = Modifier.weight(0.4f),
-                      )
-                      OutlinedTextField(
-                        value = syringeDesc,
-                        onValueChange = { syringeDesc = it },
-                        label = { Text(stringResource(R.string.editor_what_kind)) },
-                        placeholder = { Text(stringResource(R.string.editor_what_kind_hint)) },
-                        singleLine = true,
-                        modifier = Modifier.weight(0.6f),
-                      )
-                    }
+                    AdaptiveFieldPair(
+                      firstWeight = 0.4f,
+                      first = { m ->
+                        ValidatedNumberField(
+                          check = syringeVolumeCheck,
+                          keyboardType = KeyboardType.Decimal,
+                          value = syringeVolumeText,
+                          onValueChange = { syringeVolumeText = it },
+                          label = { Text(stringResource(R.string.editor_size_ml)) },
+                          placeholder = { Text("1.0") },
+                          singleLine = true,
+                          modifier = m,
+                        )
+                      },
+                      second = { m ->
+                        OutlinedTextField(
+                          value = syringeDesc,
+                          onValueChange = { syringeDesc = it },
+                          label = { Text(stringResource(R.string.editor_what_kind)) },
+                          placeholder = { Text(stringResource(R.string.editor_what_kind_hint)) },
+                          singleLine = true,
+                          modifier = m,
+                        )
+                      },
+                    )
                   }
                 }
 
                 // Insulin syringes have the needle attached, so there's nothing separate to draw with.
-                if (!pen && !needleAttached) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                  ValidatedNumberField(
-                    check = drawGaugeCheck,
-                    keyboardType = KeyboardType.Number,
-                    value = drawGaugeText,
-                    onValueChange = { drawGaugeText = it },
-                    label = { Text(stringResource(R.string.editor_draw_gauge_label)) },
-                    placeholder = { Text("18") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                  )
-                  ValidatedNumberField(
-                    check = drawLengthCheck,
-                    keyboardType = KeyboardType.Decimal,
-                    value = drawLengthText,
-                    onValueChange = { drawLengthText = it },
-                    label = { Text(stringResource(R.string.editor_draw_length_label)) },
-                    placeholder = { Text("1.0") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                  )
-                }
+                if (!pen && !needleAttached) AdaptiveFieldPair(
+                  first = { m ->
+                    ValidatedNumberField(
+                      check = drawGaugeCheck,
+                      keyboardType = KeyboardType.Number,
+                      value = drawGaugeText,
+                      onValueChange = { drawGaugeText = it },
+                      label = { Text(stringResource(R.string.editor_draw_gauge_label)) },
+                      placeholder = { Text("18") },
+                      singleLine = true,
+                      modifier = m,
+                    )
+                  },
+                  second = { m ->
+                    ValidatedNumberField(
+                      check = drawLengthCheck,
+                      keyboardType = KeyboardType.Decimal,
+                      value = drawLengthText,
+                      onValueChange = { drawLengthText = it },
+                      label = { Text(stringResource(R.string.editor_draw_length_label)) },
+                      placeholder = { Text("1.0") },
+                      singleLine = true,
+                      modifier = m,
+                    )
+                  },
+                )
 
                 if (!pen && !needleAttached) HubColorHint(drawGaugeCheck.validOrNull())
 
@@ -1173,28 +1184,32 @@ fun MedicationEditorScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                   )
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                  ValidatedNumberField(
-                    check = injectGaugeCheck,
-                    keyboardType = KeyboardType.Number,
-                    value = injectGaugeText,
-                    onValueChange = { injectGaugeText = it },
-                    label = { Text(stringResource(if (pen || needleAttached) R.string.editor_needle_gauge_label else R.string.editor_inject_gauge_label)) },
-                    placeholder = { Text(if (pen) "32" else "25") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                  )
-                  ValidatedNumberField(
-                    check = injectLengthCheck,
-                    keyboardType = KeyboardType.Decimal,
-                    value = injectLengthText,
-                    onValueChange = { injectLengthText = it },
-                    label = { Text(stringResource(if (pen || needleAttached) R.string.editor_needle_length_label else R.string.editor_inject_length_label)) },
-                    placeholder = { Text(if (pen) "0.16" else "1.0") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                  )
-                }
+                AdaptiveFieldPair(
+                  first = { m ->
+                    ValidatedNumberField(
+                      check = injectGaugeCheck,
+                      keyboardType = KeyboardType.Number,
+                      value = injectGaugeText,
+                      onValueChange = { injectGaugeText = it },
+                      label = { Text(stringResource(if (pen || needleAttached) R.string.editor_needle_gauge_label else R.string.editor_inject_gauge_label)) },
+                      placeholder = { Text(if (pen) "32" else "25") },
+                      singleLine = true,
+                      modifier = m,
+                    )
+                  },
+                  second = { m ->
+                    ValidatedNumberField(
+                      check = injectLengthCheck,
+                      keyboardType = KeyboardType.Decimal,
+                      value = injectLengthText,
+                      onValueChange = { injectLengthText = it },
+                      label = { Text(stringResource(if (pen || needleAttached) R.string.editor_needle_length_label else R.string.editor_inject_length_label)) },
+                      placeholder = { Text(if (pen) "0.16" else "1.0") },
+                      singleLine = true,
+                      modifier = m,
+                    )
+                  },
+                )
                 HubColorHint(injectGaugeCheck.validOrNull())
               }
             }
@@ -1347,28 +1362,32 @@ fun MedicationEditorScreen(
             subtitle = pacingSummary,
             initiallyExpanded = hasInitialPacing,
           ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-              ValidatedNumberField(
-                check = minIntervalCheck,
-                keyboardType = KeyboardType.Decimal,
-                value = minIntervalHoursText,
-                onValueChange = { minIntervalHoursText = it },
-                label = { Text(stringResource(R.string.editor_min_interval_hours)) },
-                placeholder = { Text(stringResource(R.string.editor_min_interval_hint)) },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-              )
-              ValidatedNumberField(
-                check = maxDailyDosesCheck,
-                keyboardType = KeyboardType.Decimal,
-                value = maxDailyDosesText,
-                onValueChange = { maxDailyDosesText = it },
-                label = { Text(stringResource(R.string.editor_max_daily_doses)) },
-                placeholder = { Text(stringResource(R.string.editor_max_daily_doses_hint)) },
-                singleLine = true,
-                modifier = Modifier.weight(1f),
-              )
-            }
+            AdaptiveFieldPair(
+              first = { m ->
+                ValidatedNumberField(
+                  check = minIntervalCheck,
+                  keyboardType = KeyboardType.Decimal,
+                  value = minIntervalHoursText,
+                  onValueChange = { minIntervalHoursText = it },
+                  label = { Text(stringResource(R.string.editor_min_interval_hours)) },
+                  placeholder = { Text(stringResource(R.string.editor_min_interval_hint)) },
+                  singleLine = true,
+                  modifier = m,
+                )
+              },
+              second = { m ->
+                ValidatedNumberField(
+                  check = maxDailyDosesCheck,
+                  keyboardType = KeyboardType.Decimal,
+                  value = maxDailyDosesText,
+                  onValueChange = { maxDailyDosesText = it },
+                  label = { Text(stringResource(R.string.editor_max_daily_doses)) },
+                  placeholder = { Text(stringResource(R.string.editor_max_daily_doses_hint)) },
+                  singleLine = true,
+                  modifier = m,
+                )
+              },
+            )
             ValidatedNumberField(
               check = maxDailyAmountCheck,
               keyboardType = KeyboardType.Decimal,
@@ -1410,6 +1429,7 @@ fun MedicationEditorScreen(
               trailingIcon = {
                 if (allowFdaLookup && ndc11.isNotBlank()) {
                   TextButton(
+                    enabled = !isLookingUpNdc,
                     onClick = { runNdcOrBarcodeLookup(ndc11) }
                   ) {
                     if (ndcMatched) {
@@ -1678,7 +1698,7 @@ private fun CrossReferenceDisambiguationDialog(
                 )
               }
               Text(
-                text = res.strength,
+                text = FdaNdcLookupService.displayStrength(res.strength),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.SemiBold,
@@ -2098,7 +2118,7 @@ fun ScheduleEditorScreen(
 
   val hasUnsavedChanges =
     frequencyType != initialFrequencyType ||
-      selectedBucketIds.toList() != initialBucketIds ||
+      selectedBucketIds.toSet() != initialBucketIds.toSet() ||
       doseAmountText != initialDoseAmountText ||
       doseUnit != initialDoseUnit ||
       intervalDaysText != initialIntervalDaysText ||
@@ -2107,7 +2127,7 @@ fun ScheduleEditorScreen(
       startBucketId != initialStartBucketId ||
       endBucketId != initialSchedule?.endBucketId ||
       selectedDaysOfWeek.toSet() != initialDaysOfWeek.toSet() ||
-      selectedSpecificDates.toList() != initialSpecificDates
+      selectedSpecificDates.toSet() != initialSpecificDates.toSet()
 
   EditorScaffold(
     title = stringResource(if (initialSchedule == null) R.string.med_add_schedule else R.string.schedule_edit),
@@ -2131,24 +2151,28 @@ fun ScheduleEditorScreen(
       modifier = Modifier.fillMaxWidth(),
     )
 
-    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-      ValidatedNumberField(
-        check = doseCheck,
-        value = doseAmountText,
-        onValueChange = { doseAmountText = it },
-        label = { Text(stringResource(R.string.schedule_dose)) },
-        singleLine = true,
-        modifier = Modifier.weight(1f),
-      )
-      DropdownSelectorField(
-        label = stringResource(R.string.editor_unit),
-        selectedText = doseUnit.symbol,
-        options = DoseUnit.entries,
-        optionLabel = { "${it.symbol} — ${resources.label(it)}" },
-        onOptionSelected = { doseUnit = it },
-        modifier = Modifier.weight(1f),
-      )
-    }
+    AdaptiveFieldPair(
+      first = { m ->
+        ValidatedNumberField(
+          check = doseCheck,
+          value = doseAmountText,
+          onValueChange = { doseAmountText = it },
+          label = { Text(stringResource(R.string.schedule_dose)) },
+          singleLine = true,
+          modifier = m,
+        )
+      },
+      second = { m ->
+        DropdownSelectorField(
+          label = stringResource(R.string.editor_unit),
+          selectedText = doseUnit.symbol,
+          options = DoseUnit.entries,
+          optionLabel = { "${it.symbol} — ${resources.label(it)}" },
+          onOptionSelected = { doseUnit = it },
+          modifier = m,
+        )
+      },
+    )
 
     if (medication.maxDailyAmount != null && doseUnit != medication.defaultDoseUnit) {
       Text(

@@ -4,17 +4,21 @@ import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import com.exaclast.regimen.domain.Adjustments
 import com.exaclast.regimen.domain.ScheduleVersioning
+import com.exaclast.regimen.model.AllergenType
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
+import com.exaclast.regimen.model.IndicationKind
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationAdjustment
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.PrimaryClaim
 import com.exaclast.regimen.model.RegimenBackupBundle
 import com.exaclast.regimen.model.ScheduleDose
+import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.SharedSettings
+import com.exaclast.regimen.model.SiteMode
 import com.exaclast.regimen.model.SyncDevice
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.notifications.DoseNotificationManager
@@ -291,5 +295,52 @@ class RegimenRepositoryTest {
     val savedMed = repo.snapshot.value.medications.single { it.id == med.id }
     assertEquals(3.0, Adjustments.doseOn(savedMed, savedNew, LocalDate.parse("2026-12-01")).amount, 0.0)
     assertNotEquals(oldSched.id, savedMed.adjustments.single().scheduleDoses.single().scheduleId)
+  }
+
+  @Test
+  fun logDoses_preservesCreatedAtOnExistingLogUpdate_andSampleDataCoversFeatures() {
+    val med = Medication(id = "med_t", formulaName = "Drug T", strength = "5 mg")
+    val sched = MedicationSchedule(id = "s_t", medicationId = med.id, bucketIds = listOf(TimeOfDayBucket.BUCKET_MORNING))
+    repo.saveMedication(med, listOf(sched))
+    val initial = repo.logDoses(
+      listOf(
+        RegimenRepository.DoseLogRequest(
+          medicationId = med.id,
+          scheduleId = sched.id,
+          bucketId = TimeOfDayBucket.BUCKET_MORNING,
+          scheduledDateIso = "2026-11-15",
+          status = DoseStatus.SNOOZED,
+        ),
+      ),
+    ).single()
+    Thread.sleep(5)
+    val completed = repo.logDoses(
+      listOf(
+        RegimenRepository.DoseLogRequest(
+          existingLogId = initial.id,
+          medicationId = med.id,
+          scheduleId = sched.id,
+          bucketId = TimeOfDayBucket.BUCKET_MORNING,
+          scheduledDateIso = "2026-11-15",
+          status = DoseStatus.TAKEN,
+        ),
+      ),
+    ).single()
+    assertEquals(initial.createdAtEpochMillis, completed.createdAtEpochMillis)
+
+    repo.resetToSampleData()
+    val demo = repo.snapshot.value
+    assertTrue(demo.providers.any { it.isPcp })
+    assertTrue(demo.providers.any { !it.isPcp && it.seenRegularly })
+    assertTrue(demo.providers.any { !it.isPcp && !it.seenRegularly && it.careEndDateIso == null })
+    assertTrue(demo.providers.any { it.careEndDateIso != null })
+    assertTrue(demo.indications.any { it.kind == IndicationKind.PREVENTIVE })
+    assertTrue(demo.indications.any { it.kind == IndicationKind.ALLERGY && it.allergenType == AllergenType.DRUG })
+    assertTrue(demo.indications.any { it.kind == IndicationKind.INTOLERANCE })
+    assertTrue(demo.indications.any { it.suspected })
+    assertTrue(demo.indications.any { it.primaryIds.isNotEmpty() })
+    assertTrue(demo.medications.any { it.siteMode == SiteMode.RECORD })
+    assertTrue(demo.medications.any { it.injectableDetails?.drawNeedleGauge != null })
+    assertTrue(demo.schedules.any { it.frequencyType == ScheduleFrequencyType.DAYS_OF_WEEK })
   }
 }

@@ -46,21 +46,23 @@
 - **Discreet mode** hides medication names on the lock screen.
 - **Master switches** to pause all reminders or silence only the ringing alarm.
 
-### 5. Providers & Indications (optional)
+### 5. Providers, Indications & Health Summary (optional)
 - **Providers**: name, specialty, practice, phone, email, primary-care status, care dates, and linked medications, listed as regular, as needed, or past. A medication's provider is labelled *Prescriber*.
-- **Indications**: why a medication is taken: `ACUTE`, `CHRONIC` or `PREVENTIVE` (such as PrEP or PEP), with dates and notes, listed by kind. Providers and indications are many-to-many, and so are medications and indications; both links are editable from either side. A condition or symptom that isn't formally diagnosed can be marked *Suspected* and sits in its own section. **Allergies** (an immune reaction to a drug, food or something in the environment) and **drug intolerances** (a side effect you can't tolerate, which isn't an allergy) are two separate kinds, kept to what a provider or first responder would need to know. They record the trigger, severity and reaction, list by what they're to (drug allergies and intolerances together), and can link to the medication that treats them (recording only, with no warnings). Past indications are archived, and "Had this again" starts a new episode of a past acute or preventive one.
-- Both are optional: turn off either in Settings to hide its tab and fields. Hiding never deletes data.
+- **Indications**: why a medication is taken: `ACUTE`, `CHRONIC` or `PREVENTIVE` (such as PrEP or PEP), with dates, severity (`Mild` to `Life-threatening`, or `Unsure`), and notes, listed by kind. Providers and indications are many-to-many, and so are medications and indications; both links are editable from either side. An indication can also be marked **Secondary to** underlying conditions (showing both "Secondary to X" and reverse "Secondary conditions"). A condition or symptom that isn't formally diagnosed can be marked *Suspected* and sits in its own section. **Allergies** (an immune reaction to a drug, food or something in the environment) and **drug intolerances** (a side effect you can't tolerate, which isn't an allergy) are two separate kinds, kept to what a provider or first responder would need to know. They record the trigger, severity and reaction, list by what they're to (drug allergies and intolerances together), and can link to the medication that treats them (recording only, with no warnings). Past indications are archived, and "Had this again" starts a new episode of a past acute or preventive one.
+- **Health Summary**: a one-page overview for a provider or first responder (accessible from Today or the launcher's long-press shortcut), ordered with drug allergies and intolerances first, other allergies, current medications, recently taken finished or as-needed medications (within 90 days), indications, suspected conditions, recently ended indications, and active providers, shareable as plain text.
+- Both Providers and Indications are optional: turn off either in Settings to hide its tab and fields. Hiding never deletes data.
 
 ### 6. Encrypted Backup & Sync Groundwork
 - One format for backups and sync: a versioned JSON bundle, including deletion tombstones.
 - **Encryption**: AES-256-GCM with a random data key wrapped by a PBKDF2 passphrase key. A recovery code (the data key plus a checksum) can be shown, and the data key is cached on the device under an Android Keystore key.
+- **Automatic encrypted backups**: optional scheduled encrypted `.regimen` backups written via `WorkManager` to a chosen folder with configurable frequency and retention (keeping recent copies plus one per month for 12 months).
 - **Merge-aware restore**: `BundleMerger` does a three-way merge against the last agreed copy. Replace restores this device's own settings too. Reminder, alarm, theme and FDA-consent settings stay per device.
 - Each device has an identity, and a "primary" claim decides conflicts when both sides changed.
 
 ### 7. Settings, Privacy & Adaptive UI
-- **First-launch checklist** for notifications, exact alarms, unrestricted battery and Gemini Nano status. Declined options aren't nagged again and stay available in Settings.
+- **First-launch checklist** for notifications, exact alarms, full-screen alarms, and optional tracking (Providers and Indications). Declined options aren't nagged again and stay available in Settings.
 - **Appearance**: System / Light / Dark, plus Material You dynamic color.
-- **Adaptive navigation**: `NavigationSuiteScaffold` switches between a bottom bar and a navigation rail. Editors and settings are full-screen pages that hide the bar, with predictive back.
+- **Adaptive navigation**: `NavigationSuiteScaffold` switches between a bottom bar and a navigation rail, centering content columns cleanly on wide windows. Editors and settings are full-screen pages that hide the bar, with predictive back.
 - **Local storage**: native `SQLiteOpenHelper` plus `kotlinx-serialization-json`, with no native `.so` dependencies. This works on `arm64-v8a`, `x86_64` and 16 KB page-size devices.
 
 ---
@@ -70,23 +72,23 @@
 ```text
 app/src/main/kotlin/com/exaclast/regimen/
 ├── MainActivity.kt, RegimenApp.kt       # Entry point, adaptive scaffold, Navigation 3 host, theme
-├── data/                                # SQLite storage, repository, backup + key store,
+├── data/                                # SQLite storage, repository, manual/auto backup + key store,
 │                                        #   Gemini Nano label scanner/parser, OpenFDA lookup
-├── domain/                              # DoseEngine (schedules, pacing, site rotation), DoseTimeline,
-│                                        #   WindowDeletion, IndicationTimeline
-├── model/Models.kt                      # Serializable entities, AppSettings, backup bundle
+├── domain/                              # DoseEngine, DoseTimeline, Adjustments, CareSummary, MedicationGroups,
+│                                        #   ScheduleVersioning, DoseLogEdits, WindowDeletion, IndicationTimeline
+├── model/                               # Models, MedicationAdjustment, Concentration, Equipment, Texts
 ├── notifications/                       # DoseNotificationManager, action receiver, alarm screen/ringtone
-├── sync/                                # BundleCrypto, BundleMerger, BackupFiles, DeviceIdentity
+├── sync/                                # BundleCrypto, BundleMerger, BackupFiles, AutoBackupRetention, DeviceIdentity
 └── ui/
     ├── RegimenViewModel.kt              # uiState: StateFlow + user actions
     ├── navigation/Routes.kt             # Serializable Routes + Navigator
     ├── components/                      # Shared lists, switches, pickers, UiFormat
-    ├── screens/                         # Today, Medications (list/detail/editor), Providers,
-    │                                    #   Indications, Settings, Backup screens
+    ├── screens/                         # Today, Medications (list/detail/editor), Providers, Indications,
+    │                                    #   CareSummary, Adjustments/DoseLog editors, Settings, Backup screens
     └── theme/                           # Material 3 Expressive theme
 ```
 
-Unit tests live in `app/src/test/kotlin/` and cover the dose engine and timeline, dated adjustments, concentration parsing, database migrations, window deletion, notifications text and timing, the bundle merger and crypto, label parsing and the FDA lookup.
+Unit tests live in `app/src/test/kotlin/` and cover the dose engine and timeline, dated adjustments, care summary, medication groups, schedule versioning, dose log edits, concentration parsing, database migrations, window deletion, notifications text and timing, automatic backup retention/management, the bundle merger and crypto, label parsing and the FDA lookup.
 
 ---
 
@@ -95,7 +97,7 @@ Unit tests live in `app/src/test/kotlin/` and cover the dose engine and timeline
 ### Prerequisites
 - **JDK 17+**
 - **Android SDK Platform 37** (`compileSdk = 37`, `targetSdk = 37`, `minSdk = 35`)
-- AGP 9.1+ (Material 3 `1.5.0-beta02` requires it)
+- AGP 9.1+ (Material 3 `1.5.0-rc01` requires it)
 
 ### Commands
 ```zsh

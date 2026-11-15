@@ -25,6 +25,9 @@
     <string name="action_ok">OK</string>
     <string name="action_save">Save</string>
     <string name="action_show">Show</string>
+    <string name="action_undo">Undo</string>
+    <string name="date_today">Today</string>
+    <string name="date_yesterday">Yesterday</string>
 
     <!-- Shared fields -->
     <string name="field_date">Date</string>
@@ -158,6 +161,7 @@
     <string name="provider_regular_switch_help">Off for specialists you only see when needed</string>
     <string name="provider_care_started">Care started</string>
     <string name="provider_care_ended">Care ended</string>
+    <string name="provider_ends_before_start">Care ended can\'t be before care started</string>
 
     <!-- Indications -->
     <string name="status_managed_short">Managed</string>
@@ -182,6 +186,7 @@
     <string name="indication_had_again">Had this again</string>
     <string name="indication_details">Details</string>
     <string name="indication_ends_with_course">When its medication course ends</string>
+    <string name="indication_end_from_course">%1$s (end of medication course)</string>
     <string name="indication_diagnosis_suspected">Suspected, not formally diagnosed</string>
     <string name="indication_diagnosis_diagnosed">Diagnosed</string>
     <string name="indication_no_providers">No providers linked</string>
@@ -879,7 +884,7 @@
     <string name="enum_severity_unsure">Unsure</string>
 
     <string name="enum_freq_daily">Every Day</string>
-    <string name="enum_freq_every_n_days">Every N Days (Fixed Cycle)</string>
+    <string name="enum_freq_every_n_days">Every N Days</string>
     <string name="enum_freq_days_of_week">Specific Days of Week</string>
     <string name="enum_freq_relative">Every N Days From Last Taken Dose</string>
     <string name="enum_freq_specific_dates">Specific Dates</string>
@@ -1105,7 +1110,7 @@
 
     <!-- Notifications and dose text (notifications/, domain/DoseEngine) -->
     <string name="channel_window_name">Active Dose Window (Persistent)</string>
-    <string name="channel_window_description">Ongoing notification pinned at the exact start of a dose window with 1-tap Take, Snooze, and Skip actions</string>
+    <string name="channel_window_description">Ongoing notification pinned at the exact start of a dose window with 1-tap Take and Skip actions</string>
     <string name="channel_alarm_name">End-of-Window Dose Alarm</string>
     <string name="channel_alarm_description">Ringing alarm triggered at the exact end of a dose window if no action was taken</string>
     <string name="problem_notifications_denied">Notifications are turned off for Regimen, so doses won\'t remind you.</string>

@@ -507,7 +507,7 @@ private fun ColumnScope.UnlockContent(state: RestoreUiState.Locked, onUnlock: (S
     )
   }
   state.locked.header.createdAtEpochMillis.takeIf { it > 0 }?.let {
-    Text(stringResource(R.string.backup_backed_up, UiFormat.dateTime(it)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(stringResource(R.string.backup_backed_up, UiFormat.dateTime(LocalResources.current, it)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
   }
   val passphraseLabel = stringResource(R.string.backup_passphrase)
   val recoveryCodeLabel = stringResource(R.string.backup_recovery_code)
@@ -545,7 +545,7 @@ private fun PreviewContent(state: RestoreUiState.Preview, onApply: (Boolean) -> 
 
   val resources = LocalResources.current
   val source = listOfNotNull(
-    stringResource(R.string.backup_backed_up, UiFormat.dateTime(preview.exportedAtEpochMillis)),
+    stringResource(R.string.backup_backed_up, UiFormat.dateTime(resources, preview.exportedAtEpochMillis)),
     preview.sourceDeviceName?.let { stringResource(R.string.backup_from_device, it) },
   ).joinToString(" ")
   Text(source, style = MaterialTheme.typography.bodyLarge)

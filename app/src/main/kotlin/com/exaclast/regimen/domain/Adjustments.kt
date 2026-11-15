@@ -166,6 +166,7 @@ object Adjustments {
       defaultDoseUnit = original.defaultDoseUnit,
       injectableDetails = if (formChanged) edited.injectableDetails else original.injectableDetails,
       adjustments = original.adjustments,
+      createdAtEpochMillis = original.createdAtEpochMillis,
     )
     if (parts.isEmpty()) return untouched
     return when {

@@ -510,10 +510,12 @@ fun ProviderEditorScreen(
     endDate != initialProvider?.careEndDateIso.orEmpty() ||
     notes != initialProvider?.notes.orEmpty()
 
+  val endBeforeStart = startDate.isNotBlank() && endDate.isNotBlank() && endDate < startDate
+
   EditorScaffold(
     title = stringResource(if (initialProvider == null) R.string.providers_add else R.string.provider_edit),
     onClose = onClose,
-    saveEnabled = name.isNotBlank(),
+    saveEnabled = name.isNotBlank() && !endBeforeStart,
     hasUnsavedChanges = hasUnsavedChanges,
     onSave = {
       onSave(
@@ -589,7 +591,12 @@ fun ProviderEditorScreen(
       }
     }
     DatePickerField(label = stringResource(R.string.provider_care_started), valueIso = startDate, onValueChange = { startDate = it })
-    DatePickerField(label = stringResource(R.string.provider_care_ended), valueIso = endDate, onValueChange = { endDate = it })
+    DatePickerField(
+      label = stringResource(R.string.provider_care_ended),
+      valueIso = endDate,
+      onValueChange = { endDate = it },
+      supportingText = if (endBeforeStart) stringResource(R.string.provider_ends_before_start) else null,
+    )
     OutlinedTextField(
       value = notes,
       onValueChange = { notes = it },

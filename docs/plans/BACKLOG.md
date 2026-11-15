@@ -74,8 +74,6 @@ v1.0 (M5) is ready for release testing; next candidates for 1.x:
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-007 | `AlarmRingtonePlayer` leaks a `MediaPlayer` on a failed attempt, and `prepare()` runs on the main thread | P3 | S | — | Low |
-| T-008 | Notification channel description still mentions Snooze | P3 | S | — | Low |
 | T-009 | Remove legacy notification code: `dose:` tag, `END_ALARM` snooze, `legacyItemKey`, unused `EXTRA_*` | P3 | S | — | O9, roadmap |
 | T-010 | Hint that swiping a reminder snoozes it | P3 | S | — | roadmap |
 
@@ -91,7 +89,7 @@ v1.0 (M5) is ready for release testing; next candidates for 1.x:
 | T-023 | "Other time" for a due scheduled dose accepts any past date, so today's dose can be recorded as taken weeks ago. Limit the range or warn | P3 | S | — | new |
 | T-024 | Choose the dose amount when logging an extra dose (always the default today) | P3 | S | — | new |
 | T-114 | Reminders and the alarm screen don't say a dose is new; only Today flags the first dose after a titration step | P3 | S | — | T-113 |
-| T-120 | Localization left-overs: a lint check for hardcoded Compose text (Android Lint only checks XML). Still English by design: the default dose window names and site presets (stored data), the demo data, the backup file name, the "See package" strength placeholder, the model prompt, and ISO dates in `ScheduleText` ("On 2026-11-04") | P3 | S | — | — |
+| T-120 | Localization left-overs: a lint check for hardcoded Compose text (Android Lint only checks XML). Still English by design: the default dose window names and site presets (stored data), the demo data, the backup file name, the "See package" strength placeholder, and the model prompt | P3 | S | — | — |
 | T-115 | "Plan a change" can't set injection details: they change from a date only through the medication editor's "From a date". Fine for now; revisit if planning equipment changes ahead is common | P3 | M | — | T-113 |
 
 ### Medication data and label scanning
@@ -99,11 +97,6 @@ v1.0 (M5) is ready for release testing; next candidates for 1.x:
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
 | T-030 | "Needs review" state for fields filled by AI or FDA data, since they directly affect dosing. T-104 reuses it | P2 | M | M4 | O10 |
-| T-031 | Sanitizer: patient names of 4+ letters still match inside longer words (Mann → Mannitol) | P3 | S | — | B39 leftover |
-| T-032 | GS1 expiry day `00` becomes the 28th, and invalid days like Feb 31 pass through | P3 | S | — | Low |
-| T-033 | Bare 10-digit NDCs from labels are assumed 4-4-2, though `candidateNdc11s` handles all three layouts | P3 | S | — | Low |
-| T-034 | "Match FDA" stays enabled during a lookup, so requests can stack | P3 | S | — | Low |
-| T-035 | FDA match dialog: collapse identical multi-salt strengths ("4 × 2.5 mg"). Don't sum them | P3 | S | — | roadmap |
 | T-036 | Scan buttons on desktop: untried. Decide what camera and AICore should do there; a file picker suits a label photo | P2 | S | M2 | form factors |
 | T-037 | OCR quality on wrapped labels: words split across photos still produce wrong names. Collect more cases before changing anything; no hard-coded parsing | P3 | M | — | new |
 
@@ -111,12 +104,7 @@ v1.0 (M5) is ready for release testing; next candidates for 1.x:
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-041 | Provider care dates aren't checked for end before start | P3 | S | — | Low |
-| T-042 | A number of 309+ digits parses as `Infinity` | P3 | S | — | Low |
-| T-043 | Editing a medication resets its created date; rewriting a dose log resets its created date | P3 | S | — | Low |
-| T-046 | Specific-date schedules show a raw ISO date | P3 | S | — | Low |
 | T-047 | Guided add-medication flow (identify → dose → schedule → limits → details): generic name before brand, short dropdown values, unit suffixes, explain disabled scan buttons | P2 | L | — | U18, F2, P2 |
-| T-048 | Validation messages wrap in half-width fields; "Every N Days (Fixed Cycle)" is jargon | P3 | S | — | U19, U20 |
 | T-049 | Create an acute indication from the medication editor, pre-filled from the course | P3 | M | — | roadmap |
 
 ### Data integrity and sync readiness
@@ -137,9 +125,8 @@ Measurements and device notes are in `designs/form-factors.md`.
 | T-071 | Two-column editors and medication page | P2 | M | M2 | form factors |
 | T-073 | Keyboard: Esc closes editors and goes back, Ctrl+N adds, arrows or `[` `]` change day | P2 | M | M2 | form factors |
 | T-074 | Tooltips on icon-only buttons; right-click on a dose row opens its menu | P2 | S | M2 | form factors |
-| T-075 | "Log extra dose" covers the last card's buttons until you scroll | P3 | S | — | form factors |
 | T-076 | Hinge and posture awareness for tabletop and book. Needs a real device to judge | P3 | M | — | form factors |
-| T-077 | Cosmetic: dose menu labels misaligned (only one has an icon); collapsed app bar leaves the rail strip unfilled | P3 | S | — | form factors |
+| T-077 | Cosmetic: collapsed app bar leaves the rail strip unfilled | P3 | S | — | form factors |
 
 ### Accessibility and polish
 
@@ -203,17 +190,14 @@ Shipped, but never confirmed on a device. Clear these opportunistically; if one 
 | Secondary indication | Edit an indication, pick another under "Secondary to", save | The list line says "Secondary to X"; X's page lists it under "Secondary conditions"; the health summary line says "secondary to X" | Secondary indications |
 | Suspected, switched off | Edit a suspected indication and turn Suspected off | It moves from "Suspected" back under its kind | T-116 |
 | Snooze across reboot | Repeat reminders off, snooze, reboot, wait | The reminder comes back | B5 |
-| As-needed unit | Log an as-needed dose from its card | Log matches the amount and unit on the card | B10 |
 | Swipe to snooze | Swipe a reminder on an unlocked phone | Comes back after the snooze time | B16 |
 | Other time, pacing | Log an extra dose at another time over a limit | "Take anyway?" reflects that time | 27ae543 |
 | Save a dose edit, then Undo | Change time and note, save, Undo | Change applied, then fully reverted | 2d089d9 |
-| Extra-dose search | Have more than six medications | Search box appears and filters | 27ae543 |
 | Date picker label | TalkBack on a date field | Announces "Choose <label>" (F1; the label is in the code now) | F1 |
 | Indication editor | Open it on a phone | The three-way kind selector fits | F3 |
 | Reminder blocked notice | Deny notifications (or block a channel, exact alarms, full-screen) in system settings, open Today | A "Fix" notice names the problem and opens the right settings page; it goes away on return once fixed | T-001 |
 | Label photo cleanup | Take photos, read the label (or Discard), then check `cache/label_scans` | Folder is gone; also after killing the app mid-scan and relaunching | T-050 |
 | Selections survive rotation | In a schedule editor pick windows, weekdays, specific dates; rotate or fold/unfold. Also take a label photo, rotate before "Read label" | Selections and photos are still there | T-038 |
-| Log-time dialog, short window | Open "Log extra dose" > Other time in landscape or split screen | The dialog scrolls; Time and Note reachable | T-011 |
 | Split-screen and window resize | Resize through compact, medium, expanded; repeat after T-069 | Layout follows, selection survives | form factors |
 | Dark theme on tablet and foldable | Repeat the screen pass | No contrast problems | form factors |
 | Passphrase timing | Time the PBKDF2 step (600k iterations) | Well under 1 second | known gap |
