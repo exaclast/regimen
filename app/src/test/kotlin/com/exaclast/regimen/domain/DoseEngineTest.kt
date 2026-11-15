@@ -552,4 +552,82 @@ class DoseEngineTest {
     )
     assertEquals(listOf(morning.id, evening.id), windowsOn("2026-11-03", listOf(loggedMorning)))
   }
+
+  @Test
+  fun versionedSchedule_sameDayTakenLogOnOldVersionMatchesNewVersionWithoutDuplicates() {
+    val morning = TimeOfDayBucket(id = "m", name = "Morning", hour = 7, endHour = 10)
+    val evening = TimeOfDayBucket(id = "e", name = "Evening", hour = 17, endHour = 20)
+    val med = Medication(id = "med_1", formulaName = "Drug A", strength = "10 mg")
+    val oldSched = MedicationSchedule(
+      id = "sched_old",
+      medicationId = med.id,
+      bucketIds = listOf(morning.id),
+      startDateIso = "2026-11-01",
+      endDateIso = "2026-11-14",
+    )
+    val newSched = MedicationSchedule(
+      id = "sched_new",
+      medicationId = med.id,
+      bucketIds = listOf(morning.id, evening.id),
+      startDateIso = "2026-11-15",
+      createdAtEpochMillis = LocalDate.parse("2026-11-15").atTime(14, 0)
+        .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+    )
+    val morningLog = DoseLog(
+      id = "log_m",
+      medicationId = med.id,
+      scheduleId = oldSched.id,
+      bucketId = morning.id,
+      scheduledDateIso = "2026-11-15",
+      status = DoseStatus.TAKEN,
+      amountTaken = 1.0,
+      amountUnit = DoseUnit.TABLET,
+    )
+
+    val board = DoseEngine.buildDailyBoard(
+      dateIso = "2026-11-15",
+      medications = listOf(med),
+      schedules = listOf(oldSched, newSched),
+      buckets = listOf(morning, evening),
+      logs = listOf(morningLog),
+      indications = emptyList(),
+      providers = emptyList(),
+    )
+
+    assertEquals(2, board.bucketGroups.size)
+    val morningItems = board.bucketGroups[0].items
+    assertEquals(1, morningItems.size) // No duplicate Morning item from oldSched
+    assertTrue(morningItems.single().isTaken)
+    assertEquals(newSched.id, morningItems.single().schedule.id)
+    val eveningItems = board.bucketGroups[1].items
+    assertEquals(1, eveningItems.size)
+    assertFalse(eveningItems.single().isCompleted)
+  }
+
+  @Test
+  fun backdatedSchedule_createdDaysLater_doesNotSuppressStartDateDoses() {
+    val morning = TimeOfDayBucket(id = "m", name = "Morning", hour = 7, endHour = 10)
+    val med = Medication(id = "med_1", formulaName = "Drug A", strength = "10 mg")
+    // Created on Nov 15, backdated to start Nov 10
+    val createdNov15 = LocalDate.parse("2026-11-15").atTime(14, 0)
+      .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    val sched = MedicationSchedule(
+      id = "sched_backdated",
+      medicationId = med.id,
+      bucketIds = listOf(morning.id),
+      startDateIso = "2026-11-10",
+      createdAtEpochMillis = createdNov15,
+    )
+
+    val nov10Board = DoseEngine.buildDailyBoard(
+      dateIso = "2026-11-10",
+      medications = listOf(med),
+      schedules = listOf(sched),
+      buckets = listOf(morning),
+      logs = emptyList(),
+      indications = emptyList(),
+      providers = emptyList(),
+    )
+    assertEquals(1, nov10Board.bucketGroups.size)
+  }
 }

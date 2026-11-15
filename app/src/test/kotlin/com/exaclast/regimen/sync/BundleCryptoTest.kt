@@ -89,4 +89,32 @@ class BundleCryptoTest {
     assertNotEquals(first.kdf.salt, second.kdf.salt)
     assertArrayEquals(key, BundleCrypto.unwrapWithPassphrase(second, "new passphrase".toCharArray()))
   }
+
+  @Test
+  fun excessiveOrInvalidIterationsInEnvelopeAreRejected() {
+    val key = BundleCrypto.newDataKey()
+    val envelope = BundleCrypto.wrapWithPassphrase(key, passphrase, iterations)
+    val tooHigh = envelope.copy(kdf = envelope.kdf.copy(iterations = BundleCrypto.MAX_ITERATIONS + 1))
+    val zero = envelope.copy(kdf = envelope.kdf.copy(iterations = 0))
+    val wrongAlg = envelope.copy(kdf = envelope.kdf.copy(algorithm = "SHA1"))
+
+    assertThrows(BundleCrypto.CorruptedException::class.java) {
+      BundleCrypto.unwrapWithPassphrase(tooHigh, passphrase)
+    }
+    assertThrows(BundleCrypto.CorruptedException::class.java) {
+      BundleCrypto.unwrapWithPassphrase(zero, passphrase)
+    }
+    assertThrows(BundleCrypto.CorruptedException::class.java) {
+      BundleCrypto.unwrapWithPassphrase(wrongAlg, passphrase)
+    }
+  }
+
+  @Test
+  fun oversizedEncryptedFileIsRejectedBeforeDecryption() {
+    val oversized = ByteArray(BundleCrypto.MAX_FILE_BYTES + 1)
+    "RGMNBK".toByteArray(Charsets.US_ASCII).copyInto(oversized)
+    assertThrows(BundleCrypto.FileTooLargeException::class.java) {
+      BundleCrypto.readHeader(oversized)
+    }
+  }
 }

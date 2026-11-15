@@ -225,8 +225,37 @@ class BackupFilesTest {
     val merged = BackupFiles.mergeIntoDevice(device, file, deviceId = "phone").bundle
     assertEquals("device, newer", merged.medications.single { it.id == "m1" }.notes)
     assertEquals(setOf("m1", "m2"), merged.medications.map { it.id }.toSet())
+    assertEquals("2026-11-02", merged.doseLogs.single { it.id == "b" }.scheduledDateIso)
     assertEquals(setOf("a", "b"), merged.doseLogs.map { it.id }.toSet())
     assertEquals(45, merged.settings.snoozeMinutes)
     assertEquals(claim, merged.primary)
+  }
+
+  @Test
+  fun asNeededScheduleWithEmptyBucketsPassesValidation() {
+    val bundle = RegimenBackupBundle(
+      medications = listOf(med),
+      schedules = listOf(
+        MedicationSchedule(
+          id = "s_prn",
+          medicationId = med.id,
+          frequencyType = com.exaclast.regimen.model.ScheduleFrequencyType.AS_NEEDED,
+          bucketIds = emptyList(),
+        ),
+      ),
+    )
+    BackupFiles.validate(bundle)
+  }
+
+  @Test
+  fun previewCountsOnlyLiveDoseWindows() {
+    val live = TimeOfDayBucket(id = "b1", name = "Morning", hour = 7)
+    val deleted = TimeOfDayBucket(id = "b2", name = "Lunch", hour = 12, updatedAtEpochMillis = 200, deletedAtEpochMillis = 200)
+    val device = RegimenBackupBundle(buckets = listOf(live))
+    val file = RegimenBackupBundle(buckets = listOf(live, deleted))
+    val preview = BackupFiles.preview(device, file)
+    val windows = preview.kinds.single { TestTexts.get(it.labelRes) == "Dose windows" }
+    assertEquals(1, windows.inFile)
+    assertEquals(0, windows.new)
   }
 }

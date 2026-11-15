@@ -85,6 +85,7 @@ android {
   }
   testOptions {
     unitTests.isReturnDefaultValues = true
+    unitTests.isIncludeAndroidResources = true
   }
   androidResources {
     // English is the only language for now. The locale list is generated from the res/values-* folders
@@ -138,9 +139,11 @@ dependencies {
   androidTestImplementation(libs.androidx.compose.ui.test.junit4)
   debugImplementation(libs.androidx.compose.ui.test.manifest)
 
-  // Local tests: jUnit, coroutines, Android runner
+  // Local tests: jUnit, coroutines, Robolectric, Android test core
   testImplementation(libs.junit)
   testImplementation(libs.kotlinx.coroutines.test)
+  testImplementation(libs.robolectric)
+  testImplementation(libs.androidx.test.core)
 
   // Instrumented tests: jUnit rules and runners
   androidTestImplementation(libs.androidx.test.core)

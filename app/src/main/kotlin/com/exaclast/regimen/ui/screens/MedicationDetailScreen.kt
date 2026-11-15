@@ -138,6 +138,7 @@ fun MedicationDetailScreen(
 
   var menuOpen by remember { mutableStateOf(false) }
   var confirmDelete by remember { mutableStateOf(false) }
+  var showPastSchedules by rememberSaveable { mutableStateOf(false) }
   var pacingPrompt by remember { mutableStateOf(false) }
   var choosingSite by remember { mutableStateOf(false) }
   var showSchedulePrompt by rememberSaveable { mutableStateOf(promptForSchedule) }
@@ -283,6 +284,9 @@ fun MedicationDetailScreen(
       }
 
       item(key = "schedules") {
+        val (pastSchedules, currentSchedules) = schedules.partition { it.hasEndedBefore(today) }
+        val sortedPastSchedules = pastSchedules.sortedByDescending { it.lastDayOrNull() }
+        val visibleSchedules = currentSchedules.ifEmpty { sortedPastSchedules }
         SectionHeader(stringResource(R.string.med_schedules)) {
           TextButton(onClick = onAddSchedule) {
             Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -291,7 +295,7 @@ fun MedicationDetailScreen(
           }
         }
         GroupedColumn {
-          if (schedules.isEmpty()) {
+          if (visibleSchedules.isEmpty()) {
             GroupItem(index = 0, count = 1) {
               ListItem(
                 supportingContent = { Text(stringResource(R.string.med_no_schedule_help)) },
@@ -299,7 +303,7 @@ fun MedicationDetailScreen(
               ) { Text(stringResource(R.string.med_no_schedule)) }
             }
           }
-          schedules.forEachIndexed { i, sched ->
+          visibleSchedules.forEachIndexed { i, sched ->
             // Today's dose, and the next step if one is planned.
             val next = Adjustments.sorted(stored).firstOrNull { a ->
               a.effectiveDateOrNull()!!.isAfter(today) && a.scheduleDoses.any { it.scheduleId == sched.id }
@@ -308,7 +312,7 @@ fun MedicationDetailScreen(
               val dose = Adjustments.doseOn(stored, sched, a.effectiveDateOrNull()!!)
               stringResource(R.string.med_dose_from, formatNum(dose.amount), dose.unit.symbol, UiFormat.date(a.effectiveDateOrNull()!!, withWeekday = false))
             }
-            GroupItem(index = i, count = schedules.size, onClick = { onEditSchedule(sched) }) {
+            GroupItem(index = i, count = visibleSchedules.size, onClick = { onEditSchedule(sched) }) {
               ScheduleRow(
                 schedule = sched,
                 dose = Adjustments.doseOn(stored, sched, today),
@@ -317,6 +321,32 @@ fun MedicationDetailScreen(
                 onEdit = { onEditSchedule(sched) },
                 onDelete = { onDeleteSchedule(sched) },
               )
+            }
+          }
+        }
+        if (currentSchedules.isNotEmpty() && sortedPastSchedules.isNotEmpty()) {
+          SectionHeader(
+            title = stringResource(R.string.med_past_schedules, sortedPastSchedules.size),
+            action = {
+              TextButton(onClick = { showPastSchedules = !showPastSchedules }) {
+                Text(stringResource(if (showPastSchedules) R.string.action_hide else R.string.action_show))
+              }
+            },
+          )
+          if (showPastSchedules) {
+            GroupedColumn {
+              sortedPastSchedules.forEachIndexed { i, sched ->
+                GroupItem(index = i, count = sortedPastSchedules.size, onClick = { onEditSchedule(sched) }) {
+                  ScheduleRow(
+                    schedule = sched,
+                    dose = Adjustments.doseOn(stored, sched, sched.lastDayOrNull() ?: today),
+                    upcoming = null,
+                    snapshot = snapshot,
+                    onEdit = { onEditSchedule(sched) },
+                    onDelete = { onDeleteSchedule(sched) },
+                  )
+                }
+              }
             }
           }
         }
@@ -657,6 +687,8 @@ private fun ScheduleRow(
       ?.let { add(stringResource(R.string.med_last_dose, it)) }
     if (schedule.usesDateRange) {
       when {
+        start != null && end != null && end.isBefore(today) ->
+          add(stringResource(R.string.med_date_range, UiFormat.date(start, withWeekday = false), UiFormat.date(end, withWeekday = false)))
         end != null && end.isBefore(today) -> add(stringResource(R.string.indication_ended_on, UiFormat.date(end, withWeekday = false)))
         start != null && start.isAfter(today) && end != null ->
           add(stringResource(R.string.med_date_range, UiFormat.date(start, withWeekday = false), UiFormat.date(end, withWeekday = false)))

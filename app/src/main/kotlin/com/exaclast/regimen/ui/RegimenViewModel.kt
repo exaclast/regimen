@@ -49,6 +49,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 
 data class RegimenUiState(
@@ -100,6 +101,21 @@ sealed interface RestoreUiState {
     val busy: Boolean = false,
   ) : RestoreUiState
   data class Preview(val ready: BackupManager.OpenResult.Ready, val busy: Boolean = false) : RestoreUiState
+  data class SetNewPassphrase(
+    val dataKey: ByteArray,
+    val busy: Boolean = false,
+    val error: String? = null,
+  ) : RestoreUiState {
+    override fun equals(other: Any?): Boolean =
+      this === other || (other is SetNewPassphrase && dataKey.contentEquals(other.dataKey) && busy == other.busy && error == other.error)
+
+    override fun hashCode(): Int {
+      var result = dataKey.contentHashCode()
+      result = 31 * result + busy.hashCode()
+      result = 31 * result + (error?.hashCode() ?: 0)
+      return result
+    }
+  }
   /** Restored, or failed to open: the restore screen closes. */
   data object Finished : RestoreUiState
 }
@@ -135,16 +151,18 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     clock,
   ) { snapshot, override, now ->
     buildUiState(snapshot, override, now)
-  }.stateIn(
+  }.flowOn(Dispatchers.Default).stateIn(
     scope = viewModelScope,
     started = SharingStarted.WhileSubscribed(5_000),
     initialValue = buildUiState(repository.snapshot.value, null, System.currentTimeMillis()),
   )
 
   init {
-    val s = repository.snapshot.value
-    DoseNotificationManager.ensureChannels(application)
-    DoseNotificationManager.refresh(application, s)
+    viewModelScope.launch(Dispatchers.IO) {
+      DoseNotificationManager.ensureChannels(getApplication())
+      DoseNotificationManager.refresh(getApplication(), repository.snapshot.value)
+      refreshBackupKeyStatus()
+    }
   }
 
   private fun buildUiState(snapshot: RegimenSnapshot, override: String?, now: Long): RegimenUiState {
@@ -211,18 +229,26 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     takenAtMillis: Long? = null,
     note: String? = null,
   ) {
-    val log = writeScheduledLog(item, DoseStatus.TAKEN, site, takenAtMillis = takenAtMillis, notes = note) ?: return
-    val name = item.medication.primaryName
-    val logged = takenAtMillis?.let { str(R.string.vm_logged_taken_at, name, UiFormat.time(it)) } ?: str(R.string.vm_logged, name)
-    post(
-      listOfNotNull(logged, log.siteUsed).joinToString(" · "),
-      UndoAction.RestoreLogs(listOf(item.existingLog to log.id)),
-    )
+    viewModelScope.launch {
+      val log = withContext(Dispatchers.IO) {
+        writeScheduledLog(item, DoseStatus.TAKEN, site, takenAtMillis = takenAtMillis, notes = note)
+      } ?: return@launch
+      val name = item.medication.primaryName
+      val logged = takenAtMillis?.let { str(R.string.vm_logged_taken_at, name, UiFormat.time(it)) } ?: str(R.string.vm_logged, name)
+      post(
+        listOfNotNull(logged, log.siteUsed).joinToString(" · "),
+        UndoAction.RestoreLogs(listOf(item.existingLog to log.id)),
+      )
+    }
   }
 
   fun skipScheduledDose(item: ScheduledDoseItem) {
-    val log = writeScheduledLog(item, DoseStatus.SKIPPED, site = null) ?: return
-    post(str(R.string.vm_skipped, item.medication.primaryName), UndoAction.RestoreLogs(listOf(item.existingLog to log.id)))
+    viewModelScope.launch {
+      val log = withContext(Dispatchers.IO) {
+        writeScheduledLog(item, DoseStatus.SKIPPED, site = null)
+      } ?: return@launch
+      post(str(R.string.vm_skipped, item.medication.primaryName), UndoAction.RestoreLogs(listOf(item.existingLog to log.id)))
+    }
   }
 
   fun snoozeScheduledDose(
@@ -230,27 +256,53 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     minutes: Int = repository.snapshot.value.settings.snoozeMinutes,
   ) {
     val until = System.currentTimeMillis() + minutes * 60_000L
-    val log = writeScheduledLog(item, DoseStatus.SNOOZED, item.suggestedSite, snoozedUntil = until) ?: return
-    val time = Instant.ofEpochMilli(until).atZone(ZoneId.systemDefault()).toLocalTime()
-    post(
-      str(R.string.vm_snoozed_until, TimeOfDayBucket.formatClockTime(time.hour, time.minute)),
-      UndoAction.RestoreLogs(listOf(item.existingLog to log.id)),
-    )
+    viewModelScope.launch {
+      val log = withContext(Dispatchers.IO) {
+        writeScheduledLog(item, DoseStatus.SNOOZED, item.suggestedSite, snoozedUntil = until)
+      } ?: return@launch
+      val time = Instant.ofEpochMilli(until).atZone(ZoneId.systemDefault()).toLocalTime()
+      post(
+        str(R.string.vm_snoozed_until, TimeOfDayBucket.formatClockTime(time.hour, time.minute)),
+        UndoAction.RestoreLogs(listOf(item.existingLog to log.id)),
+      )
+    }
   }
 
   /** Clears a taken/skipped/snoozed state so the dose is pending again. */
   fun clearScheduledDoseLog(item: ScheduledDoseItem) {
     val existing = item.existingLog ?: return
-    repository.deleteDoseLog(existing.id)
-    post(str(R.string.vm_marked_not_taken, item.medication.primaryName), UndoAction.RestoreDeletedLog(existing))
+    viewModelScope.launch {
+      withContext(Dispatchers.IO) { repository.deleteDoseLog(existing.id) }
+      post(str(R.string.vm_marked_not_taken, item.medication.primaryName), UndoAction.RestoreDeletedLog(existing))
+    }
   }
 
   fun takeAllPending(items: List<ScheduledDoseItem>) {
-    val entries = items.filter { !it.isCompleted }.mapNotNull { item ->
-      writeScheduledLog(item, DoseStatus.TAKEN, item.suggestedSite)?.let { item.existingLog to it.id }
+    val pending = items.filter { !it.isCompleted }
+    if (pending.isEmpty()) return
+    viewModelScope.launch {
+      val logs = withContext(Dispatchers.IO) {
+        repository.logDoses(
+          pending.map { item ->
+            RegimenRepository.DoseLogRequest(
+              medicationId = item.medication.id,
+              scheduleId = item.schedule.id,
+              bucketId = item.bucket.id,
+              scheduledDateIso = item.dateIso,
+              status = DoseStatus.TAKEN,
+              amountTaken = item.schedule.doseAmount,
+              amountUnit = item.schedule.doseUnit,
+              siteUsed = item.suggestedSite,
+              existingLogId = item.existingLog?.id,
+            )
+          },
+        )
+      }
+      if (logs.isEmpty()) return@launch
+      val previousById = pending.associateBy({ it.existingLog?.id }, { it.existingLog })
+      val entries = logs.map { written -> previousById[written.id] to written.id }
+      post(plural(R.plurals.vm_logged_doses, entries.size, entries.size), UndoAction.RestoreLogs(entries))
     }
-    if (entries.isEmpty()) return
-    post(plural(R.plurals.vm_logged_doses, entries.size, entries.size), UndoAction.RestoreLogs(entries))
   }
 
   /**
@@ -269,46 +321,64 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     // If taken now (takenAtMillis == null), log on today's date so current time isn't stamped on a past day.
     val day = takenAtMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().toString() }
       ?: if (dateIso < uiState.value.todayIso) uiState.value.todayIso else dateIso
-    val log = repository.logDose(
-      medicationId = medication.id,
-      scheduleId = null,
-      bucketId = null,
-      scheduledDateIso = day,
-      status = DoseStatus.TAKEN,
-      amountTaken = amount,
-      amountUnit = unit,
-      siteUsed = siteUsed,
-      notes = note,
-      actionTimestampMillis = takenAtMillis,
-    ) ?: return
-    val logged = str(R.string.vm_logged_dose, medication.primaryName, formatNum(log.amountTaken), log.amountUnit.symbol)
-    post(
-      listOfNotNull(logged, takenAtMillis?.let { UiFormat.dateTime(it) }, log.siteUsed).joinToString(" · "),
-      UndoAction.RestoreLogs(listOf(null to log.id)),
-    )
+    viewModelScope.launch {
+      val log = withContext(Dispatchers.IO) {
+        repository.logDose(
+          medicationId = medication.id,
+          scheduleId = null,
+          bucketId = null,
+          scheduledDateIso = day,
+          status = DoseStatus.TAKEN,
+          amountTaken = amount,
+          amountUnit = unit,
+          siteUsed = siteUsed,
+          notes = note,
+          actionTimestampMillis = takenAtMillis,
+        )
+      } ?: return@launch
+      val logged = str(R.string.vm_logged_dose, medication.primaryName, formatNum(log.amountTaken), log.amountUnit.symbol)
+      post(
+        listOfNotNull(logged, takenAtMillis?.let { UiFormat.dateTime(it) }, log.siteUsed).joinToString(" · "),
+        UndoAction.RestoreLogs(listOf(null to log.id)),
+      )
+    }
   }
 
   fun deleteDoseLog(log: DoseLog) {
-    repository.deleteDoseLog(log.id)
-    post(str(R.string.vm_log_deleted), UndoAction.RestoreDeletedLog(log))
+    viewModelScope.launch {
+      withContext(Dispatchers.IO) { repository.deleteDoseLog(log.id) }
+      post(str(R.string.vm_log_deleted), UndoAction.RestoreDeletedLog(log))
+    }
   }
 
   /** Saves an edited log; Undo puts the previous version back. */
   fun saveDoseLog(updated: DoseLog) {
     val previous = repository.snapshot.value.doseLogs.find { it.id == updated.id } ?: return
     if (previous == updated) return
-    repository.updateDoseLog(updated)
-    post(str(R.string.vm_log_updated), UndoAction.RestoreLogs(listOf(previous to updated.id)))
+    viewModelScope.launch {
+      withContext(Dispatchers.IO) { repository.updateDoseLog(updated) }
+      post(str(R.string.vm_log_updated), UndoAction.RestoreLogs(listOf(previous to updated.id)))
+    }
   }
 
   fun undo(action: UndoAction) {
     when (action) {
-      is UndoAction.RestoreLogs -> action.entries.forEach { (previous, writtenId) ->
-        if (previous != null) repository.restoreDoseLog(previous) else repository.deleteDoseLog(writtenId)
+      is UndoAction.RestoreLogs -> viewModelScope.launch {
+        withContext(Dispatchers.IO) {
+          val toRestore = action.entries.mapNotNull { it.first }
+          val toDeleteIds = action.entries.filter { it.first == null }.map { it.second }
+          repository.restoreAndDeleteDoseLogs(toRestore, toDeleteIds)
+        }
       }
-      is UndoAction.RestoreDeletedLog -> repository.restoreDoseLog(action.log)
-      is UndoAction.RestoreSchedule -> repository.restoreSchedule(action.schedule)
-      is UndoAction.RestoreMedication -> repository.saveMedication(action.medication)
+      is UndoAction.RestoreDeletedLog -> viewModelScope.launch {
+        withContext(Dispatchers.IO) { repository.restoreDoseLog(action.log) }
+      }
+      is UndoAction.RestoreSchedule -> viewModelScope.launch {
+        withContext(Dispatchers.IO) { repository.restoreSchedule(action.schedule) }
+      }
+      is UndoAction.RestoreMedication -> viewModelScope.launch {
+        withContext(Dispatchers.IO) { repository.saveMedication(action.medication) }
+      }
       is UndoAction.RestoreBackup -> viewModelScope.launch {
         withContext(Dispatchers.IO) { backup.undoRestore(action.previous) }
         post(str(R.string.vm_restore_undone))
@@ -372,6 +442,9 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
 
   fun saveSchedule(schedule: MedicationSchedule) = repository.saveSchedule(schedule)
 
+  fun saveScheduleEdit(medication: Medication?, schedules: List<MedicationSchedule>) =
+    repository.saveScheduleEdit(medication, schedules)
+
   fun deleteSchedule(schedule: MedicationSchedule) {
     repository.deleteSchedule(schedule.id)
     post(str(R.string.vm_schedule_deleted), UndoAction.RestoreSchedule(schedule))
@@ -428,8 +501,11 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
 
   private val backup = BackupManager.getInstance(application)
 
-  private val _backupEncryptionConfigured = MutableStateFlow(backup.isEncryptionConfigured)
+  private val _backupEncryptionConfigured = MutableStateFlow(false)
   val backupEncryptionConfigured: StateFlow<Boolean> = _backupEncryptionConfigured
+
+  private val _backupKeyLost = MutableStateFlow(false)
+  val backupKeyLost: StateFlow<Boolean> = _backupKeyLost
 
   /** Set when Export was tapped before a passphrase existed: export once setup finishes. */
   private val _pendingExport = MutableStateFlow(false)
@@ -437,6 +513,12 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
 
   private val _restoreState = MutableStateFlow<RestoreUiState>(RestoreUiState.Idle)
   val restoreState: StateFlow<RestoreUiState> = _restoreState
+
+  private fun refreshBackupKeyStatus() {
+    val status = backup.keys.status()
+    _backupEncryptionConfigured.value = status == com.exaclast.regimen.data.BackupKeyStore.KeyStatus.CONFIGURED
+    _backupKeyLost.value = status == com.exaclast.regimen.data.BackupKeyStore.KeyStatus.KEY_LOST
+  }
 
   fun suggestedBackupFileName(encrypted: Boolean): String = backup.suggestedFileName(encrypted)
 
@@ -452,7 +534,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
   private fun passphraseTask(block: () -> String?, onResult: (Result<String?>) -> Unit) {
     viewModelScope.launch {
       val result = withContext(Dispatchers.Default) { runCatching(block) }
-      _backupEncryptionConfigured.value = backup.isEncryptionConfigured
+      refreshBackupKeyStatus()
       onResult(result)
     }
   }
@@ -466,6 +548,9 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
   fun changeBackupPassphrase(current: String, new: String, onResult: (Result<String?>) -> Unit) =
     passphraseTask({ backup.changePassphrase(current.toCharArray(), new.toCharArray()); null }, onResult)
 
+  fun unlockDeviceBackupKey(passphrase: String, onResult: (Result<String?>) -> Unit) =
+    passphraseTask({ backup.unlockDeviceKey(passphrase.toCharArray()); null }, onResult)
+
   fun revealRecoveryCode(passphrase: String, onResult: (Result<String?>) -> Unit) =
     passphraseTask({ backup.recoveryCode(passphrase.toCharArray()) }, onResult)
 
@@ -474,6 +559,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
       val result = withContext(Dispatchers.IO) {
         runCatching { if (encrypted) backup.exportEncrypted(uri) else backup.exportPlainJson(uri) }
       }
+      refreshBackupKeyStatus()
       post(
         result.fold(
           onSuccess = { str(if (encrypted) R.string.vm_backup_saved_encrypted else R.string.vm_backup_saved_plain) },
@@ -487,6 +573,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     _restoreState.value = RestoreUiState.Opening
     viewModelScope.launch {
       val result = withContext(Dispatchers.IO) { runCatching { backup.open(uri) } }
+      refreshBackupKeyStatus()
       _restoreState.value = result.fold(
         onSuccess = {
           when (it) {
@@ -509,7 +596,6 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
       val result = withContext(Dispatchers.Default) {
         runCatching { backup.unlock(locked.locked, secret, isRecoveryCode) }
       }
-      _backupEncryptionConfigured.value = backup.isEncryptionConfigured
       _restoreState.value = result.fold(
         onSuccess = { RestoreUiState.Preview(it) },
         onFailure = { locked.copy(busy = false, error = errorText(it) ?: str(R.string.vm_backup_unlock_failed)) },
@@ -521,7 +607,10 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     val preview = _restoreState.value as? RestoreUiState.Preview ?: return
     _restoreState.value = preview.copy(busy = true)
     viewModelScope.launch {
-      val result = withContext(Dispatchers.IO) { runCatching { backup.restore(preview.ready.bundle, replace) } }
+      val result = withContext(Dispatchers.IO) {
+        runCatching { backup.restore(preview.ready.bundle, replace, preview.ready) }
+      }
+      refreshBackupKeyStatus()
       result.fold(
         onSuccess = { outcome ->
           val conflicts = outcome.conflicts.size
@@ -533,7 +622,11 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
             },
             UndoAction.RestoreBackup(outcome.previous),
           )
-          _restoreState.value = RestoreUiState.Finished
+          _restoreState.value = if (outcome.recoveryDataKeyForNewPassphrase != null) {
+            RestoreUiState.SetNewPassphrase(outcome.recoveryDataKeyForNewPassphrase)
+          } else {
+            RestoreUiState.Finished
+          }
         },
         onFailure = {
           post(str(R.string.vm_restore_failed, errorText(it).orEmpty()))
@@ -543,7 +636,38 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     }
   }
 
+  fun setPassphraseAfterRecovery(passphrase: String) {
+    val state = _restoreState.value as? RestoreUiState.SetNewPassphrase ?: return
+    _restoreState.value = state.copy(busy = true, error = null)
+    viewModelScope.launch {
+      val result = withContext(Dispatchers.Default) {
+        runCatching { backup.saveRecoveredKeyWithPassphrase(state.dataKey, passphrase.toCharArray()) }
+      }
+      refreshBackupKeyStatus()
+      result.fold(
+        onSuccess = {
+          post(str(R.string.backup_passphrase_changed))
+          _restoreState.value = RestoreUiState.Finished
+        },
+        onFailure = {
+          _restoreState.value = state.copy(busy = false, error = errorText(it) ?: str(R.string.error_generic))
+        },
+      )
+    }
+  }
+
+  fun skipPassphraseAfterRecovery() {
+    val state = _restoreState.value as? RestoreUiState.SetNewPassphrase
+    state?.dataKey?.fill(0)
+    _restoreState.value = RestoreUiState.Finished
+  }
+
   fun resetRestore() {
+    when (val state = _restoreState.value) {
+      is RestoreUiState.Preview -> state.ready.unlockedDataKey?.fill(0)
+      is RestoreUiState.SetNewPassphrase -> state.dataKey.fill(0)
+      else -> {}
+    }
     _restoreState.value = RestoreUiState.Idle
   }
 

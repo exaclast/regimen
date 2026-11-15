@@ -1,6 +1,7 @@
 package com.exaclast.regimen.data
 
 import android.content.Context
+import androidx.annotation.VisibleForTesting
 import com.exaclast.regimen.domain.Adjustments
 import com.exaclast.regimen.domain.IndicationTimeline
 import com.exaclast.regimen.domain.DoseEngine
@@ -15,20 +16,23 @@ import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.InjectableDetails
 import com.exaclast.regimen.model.InjectionRoute
 import com.exaclast.regimen.model.Medication
+import com.exaclast.regimen.model.MedicationAdjustment
 import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationSchedule
+import com.exaclast.regimen.model.PrimaryClaim
 import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.RegimenBackupBundle
-import com.exaclast.regimen.model.MedicationAdjustment
 import com.exaclast.regimen.model.ScheduleDose
 import com.exaclast.regimen.model.ScheduleFrequencyType
-import com.exaclast.regimen.model.SyringeType
 import com.exaclast.regimen.model.SiteMode
+import com.exaclast.regimen.model.SyncDevice
+import com.exaclast.regimen.model.SyringeType
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.notifications.DoseNotificationManager
 import com.exaclast.regimen.sync.BackupFiles
 import com.exaclast.regimen.sync.DeviceIdentity
 import java.time.LocalDate
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -92,7 +96,7 @@ class RegimenRepository private constructor(context: Context) {
 
   @Synchronized
   private fun ensureInitializedAndLoaded() {
-    val existingBuckets = db.getAllBuckets()
+    val existingBuckets = db.getAllBuckets(includeDeleted = true)
     if (existingBuckets.isEmpty()) {
       TimeOfDayBucket.defaultBuckets().forEach { db.upsertBucket(it) }
     }
@@ -110,6 +114,17 @@ class RegimenRepository private constructor(context: Context) {
     return runCatching { json.decodeFromString<AppSettings>(raw) }.getOrDefault(AppSettings())
   }
 
+  private fun loadPrimaryClaim(): PrimaryClaim? {
+    val raw = prefs.getString(KEY_PRIMARY_CLAIM, null) ?: return null
+    return runCatching { json.decodeFromString<PrimaryClaim>(raw) }.getOrNull()
+  }
+
+  private fun loadSyncDevices(): List<SyncDevice> {
+    val raw = prefs.getString(KEY_SYNC_DEVICES, null) ?: return emptyList()
+    return runCatching { json.decodeFromString<List<SyncDevice>>(raw) }.getOrDefault(emptyList())
+  }
+
+  @Synchronized
   fun saveSettings(settings: AppSettings) {
     // Shared settings sync across devices; stamp when their values change so merges can tell.
     val previous = loadSettings()
@@ -144,6 +159,7 @@ class RegimenRepository private constructor(context: Context) {
     DoseNotificationManager.refresh(appContext, nextSnapshot)
   }
 
+  @Synchronized
   fun saveMedication(medication: Medication, schedulesForMedication: List<MedicationSchedule>? = null) {
     val now = System.currentTimeMillis()
     val normalized = medication.copy(
@@ -169,6 +185,7 @@ class RegimenRepository private constructor(context: Context) {
     reloadSnapshot()
   }
 
+  @Synchronized
   fun deleteMedication(medicationId: String) {
     val now = System.currentTimeMillis()
     val med = _snapshot.value.medications.find { it.id == medicationId } ?: return
@@ -179,12 +196,26 @@ class RegimenRepository private constructor(context: Context) {
     reloadSnapshot()
   }
 
+  @Synchronized
   fun saveSchedule(schedule: MedicationSchedule) {
     val now = System.currentTimeMillis()
     db.upsertSchedule(schedule.copy(updatedAtEpochMillis = now))
     reloadSnapshot()
   }
 
+  /** Atomically saves a schedule edit (which may update medication adjustments and version schedules). */
+  @Synchronized
+  fun saveScheduleEdit(medication: Medication?, schedules: List<MedicationSchedule>) {
+    if (medication == null && schedules.isEmpty()) return
+    val now = System.currentTimeMillis()
+    db.inTransaction {
+      medication?.let { db.upsertMedication(it.copy(updatedAtEpochMillis = now)) }
+      schedules.forEach { db.upsertSchedule(it.copy(updatedAtEpochMillis = now)) }
+    }
+    reloadSnapshot()
+  }
+
+  @Synchronized
   fun deleteSchedule(scheduleId: String) {
     val now = System.currentTimeMillis()
     val sched = _snapshot.value.schedules.find { it.id == scheduleId } ?: return
@@ -192,12 +223,14 @@ class RegimenRepository private constructor(context: Context) {
     reloadSnapshot()
   }
 
+  @Synchronized
   fun saveProvider(provider: Provider) {
     val now = System.currentTimeMillis()
     db.upsertProvider(provider.copy(updatedAtEpochMillis = now))
     reloadSnapshot()
   }
 
+  @Synchronized
   fun deleteProvider(providerId: String) {
     val now = System.currentTimeMillis()
     val provider = _snapshot.value.providers.find { it.id == providerId } ?: return
@@ -213,6 +246,7 @@ class RegimenRepository private constructor(context: Context) {
   }
 
   /** Sets which indications [providerId] helps manage (edited from the provider's page). */
+  @Synchronized
   fun setProviderIndications(providerId: String, indicationIds: Set<String>) {
     val now = System.currentTimeMillis()
     _snapshot.value.indications.forEach { indication ->
@@ -226,6 +260,7 @@ class RegimenRepository private constructor(context: Context) {
     reloadSnapshot()
   }
 
+  @Synchronized
   fun saveIndication(indication: Indication) {
     val now = System.currentTimeMillis()
     // Resolving without an end date ends it today, so it files under past indications with a date.
@@ -238,6 +273,7 @@ class RegimenRepository private constructor(context: Context) {
     reloadSnapshot()
   }
 
+  @Synchronized
   fun deleteIndication(indicationId: String) {
     val now = System.currentTimeMillis()
     val indication = _snapshot.value.indications.find { it.id == indicationId } ?: return
@@ -250,6 +286,7 @@ class RegimenRepository private constructor(context: Context) {
   }
 
   /** Sets which providers help manage [indicationId] (edited from the indication's page). */
+  @Synchronized
   fun setIndicationProviders(indicationId: String, providerIds: Set<String>) {
     val indication = _snapshot.value.indications.find { it.id == indicationId } ?: return
     if (indication.providerIds.toSet() == providerIds) return
@@ -260,6 +297,7 @@ class RegimenRepository private constructor(context: Context) {
   }
 
   /** Sets which medications treat [indicationId] (edited from the indication's page). */
+  @Synchronized
   fun setIndicationMedications(indicationId: String, medicationIds: Set<String>) {
     val now = System.currentTimeMillis()
     _snapshot.value.medications.forEach { med ->
@@ -273,23 +311,26 @@ class RegimenRepository private constructor(context: Context) {
     reloadSnapshot()
   }
 
+  @Synchronized
   fun saveBucket(bucket: TimeOfDayBucket) {
     db.upsertBucket(bucket.copy(updatedAtEpochMillis = System.currentTimeMillis()))
     reloadSnapshot()
   }
 
   /** Deletes a window, moving its doses to [moveToBucketId] (or the nearest window if none is given). */
+  @Synchronized
   fun deleteBucket(bucketId: String, moveToBucketId: String? = null) {
+    val now = System.currentTimeMillis()
     val buckets = db.getAllBuckets()
     val window = buckets.find { it.id == bucketId } ?: return
     val targetId = moveToBucketId ?: WindowDeletion.nearestWindow(window, buckets - window)?.id
     val plan = targetId?.let {
-      WindowDeletion.plan(bucketId, it, db.getAllSchedules(), db.getAllDoseLogs(), System.currentTimeMillis())
+      WindowDeletion.plan(bucketId, it, db.getAllSchedules(), db.getAllDoseLogs(), now)
     }
     db.inTransaction {
       plan?.scheduleChanges?.forEach { db.upsertSchedule(it.after) }
       plan?.movedLogs?.forEach { db.upsertDoseLog(it) }
-      db.deleteBucket(bucketId)
+      db.upsertBucket(window.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now))
     }
     DoseNotificationManager.cancelBucketAlarms(appContext, bucketId)
     // A moved snooze has a new alarm identity: the refresh arms it, so drop the old one here.
@@ -301,20 +342,49 @@ class RegimenRepository private constructor(context: Context) {
     reloadSnapshot()
   }
 
+  @Synchronized
   fun resetBucketsToDefault() {
-    val current = db.getAllBuckets()
+    val now = System.currentTimeMillis()
+    val allExisting = db.getAllBuckets(includeDeleted = true).associateBy { it.id }
+    val current = allExisting.values.filter { it.deletedAtEpochMillis == null }
     val usedWindowIds = db.getAllSchedules().flatMapTo(HashSet()) { it.bucketIds }
     val restored = TimeOfDayBucket.windowsAfterRestoringDefaults(current, usedWindowIds)
     val keepIds = restored.mapTo(HashSet()) { it.id }
     val removed = current.filter { it.id !in keepIds }
     db.inTransaction {
-      removed.forEach { db.deleteBucket(it.id) }
-      restored.forEach { db.upsertBucket(it) }
+      removed.forEach { db.upsertBucket(it.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now)) }
+      restored.forEach { bucket ->
+        val previous = allExisting[bucket.id]
+        val stamped = if (previous?.deletedAtEpochMillis != null) {
+          // Re-creating a previously deleted default must beat its tombstone on sync.
+          bucket.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = null)
+        } else {
+          bucket
+        }
+        db.upsertBucket(stamped)
+      }
     }
     removed.forEach { DoseNotificationManager.cancelBucketAlarms(appContext, it.id) }
     reloadSnapshot()
   }
 
+  data class DoseLogRequest(
+    val medicationId: String,
+    val scheduleId: String? = null,
+    val bucketId: String? = null,
+    val scheduledDateIso: String = LocalDate.now().toString(),
+    val status: DoseStatus = DoseStatus.TAKEN,
+    val amountTaken: Double? = null,
+    val amountUnit: DoseUnit? = null,
+    val siteUsed: String? = null,
+    val notes: String? = null,
+    val snoozedUntilMillis: Long? = null,
+    val existingLogId: String? = null,
+    /** When the dose was actually taken; defaults to now (e.g. "taken on time" back-dates it). */
+    val actionTimestampMillis: Long? = null,
+  )
+
+  @Synchronized
   fun logDose(
     medicationId: String,
     scheduleId: String? = null,
@@ -329,51 +399,89 @@ class RegimenRepository private constructor(context: Context) {
     existingLogId: String? = null,
     /** When the dose was actually taken; defaults to now (e.g. "taken on time" back-dates it). */
     actionTimestampMillis: Long? = null,
-  ): DoseLog? {
-    val state = _snapshot.value
-    val stored = state.medications.find { it.id == medicationId } ?: return null
-    // Without an explicit amount, use what applied on the dose's own day (titration steps).
-    val day = runCatching { LocalDate.parse(scheduledDateIso) }.getOrDefault(LocalDate.now())
-    val med = Adjustments.asOf(stored, day)
-    val schedule = scheduleId?.let { id -> state.schedules.find { it.id == id } }?.let { Adjustments.scheduleOn(stored, it, day) }
-    val resolvedAmount = amountTaken ?: schedule?.doseAmount ?: med.defaultDoseAmount
-    val resolvedUnit = amountUnit ?: schedule?.doseUnit ?: med.defaultDoseUnit
-    val resolvedSite = if (status == DoseStatus.TAKEN) {
-      siteUsed ?: DoseEngine.suggestSite(med, state.doseLogs)
-    } else {
-      siteUsed
-    }
+  ): DoseLog? = logDoses(
+    listOf(
+      DoseLogRequest(
+        medicationId = medicationId,
+        scheduleId = scheduleId,
+        bucketId = bucketId,
+        scheduledDateIso = scheduledDateIso,
+        status = status,
+        amountTaken = amountTaken,
+        amountUnit = amountUnit,
+        siteUsed = siteUsed,
+        notes = notes,
+        snoozedUntilMillis = snoozedUntilMillis,
+        existingLogId = existingLogId,
+        actionTimestampMillis = actionTimestampMillis,
+      ),
+    ),
+  ).firstOrNull()
 
+  /** Writes a batch of dose logs in one database transaction and one snapshot/alarm refresh. */
+  @Synchronized
+  fun logDoses(requests: List<DoseLogRequest>): List<DoseLog> {
+    if (requests.isEmpty()) return emptyList()
+    val state = _snapshot.value
+    val medMap = state.medications.associateBy { it.id }
+    val scheduleMap = state.schedules.associateBy { it.id }
+    val workingLogs = state.doseLogs.toMutableList()
     val now = System.currentTimeMillis()
-    val log = DoseLog(
-      id = existingLogId ?: java.util.UUID.randomUUID().toString(),
-      medicationId = medicationId,
-      scheduleId = scheduleId,
-      bucketId = bucketId,
-      scheduledDateIso = scheduledDateIso,
-      actionTimestampMillis = actionTimestampMillis ?: now,
-      status = status,
-      snoozedUntilMillis = snoozedUntilMillis,
-      amountTaken = resolvedAmount,
-      amountUnit = resolvedUnit,
-      siteUsed = resolvedSite,
-      notes = notes,
-      createdAtEpochMillis = now,
-      updatedAtEpochMillis = now,
-    )
-    db.upsertDoseLog(log)
-    if (scheduleId != null && bucketId != null) {
-      val itemKey = "${scheduleId}_${bucketId}_$scheduledDateIso"
-      DoseNotificationManager.cancelNotificationForItem(appContext, itemKey)
-      // A new snooze is armed by the refresh in reloadSnapshot.
-      if (status != DoseStatus.SNOOZED) {
-        DoseNotificationManager.cancelSnoozeAlarm(appContext, itemKey, bucketId)
+
+    val created = requests.mapNotNull { req ->
+      val stored = medMap[req.medicationId] ?: return@mapNotNull null
+      // Without an explicit amount, use what applied on the dose's own day (titration steps).
+      val day = runCatching { LocalDate.parse(req.scheduledDateIso) }.getOrDefault(LocalDate.now())
+      val med = Adjustments.asOf(stored, day)
+      val schedule = req.scheduleId?.let { scheduleMap[it] }?.let { Adjustments.scheduleOn(stored, it, day) }
+      val resolvedAmount = req.amountTaken ?: schedule?.doseAmount ?: med.defaultDoseAmount
+      val resolvedUnit = req.amountUnit ?: schedule?.doseUnit ?: med.defaultDoseUnit
+      val resolvedSite = if (req.status == DoseStatus.TAKEN) {
+        req.siteUsed ?: DoseEngine.suggestSite(med, workingLogs)
+      } else {
+        req.siteUsed
+      }
+
+      val log = DoseLog(
+        id = req.existingLogId ?: UUID.randomUUID().toString(),
+        medicationId = req.medicationId,
+        scheduleId = req.scheduleId,
+        bucketId = req.bucketId,
+        scheduledDateIso = req.scheduledDateIso,
+        actionTimestampMillis = req.actionTimestampMillis ?: now,
+        status = req.status,
+        snoozedUntilMillis = req.snoozedUntilMillis,
+        amountTaken = resolvedAmount,
+        amountUnit = resolvedUnit,
+        siteUsed = resolvedSite,
+        notes = req.notes,
+        createdAtEpochMillis = now,
+        updatedAtEpochMillis = now,
+      )
+      workingLogs.removeAll { it.id == log.id }
+      workingLogs.add(log)
+      log
+    }
+    if (created.isEmpty()) return emptyList()
+
+    db.inTransaction {
+      created.forEach { db.upsertDoseLog(it) }
+    }
+    created.forEach { log ->
+      if (log.scheduleId != null && log.bucketId != null) {
+        val itemKey = "${log.scheduleId}_${log.bucketId}_${log.scheduledDateIso}"
+        DoseNotificationManager.cancelNotificationForItem(appContext, itemKey)
+        // A new snooze is armed by the refresh in reloadSnapshot.
+        if (log.status != DoseStatus.SNOOZED) {
+          DoseNotificationManager.cancelSnoozeAlarm(appContext, itemKey, log.bucketId)
+        }
       }
     }
     reloadSnapshot()
-    return log
+    return created
   }
 
+  @Synchronized
   fun deleteDoseLog(logId: String) {
     val now = System.currentTimeMillis()
     val log = _snapshot.value.doseLogs.find { it.id == logId } ?: return
@@ -383,6 +491,7 @@ class RegimenRepository private constructor(context: Context) {
   }
 
   /** Saves an edited dose log (time, amount, site, notes), stamping it so the change syncs. */
+  @Synchronized
   fun updateDoseLog(log: DoseLog) {
     db.upsertDoseLog(log.copy(updatedAtEpochMillis = System.currentTimeMillis()))
     reloadSnapshot()
@@ -392,18 +501,40 @@ class RegimenRepository private constructor(context: Context) {
    * Restores [log] exactly as it was (used by Undo): un-deletes it, or puts back the state a newer action
    * overwrote. A restored future snooze is re-armed by the refresh in reloadSnapshot.
    */
+  @Synchronized
   fun restoreDoseLog(log: DoseLog) {
+    restoreAndDeleteDoseLogs(toRestore = listOf(log), toDeleteIds = emptyList())
+  }
+
+  /** Batches restoring prior logs and soft-deleting newly written ones (used by Undo). */
+  @Synchronized
+  fun restoreAndDeleteDoseLogs(toRestore: List<DoseLog>, toDeleteIds: List<String>) {
+    if (toRestore.isEmpty() && toDeleteIds.isEmpty()) return
     val now = System.currentTimeMillis()
-    val restored = log.copy(deletedAtEpochMillis = null, updatedAtEpochMillis = now)
-    db.upsertDoseLog(restored)
-    val stillSnoozed = restored.status == DoseStatus.SNOOZED && (restored.snoozedUntilMillis ?: 0L) > now
-    if (!stillSnoozed) {
-      itemKeyFor(restored)?.let { key -> DoseNotificationManager.cancelSnoozeAlarm(appContext, key, restored.bucketId) }
+    val currentLogs = _snapshot.value.doseLogs.associateBy { it.id }
+    val toDelete = toDeleteIds.mapNotNull { currentLogs[it] }
+    db.inTransaction {
+      toRestore.forEach { log ->
+        db.upsertDoseLog(log.copy(deletedAtEpochMillis = null, updatedAtEpochMillis = now))
+      }
+      toDelete.forEach { log ->
+        db.upsertDoseLog(log.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now))
+      }
+    }
+    toRestore.forEach { restored ->
+      val stillSnoozed = restored.status == DoseStatus.SNOOZED && (restored.snoozedUntilMillis ?: 0L) > now
+      if (!stillSnoozed) {
+        itemKeyFor(restored)?.let { key -> DoseNotificationManager.cancelSnoozeAlarm(appContext, key, restored.bucketId) }
+      }
+    }
+    toDelete.forEach { log ->
+      itemKeyFor(log)?.let { key -> DoseNotificationManager.cancelSnoozeAlarm(appContext, key, log.bucketId) }
     }
     reloadSnapshot()
   }
 
   /** Un-deletes a schedule (used by Undo). */
+  @Synchronized
   fun restoreSchedule(schedule: MedicationSchedule) {
     db.upsertSchedule(schedule.copy(deletedAtEpochMillis = null, updatedAtEpochMillis = System.currentTimeMillis()))
     reloadSnapshot()
@@ -425,16 +556,28 @@ class RegimenRepository private constructor(context: Context) {
   @Synchronized
   fun currentBundle(): RegimenBackupBundle {
     val settings = loadSettings()
+    val storedDevices = loadSyncDevices()
+    val selfExisting = storedDevices.firstOrNull { it.id == deviceIdentity.deviceId }
+    val selfDevice = deviceIdentity.asSyncDevice(lastSyncedEpochMillis = selfExisting?.lastSyncedEpochMillis ?: 0L).let {
+      if (selfExisting != null && selfExisting.firstSeenEpochMillis > 0L) {
+        it.copy(firstSeenEpochMillis = minOf(selfExisting.firstSeenEpochMillis, it.firstSeenEpochMillis))
+      } else {
+        it
+      }
+    }
+    val devices = (storedDevices.filterNot { it.id == selfDevice.id } + selfDevice)
+      .sortedWith(compareBy({ it.firstSeenEpochMillis }, { it.id }))
     return RegimenBackupBundle(
       exportedAtEpochMillis = System.currentTimeMillis(),
       sourceDeviceId = deviceIdentity.deviceId,
       settings = settings,
       sharedSettings = settings.shared(),
-      devices = listOf(deviceIdentity.asSyncDevice()),
+      devices = devices,
+      primary = loadPrimaryClaim(),
       medications = db.getAllMedications(includeDeleted = true),
       providers = db.getAllProviders(includeDeleted = true),
       indications = db.getAllIndications(includeDeleted = true),
-      buckets = db.getAllBuckets().ifEmpty { TimeOfDayBucket.defaultBuckets() },
+      buckets = db.getAllBuckets(includeDeleted = true).ifEmpty { TimeOfDayBucket.defaultBuckets() },
       schedules = db.getAllSchedules(includeDeleted = true),
       doseLogs = db.getAllDoseLogs(includeDeleted = true),
     )
@@ -463,15 +606,16 @@ class RegimenRepository private constructor(context: Context) {
     } else {
       current.withShared(shared)
     }
-    prefs.edit().putString(KEY_APP_SETTINGS, json.encodeToString(settings)).apply()
 
-    db.inTransaction {
-      if (replace) db.clearUserRecords()
+    val previousLiveBucketIds = db.getAllBuckets().mapTo(HashSet()) { it.id }
+    val removedBucketIds = db.inTransaction {
+      if (replace) db.clearUserRecords(includeBuckets = true)
       val buckets = bundle.buckets.ifEmpty { TimeOfDayBucket.defaultBuckets() }
       val keepBucketIds = buckets.mapTo(HashSet()) { it.id }
-      db.getAllBuckets().filter { it.id !in keepBucketIds }.forEach {
-        db.deleteBucket(it.id)
-        DoseNotificationManager.cancelBucketAlarms(appContext, it.id)
+      if (!replace) {
+        db.getAllBuckets(includeDeleted = true)
+          .filter { it.id !in keepBucketIds }
+          .forEach { db.deleteBucket(it.id) }
       }
       buckets.forEach { db.upsertBucket(it) }
       bundle.providers.forEach { db.upsertProvider(it) }
@@ -479,22 +623,47 @@ class RegimenRepository private constructor(context: Context) {
       bundle.medications.forEach { db.upsertMedication(it) }
       bundle.schedules.forEach { db.upsertSchedule(it) }
       bundle.doseLogs.forEach { db.upsertDoseLog(it) }
+      val liveAfterIds = buckets.filter { it.deletedAtEpochMillis == null }.mapTo(HashSet()) { it.id }
+      previousLiveBucketIds.filter { it !in liveAfterIds }
     }
+    // Commit settings and sync metadata only after the database transaction succeeds so a failed restore never leaves them out of step.
+    prefs.edit().apply {
+      putString(KEY_APP_SETTINGS, json.encodeToString(settings))
+      if (bundle.primary != null) {
+        putString(KEY_PRIMARY_CLAIM, json.encodeToString(bundle.primary))
+      } else {
+        remove(KEY_PRIMARY_CLAIM)
+      }
+      putString(KEY_SYNC_DEVICES, json.encodeToString(bundle.devices))
+    }.commit()
+    removedBucketIds.forEach { DoseNotificationManager.cancelBucketAlarms(appContext, it) }
     reloadSnapshot()
+  }
+
+  /** Soft-deletes every live user record so existing tombstones stay intact for sync. */
+  private fun softDeleteAllUserRecords(now: Long) {
+    db.inTransaction {
+      db.getAllDoseLogs().forEach { db.upsertDoseLog(it.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now)) }
+      db.getAllSchedules().forEach { db.upsertSchedule(it.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now)) }
+      db.getAllMedications().forEach { db.upsertMedication(it.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now)) }
+      db.getAllProviders().forEach { db.upsertProvider(it.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now)) }
+      db.getAllIndications().forEach { db.upsertIndication(it.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now)) }
+    }
   }
 
   @Synchronized
   fun clearAllUserData() {
     DoseNotificationManager.cancelAllNotifications(appContext)
-    db.clearUserRecords()
+    softDeleteAllUserRecords(System.currentTimeMillis())
     reloadSnapshot()
   }
 
   @Synchronized
   fun resetToSampleData() {
     DoseNotificationManager.cancelAllNotifications(appContext)
-    db.clearUserRecords()
-    seedInitialSampleData()
+    val now = System.currentTimeMillis()
+    softDeleteAllUserRecords(now)
+    seedInitialSampleData(now)
     // Suppress reminders and alarms while demo data is loaded to prevent ringing real alarms for fictional meds.
     val current = loadSettings()
     val suppressed = current.copy(notificationsEnabled = false, alarmsEnabled = false)
@@ -502,15 +671,24 @@ class RegimenRepository private constructor(context: Context) {
     reloadSnapshot()
   }
 
-  private fun seedInitialSampleData() {
+  private fun seedInitialSampleData(now: Long = System.currentTimeMillis()) {
     val today = LocalDate.now()
-    val todayIso = today.toString()
     val yesterdayIso = today.minusDays(1).toString()
-    val now = System.currentTimeMillis()
+
+    // Ensure the windows referenced by demo schedules exist and are live.
+    val liveBucketIds = db.getAllBuckets().mapTo(HashSet()) { it.id }
+    val requiredDefaultIds = setOf(
+      TimeOfDayBucket.BUCKET_MORNING,
+      TimeOfDayBucket.BUCKET_EVENING,
+      TimeOfDayBucket.BUCKET_BEDTIME,
+    )
+    TimeOfDayBucket.defaultBuckets()
+      .filter { it.id in requiredDefaultIds && it.id !in liveBucketIds }
+      .forEach { db.upsertBucket(it.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = null)) }
 
     // 1. Sample Providers
     val pcp = Provider(
-      id = "provider_pcp_1",
+      id = UUID.randomUUID().toString(),
       name = "Dr. Elena Rostova, MD",
       specialty = "Family Medicine & Primary Care",
       practice = "Metro Health Family Practice",
@@ -519,9 +697,11 @@ class RegimenRepository private constructor(context: Context) {
       isPcp = true,
       careStartDateIso = today.minusYears(1).toString(),
       notes = "Annual wellness and primary care",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
     )
     val endocrinologist = Provider(
-      id = "provider_endo_1",
+      id = UUID.randomUUID().toString(),
       name = "Dr. Marcus Vance, MD",
       specialty = "Endocrinology & Diabetes Care",
       practice = "Valley Endocrine Specialists",
@@ -530,48 +710,58 @@ class RegimenRepository private constructor(context: Context) {
       isPcp = false,
       careStartDateIso = today.minusMonths(6).toString(),
       notes = "Quarterly diabetic management review",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
     )
     db.upsertProvider(pcp)
     db.upsertProvider(endocrinologist)
 
     // 2. Sample Indications
     val condDiabetes = Indication(
-      id = "cond_diabetes",
+      id = UUID.randomUUID().toString(),
       name = "Type 2 Diabetes Mellitus",
       details = "Glycemic control, fasting blood glucose monitoring, and basal insulin regimen.",
       kind = IndicationKind.CHRONIC,
       status = IndicationStatus.MANAGED,
       diagnosedDateIso = today.minusMonths(6).toString(),
-      providerIds = listOf("provider_endo_1", "provider_pcp_1"),
+      providerIds = listOf(endocrinologist.id, pcp.id),
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
     )
     val condSinusitis = Indication(
-      id = "cond_sinusitis",
+      id = UUID.randomUUID().toString(),
       name = "Acute Bacterial Sinusitis",
       details = "10-day oral antibiotic course for acute bacterial sinus infection.",
       kind = IndicationKind.ACUTE,
       status = IndicationStatus.ACTIVE,
       diagnosedDateIso = today.minusDays(2).toString(),
-      providerIds = listOf("provider_pcp_1"),
+      providerIds = listOf(pcp.id),
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
     )
     // A past episode, to show archived indications.
     val condStrep = Indication(
-      id = "cond_strep_past",
+      id = UUID.randomUUID().toString(),
       name = "Strep Throat",
       details = "Treated with a 10-day amoxicillin course.",
       kind = IndicationKind.ACUTE,
       status = IndicationStatus.RESOLVED,
       diagnosedDateIso = today.minusMonths(5).toString(),
       endDateIso = today.minusMonths(5).plusDays(10).toString(),
-      providerIds = listOf("provider_pcp_1"),
+      providerIds = listOf(pcp.id),
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
     )
     val condHeadache = Indication(
-      id = "cond_headache",
+      id = UUID.randomUUID().toString(),
       name = "Tension Headache",
       details = "Occasional episodic tension headaches and mild musculoskeletal pain.",
       kind = IndicationKind.CHRONIC,
       status = IndicationStatus.MANAGED,
       diagnosedDateIso = today.minusYears(1).toString(),
-      providerIds = listOf("provider_pcp_1"),
+      providerIds = listOf(pcp.id),
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
     )
     db.upsertIndication(condDiabetes)
     db.upsertIndication(condSinusitis)
@@ -581,7 +771,7 @@ class RegimenRepository private constructor(context: Context) {
     // 3. Sample Medications
     // 3a. Generic Amox-Clav (Oral tablet antibiotic, twice daily)
     val medAmoxClav = Medication(
-      id = "med_amox_clav",
+      id = UUID.randomUUID().toString(),
       formulaName = "Amoxicillin / Clavulanate Potassium",
       brandName = "Augmentin",
       manufacturer = "Sandoz / Teva",
@@ -598,11 +788,13 @@ class RegimenRepository private constructor(context: Context) {
       prescriberId = pcp.id,
       prescribedDateIso = today.minusDays(2).toString(),
       notes = "Take with food or a meal to minimize gastrointestinal discomfort.",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
     )
 
     // 3b. Tylenol / Acetaminophen (Oral OTC tablet, PRN)
     val medTylenol = Medication(
-      id = "med_tylenol",
+      id = UUID.randomUUID().toString(),
       formulaName = "Acetaminophen",
       brandName = "Tylenol Extra Strength",
       manufacturer = "McNeil Consumer Healthcare",
@@ -619,11 +811,13 @@ class RegimenRepository private constructor(context: Context) {
       prescriberId = pcp.id,
       prescribedDateIso = today.minusMonths(2).toString(),
       notes = "Do not exceed 3,000 mg (6 tablets) in 24 hours. Avoid alcohol.",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
     )
 
     // 3c. Insulin Glargine (Injectable vial with syringe & site rotation, bedtime basal)
     val medInsulin = Medication(
-      id = "med_insulin_glargine",
+      id = UUID.randomUUID().toString(),
       formulaName = "Insulin Glargine (rDNA origin)",
       brandName = "Lantus",
       manufacturer = "Sanofi-Aventis",
@@ -651,12 +845,14 @@ class RegimenRepository private constructor(context: Context) {
       prescriberId = endocrinologist.id,
       prescribedDateIso = today.minusMonths(6).toString(),
       notes = "Inject subcutaneously once daily at bedtime. Rotate injection sites across abdomen and thighs. Store unopened vials in refrigerator.",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
     )
 
     // 3d. Isotretinoin: a titration. One capsule to start, two from a check-up, three planned.
-    val schedIsotretinoinId = "sched_isotretinoin_evening"
+    val schedIsotretinoinId = UUID.randomUUID().toString()
     val medIsotretinoin = Medication(
-      id = "med_isotretinoin",
+      id = UUID.randomUUID().toString(),
       formulaName = "Isotretinoin",
       strength = "20 mg",
       form = MedicationForm.CAPSULE,
@@ -667,18 +863,20 @@ class RegimenRepository private constructor(context: Context) {
       notes = "Take with a meal that contains fat.",
       adjustments = listOf(
         MedicationAdjustment(
-          id = "adj_isotretinoin_increase",
+          id = UUID.randomUUID().toString(),
           effectiveDateIso = today.minusDays(6).toString(),
           note = "Increased at 2-week check",
           scheduleDoses = listOf(ScheduleDose(schedIsotretinoinId, 2.0, DoseUnit.CAPSULE)),
         ),
         MedicationAdjustment(
-          id = "adj_isotretinoin_planned",
+          id = UUID.randomUUID().toString(),
           effectiveDateIso = today.plusDays(10).toString(),
           note = "Planned increase if tolerated",
           scheduleDoses = listOf(ScheduleDose(schedIsotretinoinId, 3.0, DoseUnit.CAPSULE)),
         ),
       ),
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
     )
 
     db.upsertMedication(medAmoxClav)
@@ -688,7 +886,7 @@ class RegimenRepository private constructor(context: Context) {
 
     // 4. Sample Schedules
     val schedAmoxClavDaily = MedicationSchedule(
-      id = "sched_amox_clav",
+      id = UUID.randomUUID().toString(),
       startDateIso = today.minusDays(2).toString(),
       endDateIso = today.plusDays(7).toString(), // 10-day antibiotic course
       startBucketId = TimeOfDayBucket.BUCKET_EVENING, // picked up and started in the evening
@@ -699,20 +897,24 @@ class RegimenRepository private constructor(context: Context) {
       doseAmount = 1.0,
       doseUnit = DoseUnit.TABLET,
       enabled = true,
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
     )
 
     val schedTylenolPrn = MedicationSchedule(
-      id = "sched_tylenol_prn",
+      id = UUID.randomUUID().toString(),
       medicationId = medTylenol.id,
       frequencyType = ScheduleFrequencyType.AS_NEEDED,
       bucketIds = emptyList(),
       doseAmount = 1.0,
       doseUnit = DoseUnit.TABLET,
       enabled = true,
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
     )
 
     val schedInsulinDaily = MedicationSchedule(
-      id = "sched_insulin_bedtime",
+      id = UUID.randomUUID().toString(),
       startDateIso = today.minusDays(2).toString(),
       medicationId = medInsulin.id,
       frequencyType = ScheduleFrequencyType.DAILY,
@@ -720,6 +922,8 @@ class RegimenRepository private constructor(context: Context) {
       doseAmount = 20.0,
       doseUnit = DoseUnit.UNITS,
       enabled = true,
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
     )
 
     val schedIsotretinoin = MedicationSchedule(
@@ -731,6 +935,8 @@ class RegimenRepository private constructor(context: Context) {
       doseAmount = 1.0,
       doseUnit = DoseUnit.CAPSULE,
       enabled = true,
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
     )
 
     db.upsertSchedule(schedAmoxClavDaily)
@@ -740,7 +946,7 @@ class RegimenRepository private constructor(context: Context) {
 
     // 5. Prior Dose Log: Yesterday evening's insulin dose logged on "Abdomen - Left" so today suggests "Abdomen - Right"!
     val yesterdayLog = DoseLog(
-      id = "log_insulin_yesterday",
+      id = UUID.randomUUID().toString(),
       medicationId = medInsulin.id,
       scheduleId = schedInsulinDaily.id,
       bucketId = TimeOfDayBucket.BUCKET_BEDTIME,
@@ -751,6 +957,8 @@ class RegimenRepository private constructor(context: Context) {
       amountUnit = DoseUnit.UNITS,
       siteUsed = "Abdomen - Left",
       notes = "Taken at bedtime. No bruising.",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
     )
     db.upsertDoseLog(yesterdayLog)
   }
@@ -758,6 +966,8 @@ class RegimenRepository private constructor(context: Context) {
   companion object {
     private const val KEY_SEEDED_INITIAL = "seeded_initial_v1"
     private const val KEY_APP_SETTINGS = "app_settings_v1"
+    private const val KEY_PRIMARY_CLAIM = "primary_claim_v1"
+    private const val KEY_SYNC_DEVICES = "sync_devices_v1"
 
     @Volatile
     private var INSTANCE: RegimenRepository? = null
@@ -765,6 +975,14 @@ class RegimenRepository private constructor(context: Context) {
     fun getInstance(context: Context): RegimenRepository {
       return INSTANCE ?: synchronized(this) {
         INSTANCE ?: RegimenRepository(context.applicationContext).also { INSTANCE = it }
+      }
+    }
+
+    @VisibleForTesting
+    internal fun resetForTests() {
+      synchronized(this) {
+        INSTANCE?.db?.close()
+        INSTANCE = null
       }
     }
   }

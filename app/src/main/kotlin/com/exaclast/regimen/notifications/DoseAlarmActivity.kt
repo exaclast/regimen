@@ -80,7 +80,11 @@ import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.theme.RegimenTheme
 import java.time.LocalDate
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Full-screen end-of-window alarm. Launched by the alarm notification's full-screen intent
@@ -207,8 +211,8 @@ class DoseAlarmActivity : ComponentActivity() {
   private fun logAll(items: List<ScheduledDoseItem>, status: DoseStatus, snoozeUntil: Long? = null) {
     silence()
     val repo = RegimenRepository.getInstance(applicationContext)
-    items.forEach { item ->
-      repo.logDose(
+    val requests = items.map { item ->
+      RegimenRepository.DoseLogRequest(
         medicationId = item.medication.id,
         scheduleId = item.schedule.id,
         bucketId = item.bucket.id,
@@ -220,6 +224,9 @@ class DoseAlarmActivity : ComponentActivity() {
         snoozedUntilMillis = snoozeUntil,
         existingLogId = item.existingLog?.id,
       )
+    }
+    CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+      repo.logDoses(requests)
     }
   }
 

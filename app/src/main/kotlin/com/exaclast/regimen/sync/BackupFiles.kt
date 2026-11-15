@@ -174,7 +174,7 @@ object BackupFiles {
       if (!sched.doseAmount.isFinite() || sched.doseAmount <= 0.0) {
         throw InvalidBackupException("Schedule ${sched.id} has invalid dose amount: ${sched.doseAmount}")
       }
-      if (sched.bucketIds.isEmpty()) {
+      if (sched.frequencyType != com.exaclast.regimen.model.ScheduleFrequencyType.AS_NEEDED && sched.bucketIds.isEmpty()) {
         throw InvalidBackupException("Schedule ${sched.id} has no dose windows")
       }
       for (bId in sched.bucketIds) {
@@ -297,7 +297,7 @@ object BackupFiles {
         diff(R.string.backup_kind_medications, current.medications, imported.medications, { it.id }, { it.deletedAtEpochMillis == null }),
         diff(R.string.backup_kind_schedules, current.schedules, imported.schedules, { it.id }, { it.deletedAtEpochMillis == null }),
         diff(R.string.backup_kind_dose_history, current.doseLogs, imported.doseLogs, { it.id }, { it.deletedAtEpochMillis == null }),
-        diff(R.string.backup_kind_dose_windows, current.buckets, imported.buckets, { it.id }, { true }),
+        diff(R.string.backup_kind_dose_windows, current.buckets, imported.buckets, { it.id }, { it.deletedAtEpochMillis == null }),
         diff(R.string.backup_kind_providers, current.providers, imported.providers, { it.id }, { it.deletedAtEpochMillis == null }),
         diff(R.string.backup_kind_indications, current.indications, imported.indications, { it.id }, { it.deletedAtEpochMillis == null }),
       ),

@@ -9,6 +9,7 @@ import android.content.ContextWrapper
 import android.content.res.Resources
 import android.os.PersistableBundle
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -96,6 +97,7 @@ fun BackupEncryptionScreen(
   onSetUp: (passphrase: String, reset: Boolean, onResult: (Result<String?>) -> Unit) -> Unit,
   onChange: (current: String, new: String, onResult: (Result<String?>) -> Unit) -> Unit,
   onReveal: (passphrase: String, onResult: (Result<String?>) -> Unit) -> Unit,
+  onUnlockDevice: (passphrase: String, onResult: (Result<String?>) -> Unit) -> Unit,
   onReset: () -> Unit,
   onDone: (changed: Boolean) -> Unit,
   onClose: () -> Unit,
@@ -108,9 +110,12 @@ fun BackupEncryptionScreen(
   var error by remember { mutableStateOf<String?>(null) }
   var recoveryCode by remember { mutableStateOf<String?>(null) }
   var savedConfirmed by rememberSaveable { mutableStateOf(false) }
+  var confirmUnsavedClose by remember { mutableStateOf(false) }
 
-  val needsCurrent = mode == BackupEncryptionMode.CHANGE || mode == BackupEncryptionMode.SHOW_CODE
-  val needsNew = mode != BackupEncryptionMode.SHOW_CODE
+  val needsCurrent = mode == BackupEncryptionMode.CHANGE ||
+    mode == BackupEncryptionMode.SHOW_CODE ||
+    mode == BackupEncryptionMode.UNLOCK_DEVICE
+  val needsNew = mode != BackupEncryptionMode.SHOW_CODE && mode != BackupEncryptionMode.UNLOCK_DEVICE
   val newTooShort = newPass.isNotEmpty() && newPass.length < MIN_PASSPHRASE_LENGTH
   val mismatch = confirm.isNotEmpty() && confirm != newPass
   val inputValid = (!needsCurrent || current.isNotEmpty()) &&
@@ -121,6 +126,7 @@ fun BackupEncryptionScreen(
     BackupEncryptionMode.CHANGE -> stringResource(R.string.backup_change_passphrase_title)
     BackupEncryptionMode.SHOW_CODE -> stringResource(R.string.backup_recovery_code)
     BackupEncryptionMode.RESET -> stringResource(R.string.backup_reset_passphrase_title)
+    BackupEncryptionMode.UNLOCK_DEVICE -> stringResource(R.string.backup_unlock_device_title)
   }
   val genericError = stringResource(R.string.error_generic)
   val errorTexts = LocalResources.current.texts()
@@ -141,6 +147,7 @@ fun BackupEncryptionScreen(
       BackupEncryptionMode.RESET -> onSetUp(newPass, true, handle)
       BackupEncryptionMode.CHANGE -> onChange(current, newPass, handle)
       BackupEncryptionMode.SHOW_CODE -> onReveal(current, handle)
+      BackupEncryptionMode.UNLOCK_DEVICE -> onUnlockDevice(current, handle)
     }
   }
 
@@ -148,9 +155,19 @@ fun BackupEncryptionScreen(
   if (code != null) {
     SecureScreenEffect()
     val mustConfirm = mode != BackupEncryptionMode.SHOW_CODE
+    val requestClose = {
+      if (mustConfirm && !savedConfirmed) {
+        confirmUnsavedClose = true
+      } else {
+        onDone(mustConfirm)
+      }
+    }
+    BackHandler(enabled = mustConfirm && !savedConfirmed) {
+      confirmUnsavedClose = true
+    }
     EditorScaffold(
       title = title,
-      onClose = { onDone(mustConfirm) },
+      onClose = requestClose,
       onSave = { onDone(mustConfirm) },
       saveEnabled = !mustConfirm || savedConfirmed,
       saveLabel = stringResource(R.string.action_done),
@@ -167,6 +184,26 @@ fun BackupEncryptionScreen(
         }
       }
     }
+    if (confirmUnsavedClose) {
+      AlertDialog(
+        onDismissRequest = { confirmUnsavedClose = false },
+        title = { Text(stringResource(R.string.backup_code_unsaved_title)) },
+        text = { Text(stringResource(R.string.backup_code_unsaved_text)) },
+        confirmButton = {
+          TextButton(onClick = {
+            confirmUnsavedClose = false
+            onDone(mustConfirm)
+          }) {
+            Text(stringResource(R.string.backup_code_leave), color = MaterialTheme.colorScheme.error)
+          }
+        },
+        dismissButton = {
+          TextButton(onClick = { confirmUnsavedClose = false }) {
+            Text(stringResource(R.string.backup_code_go_back))
+          }
+        },
+      )
+    }
     return
   }
 
@@ -178,6 +215,7 @@ fun BackupEncryptionScreen(
     saveLabel = when (mode) {
       BackupEncryptionMode.SHOW_CODE -> stringResource(R.string.action_show)
       BackupEncryptionMode.CHANGE -> stringResource(R.string.action_change)
+      BackupEncryptionMode.UNLOCK_DEVICE -> stringResource(R.string.backup_unlock)
       else -> stringResource(R.string.action_continue)
     },
   ) {
@@ -188,6 +226,7 @@ fun BackupEncryptionScreen(
         BackupEncryptionMode.CHANGE -> stringResource(R.string.backup_change_help)
         BackupEncryptionMode.SHOW_CODE -> stringResource(R.string.backup_show_code_help)
         BackupEncryptionMode.RESET -> stringResource(R.string.backup_reset_help)
+        BackupEncryptionMode.UNLOCK_DEVICE -> stringResource(R.string.backup_unlock_device_help)
       },
       style = MaterialTheme.typography.bodyMedium,
     )
@@ -195,7 +234,9 @@ fun BackupEncryptionScreen(
       PassphraseField(
         value = current,
         onValueChange = { current = it; error = null },
-        label = stringResource(R.string.backup_current_passphrase),
+        label = stringResource(
+          if (mode == BackupEncryptionMode.UNLOCK_DEVICE) R.string.backup_passphrase else R.string.backup_current_passphrase,
+        ),
         imeAction = if (needsNew) ImeAction.Next else ImeAction.Done,
         onDone = ::submit,
       )
@@ -222,7 +263,7 @@ fun BackupEncryptionScreen(
     }
     error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
     if (busy) BusyRow(stringResource(R.string.backup_securing))
-    if (mode == BackupEncryptionMode.CHANGE || mode == BackupEncryptionMode.SHOW_CODE) {
+    if (mode == BackupEncryptionMode.CHANGE || mode == BackupEncryptionMode.SHOW_CODE || mode == BackupEncryptionMode.UNLOCK_DEVICE) {
       TextButton(onClick = onReset, enabled = !busy) { Text(stringResource(R.string.backup_forgot)) }
     }
   }
@@ -341,15 +382,22 @@ fun BackupRestoreScreen(
   state: RestoreUiState,
   onUnlock: (secret: String, isRecoveryCode: Boolean) -> Unit,
   onApply: (replace: Boolean) -> Unit,
+  onSetPassphrase: (passphrase: String) -> Unit,
+  onSkipPassphrase: () -> Unit,
   onClose: () -> Unit,
 ) {
   LaunchedEffect(state) {
     if (state is RestoreUiState.Finished || state is RestoreUiState.Idle) onClose()
   }
+  val titleRes = when (state) {
+    is RestoreUiState.Locked -> R.string.backup_unlock_title
+    is RestoreUiState.SetNewPassphrase -> R.string.backup_set_new_passphrase_title
+    else -> R.string.backup_restore_title
+  }
   Scaffold(
     topBar = {
       TopAppBar(
-        title = { Text(stringResource(if (state is RestoreUiState.Locked) R.string.backup_unlock_title else R.string.backup_restore_title)) },
+        title = { Text(stringResource(titleRes)) },
         navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.action_close)) } },
       )
     },
@@ -367,8 +415,58 @@ fun BackupRestoreScreen(
       when (state) {
         is RestoreUiState.Locked -> UnlockContent(state, onUnlock)
         is RestoreUiState.Preview -> PreviewContent(state, onApply)
+        is RestoreUiState.SetNewPassphrase -> SetNewPassphraseContent(state, onSetPassphrase, onSkipPassphrase)
         else -> BusyRow(stringResource(R.string.backup_opening))
       }
+    }
+  }
+}
+
+@Composable
+private fun SetNewPassphraseContent(
+  state: RestoreUiState.SetNewPassphrase,
+  onSetPassphrase: (String) -> Unit,
+  onSkip: () -> Unit,
+) {
+  var newPass by remember { mutableStateOf("") }
+  var confirm by remember { mutableStateOf("") }
+  val newTooShort = newPass.isNotEmpty() && newPass.length < MIN_PASSPHRASE_LENGTH
+  val mismatch = confirm.isNotEmpty() && confirm != newPass
+  val valid = newPass.length >= MIN_PASSPHRASE_LENGTH && confirm == newPass && !state.busy
+  val submit = { if (valid) onSetPassphrase(newPass) }
+
+  Text(
+    stringResource(R.string.backup_set_new_passphrase_help),
+    style = MaterialTheme.typography.bodyMedium,
+  )
+  PassphraseField(
+    value = newPass,
+    onValueChange = { newPass = it },
+    label = stringResource(R.string.backup_new_passphrase),
+    isError = newTooShort,
+    supportingText = if (newTooShort) pluralStringResource(R.plurals.backup_passphrase_too_short, MIN_PASSPHRASE_LENGTH, MIN_PASSPHRASE_LENGTH) else null,
+    imeAction = ImeAction.Next,
+    onDone = submit,
+  )
+  PassphraseField(
+    value = confirm,
+    onValueChange = { confirm = it },
+    label = stringResource(R.string.backup_confirm_passphrase),
+    isError = mismatch,
+    supportingText = if (mismatch) stringResource(R.string.backup_passphrase_mismatch) else null,
+    imeAction = ImeAction.Done,
+    onDone = submit,
+  )
+  state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+  if (state.busy) {
+    BusyRow(stringResource(R.string.backup_securing))
+  } else {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+    ) {
+      TextButton(onClick = onSkip) { Text(stringResource(R.string.backup_skip_for_now)) }
+      Button(onClick = submit, enabled = valid) { Text(stringResource(R.string.action_save)) }
     }
   }
 }

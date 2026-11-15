@@ -147,4 +147,4 @@ class Navigator(private val backStack: NavBackStack<NavKey>) {
 }
 
 @Serializable
-enum class BackupEncryptionMode { SETUP, CHANGE, SHOW_CODE, RESET }
+enum class BackupEncryptionMode { SETUP, CHANGE, SHOW_CODE, RESET, UNLOCK_DEVICE }

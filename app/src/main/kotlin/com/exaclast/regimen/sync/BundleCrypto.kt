@@ -40,11 +40,17 @@ object BundleCrypto {
   class WrongPassphraseException : MessageException(Message(R.string.backup_err_wrong_passphrase))
   class WrongKeyException : MessageException(Message(R.string.backup_err_wrong_key))
   class CorruptedException : MessageException(Message(R.string.backup_err_corrupted))
+  class FileTooLargeException : MessageException(Message(R.string.backup_err_too_large))
   class InvalidRecoveryCodeException : MessageException(Message(R.string.backup_err_bad_recovery_code))
 
   const val FORMAT_VERSION = 1
   /** OWASP's 2023 recommendation for PBKDF2-HMAC-SHA256. */
   const val DEFAULT_ITERATIONS = 600_000
+  const val KDF_ALGORITHM = "PBKDF2-HMAC-SHA256"
+  const val MAX_ITERATIONS = 5_000_000
+  const val MAX_HEADER_BYTES = 64 * 1024
+  const val MAX_FILE_BYTES = 32 * 1024 * 1024
+  const val MAX_DECOMPRESSED_BYTES = 64 * 1024 * 1024
 
   private val MAGIC = "RGMNBK".toByteArray(Charsets.US_ASCII)
   private const val KEY_BYTES = 32
@@ -91,28 +97,41 @@ object BundleCrypto {
     passphrase: CharArray,
     iterations: Int = DEFAULT_ITERATIONS,
   ): KeyEnvelope {
+    require(iterations in 1..MAX_ITERATIONS) { "Iterations out of bounds: $iterations" }
     val salt = ByteArray(SALT_BYTES).also(random::nextBytes)
     val kek = deriveKey(passphrase, salt, iterations)
-    val nonce = ByteArray(NONCE_BYTES).also(random::nextBytes)
-    val id = keyId(dataKey)
-    val wrapped = aesGcm(Cipher.ENCRYPT_MODE, kek, nonce, WRAP_AAD_PREFIX + id.toByteArray()).doFinal(dataKey)
-    return KeyEnvelope(
-      keyId = id,
-      kdf = Kdf(salt = b64(salt), iterations = iterations),
-      wrappedKey = WrappedKey(nonce = b64(nonce), ciphertext = b64(wrapped)),
-    )
+    return try {
+      val nonce = ByteArray(NONCE_BYTES).also(random::nextBytes)
+      val id = keyId(dataKey)
+      val wrapped = aesGcm(Cipher.ENCRYPT_MODE, kek, nonce, WRAP_AAD_PREFIX + id.toByteArray()).doFinal(dataKey)
+      KeyEnvelope(
+        keyId = id,
+        kdf = Kdf(algorithm = KDF_ALGORITHM, salt = b64(salt), iterations = iterations),
+        wrappedKey = WrappedKey(nonce = b64(nonce), ciphertext = b64(wrapped)),
+      )
+    } finally {
+      kek.fill(0)
+    }
   }
 
   /** Unlocks the data key from [envelope]; throws [WrongPassphraseException]. */
   fun unwrapWithPassphrase(envelope: KeyEnvelope, passphrase: CharArray): ByteArray {
+    if (envelope.kdf.algorithm != KDF_ALGORITHM || envelope.kdf.iterations !in 1..MAX_ITERATIONS) {
+      throw CorruptedException()
+    }
     val kek = deriveKey(passphrase, unb64(envelope.kdf.salt), envelope.kdf.iterations)
     val dataKey = try {
       aesGcm(Cipher.DECRYPT_MODE, kek, unb64(envelope.wrappedKey.nonce), WRAP_AAD_PREFIX + envelope.keyId.toByteArray())
         .doFinal(unb64(envelope.wrappedKey.ciphertext))
     } catch (e: AEADBadTagException) {
       throw WrongPassphraseException()
+    } finally {
+      kek.fill(0)
     }
-    if (keyId(dataKey) != envelope.keyId) throw WrongPassphraseException()
+    if (keyId(dataKey) != envelope.keyId) {
+      dataKey.fill(0)
+      throw WrongPassphraseException()
+    }
     return dataKey
   }
 
@@ -227,10 +246,13 @@ object BundleCrypto {
 
   private fun parse(file: ByteArray): Parsed {
     if (!isEncryptedBackup(file)) throw NotABackupException()
+    if (file.size > MAX_FILE_BYTES) throw FileTooLargeException()
     if (file.size < MAGIC.size + 4) throw CorruptedException()
     val headerLength = ByteBuffer.wrap(file, MAGIC.size, 4).int
     val headerEnd = MAGIC.size + 4 + headerLength
-    if (headerLength <= 0 || headerEnd + NONCE_BYTES + TAG_BITS / 8 > file.size) throw CorruptedException()
+    if (headerLength <= 0 || headerLength > MAX_HEADER_BYTES || headerEnd + NONCE_BYTES + TAG_BITS / 8 > file.size) {
+      throw CorruptedException()
+    }
     val header = runCatching {
       json.decodeFromString(Header.serializer(), String(file, MAGIC.size + 4, headerLength, Charsets.UTF_8))
     }.getOrElse { throw CorruptedException() }
@@ -262,7 +284,19 @@ object BundleCrypto {
     ByteArrayOutputStream().also { out -> GZIPOutputStream(out).use { it.write(data) } }.toByteArray()
 
   private fun gunzip(data: ByteArray): ByteArray =
-    GZIPInputStream(ByteArrayInputStream(data)).use { it.readBytes() }
+    GZIPInputStream(ByteArrayInputStream(data)).use { input ->
+      val out = ByteArrayOutputStream()
+      val buffer = ByteArray(8 * 1024)
+      var total = 0
+      while (true) {
+        val read = input.read(buffer)
+        if (read == -1) break
+        total += read
+        if (total > MAX_DECOMPRESSED_BYTES) throw FileTooLargeException()
+        out.write(buffer, 0, read)
+      }
+      out.toByteArray()
+    }
 
   private fun sha256(data: ByteArray): ByteArray = MessageDigest.getInstance("SHA-256").digest(data)
 

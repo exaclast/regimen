@@ -35,6 +35,7 @@ import com.exaclast.regimen.domain.Adjustments
 import com.exaclast.regimen.domain.IndicationTimeline
 import com.exaclast.regimen.domain.DoseEngine
 import com.exaclast.regimen.domain.DoseTimeline
+import com.exaclast.regimen.domain.ScheduleVersioning
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
@@ -92,6 +93,7 @@ fun RegimenApp(
   val uiState by viewModel.uiState.collectAsStateWithLifecycle()
   val snapshot = uiState.snapshot
   val backupEncryptionConfigured by viewModel.backupEncryptionConfigured.collectAsStateWithLifecycle()
+  val backupKeyLost by viewModel.backupKeyLost.collectAsStateWithLifecycle()
   val pendingExport by viewModel.pendingExport.collectAsStateWithLifecycle()
   val settings = snapshot.settings
   val backStack = rememberNavBackStack(Route.Today)
@@ -265,10 +267,13 @@ fun RegimenApp(
               if (medication == null || (key.adjustmentId != null && existing == null)) {
                 LaunchedEffect(key) { navigator.backFrom(key) }
               } else {
+                val today = java.time.LocalDate.now()
                 AdjustmentEditorScreen(
                   medication = medication,
-                  schedules = snapshot.schedules.filter {
-                    it.medicationId == medication.id && it.deletedAtEpochMillis == null
+                  schedules = snapshot.schedules.filter { s ->
+                    s.medicationId == medication.id &&
+                      s.deletedAtEpochMillis == null &&
+                      (!s.hasEndedBefore(today) || existing?.scheduleDoses?.any { it.scheduleId == s.id } == true)
                   },
                   buckets = snapshot.buckets,
                   initial = existing,
@@ -355,15 +360,24 @@ fun RegimenApp(
                   if (schedule == null) {
                     viewModel.saveSchedule(edited)
                   } else {
-                    val (updatedMedication, saved) = Adjustments.applyScheduleEdit(medication, schedule, edited, mode, today)
-                    updatedMedication?.let(viewModel::saveMedication)
-                    viewModel.saveSchedule(saved)
+                    val result = ScheduleVersioning.apply(
+                      medication = medication,
+                      original = schedule,
+                      edited = edited,
+                      mode = mode,
+                      today = today,
+                      buckets = snapshot.buckets,
+                    )
+                    viewModel.saveScheduleEdit(result.updatedMedication, result.schedulesToSave)
                   }
                   navigator.back()
                 }
                 pendingEdit?.let { edited ->
+                  val parts = ScheduleVersioning.changedParts(medication, schedule!!, edited, today)
                   ChangeOrFixDialog(
-                    what = stringResource(Adjustments.Part.DOSE.labelRes),
+                    what = android.icu.text.ListFormatter.getInstance(LocalConfiguration.current.locales[0])
+                      .format(parts.map { stringResource(it.labelRes) }),
+                    showNote = ScheduleVersioning.Part.DOSE in parts,
                     onDismiss = { pendingEdit = null },
                     onConfirm = { mode ->
                       pendingEdit = null
@@ -378,7 +392,7 @@ fun RegimenApp(
                   buckets = snapshot.buckets,
                   onDismiss = navigator::back,
                   onSave = { edited ->
-                    if (Adjustments.shouldAskForSchedule(medication, schedule, edited, snapshot.doseLogs, today)) {
+                    if (ScheduleVersioning.shouldAsk(medication, schedule, edited, snapshot.doseLogs, today)) {
                       pendingEdit = edited
                     } else {
                       finish(edited, Adjustments.EditMode.Fix)
@@ -529,6 +543,7 @@ fun RegimenApp(
             entry<Route.SettingsBackup> {
               SettingsBackupScreen(
                 backupEncryptionConfigured = backupEncryptionConfigured,
+                backupKeyLost = backupKeyLost,
                 pendingExport = pendingExport,
                 onConsumePendingExport = viewModel::consumePendingExport,
                 suggestedBackupFileName = viewModel::suggestedBackupFileName,
@@ -598,13 +613,16 @@ fun RegimenApp(
                 onSetUp = viewModel::setUpBackupEncryption,
                 onChange = viewModel::changeBackupPassphrase,
                 onReveal = viewModel::revealRecoveryCode,
+                onUnlockDevice = viewModel::unlockDeviceBackupKey,
                 onReset = {
                   navigator.back()
                   navigator.navigate(Route.BackupEncryption(BackupEncryptionMode.RESET))
                 },
                 onDone = { changed ->
                   if (changed && key.mode == BackupEncryptionMode.CHANGE) {
-                    Toast.makeText(context, "Backup passphrase changed", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, resources.getString(R.string.backup_passphrase_changed), Toast.LENGTH_SHORT).show()
+                  } else if (changed && key.mode == BackupEncryptionMode.UNLOCK_DEVICE) {
+                    Toast.makeText(context, resources.getString(R.string.backup_key_unlocked), Toast.LENGTH_SHORT).show()
                   }
                   navigator.back()
                 },
@@ -622,6 +640,8 @@ fun RegimenApp(
                 state = restoreState,
                 onUnlock = viewModel::unlockBackup,
                 onApply = viewModel::applyRestore,
+                onSetPassphrase = viewModel::setPassphraseAfterRecovery,
+                onSkipPassphrase = viewModel::skipPassphraseAfterRecovery,
                 onClose = {
                   viewModel.resetRestore()
                   if (navigator.current is Route.BackupRestore) navigator.back()

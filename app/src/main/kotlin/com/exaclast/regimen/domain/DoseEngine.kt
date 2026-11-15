@@ -170,10 +170,16 @@ object DoseEngine {
    * site actually used last; recording suggests that same site again. A last site that's no longer in the
    * list falls back to the first.
    */
-  fun suggestSite(medication: Medication, allLogs: List<DoseLog>): String? {
+  fun suggestSite(medication: Medication, allLogs: List<DoseLog>): String? =
+    suggestSiteFromMedLogs(
+      medication = medication,
+      medLiveLogs = allLogs.filter { it.medicationId == medication.id && it.deletedAtEpochMillis == null },
+    )
+
+  private fun suggestSiteFromMedLogs(medication: Medication, medLiveLogs: List<DoseLog>): String? {
     val sites = medication.activeSites
     if (sites.isEmpty()) return null
-    val last = getLastSiteUsed(medication.id, allLogs) ?: return sites.first()
+    val last = getLastSiteUsedFromMedLogs(medLiveLogs) ?: return sites.first()
     val lastIndex = sites.indexOfFirst { it.equals(last, ignoreCase = true) }
     return when {
       lastIndex < 0 -> sites.first()
@@ -185,15 +191,15 @@ object DoseEngine {
   /**
    * Returns the most recent site actually used for a medication, if any.
    */
-  fun getLastSiteUsed(medicationId: String, allLogs: List<DoseLog>): String? {
-    return allLogs
+  fun getLastSiteUsed(medicationId: String, allLogs: List<DoseLog>): String? =
+    getLastSiteUsedFromMedLogs(
+      allLogs.filter { it.medicationId == medicationId && it.deletedAtEpochMillis == null },
+    )
+
+  private fun getLastSiteUsedFromMedLogs(medLiveLogs: List<DoseLog>): String? {
+    return medLiveLogs
       .asSequence()
-      .filter {
-        it.medicationId == medicationId &&
-          it.deletedAtEpochMillis == null &&
-          it.status == DoseStatus.TAKEN &&
-          !it.siteUsed.isNullOrBlank()
-      }
+      .filter { it.status == DoseStatus.TAKEN && !it.siteUsed.isNullOrBlank() }
       .maxByOrNull { it.actionTimestampMillis }
       ?.siteUsed
   }
@@ -211,17 +217,31 @@ object DoseEngine {
     buckets: List<TimeOfDayBucket> = emptyList(),
     zoneId: ZoneId = ZoneId.systemDefault(),
     backdated: Boolean = false,
+  ): PacingEvaluation = evaluatePacingFromMedLogs(
+    medication = medication,
+    medLiveLogs = allLogs.filter { it.medicationId == medication.id && it.deletedAtEpochMillis == null },
+    nowMillis = nowMillis,
+    todayIso = todayIso,
+    bucketsById = buckets.associateBy { it.id },
+    zoneId = zoneId,
+    backdated = backdated,
+  )
+
+  private fun evaluatePacingFromMedLogs(
+    medication: Medication,
+    medLiveLogs: List<DoseLog>,
+    nowMillis: Long,
+    todayIso: String,
+    bucketsById: Map<String, TimeOfDayBucket>,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+    backdated: Boolean = false,
   ): PacingEvaluation {
-    val activeTakenLogs = allLogs.filter {
-      it.medicationId == medication.id &&
-        it.deletedAtEpochMillis == null &&
-        it.status == DoseStatus.TAKEN
-    }
+    val activeTakenLogs = medLiveLogs.filter { it.status == DoseStatus.TAKEN }
 
     val lastTaken = activeTakenLogs
       .filter { !backdated || it.actionTimestampMillis <= nowMillis }
       .maxByOrNull { it.actionTimestampMillis }
-    val todayLogs = activeTakenLogs.filter { limitDayOf(it, buckets, zoneId) == todayIso }
+    val todayLogs = activeTakenLogs.filter { limitDayOf(it, bucketsById, zoneId) == todayIso }
     val dosesTakenToday = todayLogs.size
     // The limit is in the medication's default unit; other units can't be added to it.
     val amountTakenToday = todayLogs.filter { it.amountUnit == medication.defaultDoseUnit }.sumOf { it.amountTaken }
@@ -266,10 +286,10 @@ object DoseEngine {
    * scheduled day: one taken during its own overnight window (1 AM in a 10 PM–2 AM window), and an
    * unscheduled dose logged onto a past date, where the user chose the day.
    */
-  internal fun limitDayOf(log: DoseLog, buckets: List<TimeOfDayBucket>, zoneId: ZoneId): String {
+  private fun limitDayOf(log: DoseLog, bucketsById: Map<String, TimeOfDayBucket>, zoneId: ZoneId): String {
     val takenOn = Instant.ofEpochMilli(log.actionTimestampMillis).atZone(zoneId).toLocalDate().toString()
     if (takenOn == log.scheduledDateIso || log.scheduleId == null) return log.scheduledDateIso
-    val overnight = buckets.find { it.id == log.bucketId }?.takeIf { it.crossesMidnight } ?: return takenOn
+    val overnight = log.bucketId?.let { bucketsById[it] }?.takeIf { it.crossesMidnight } ?: return takenOn
     val start = DoseAlarmTiming.windowStartMillis(overnight, log.scheduledDateIso, zoneId) ?: return takenOn
     val end = DoseAlarmTiming.windowEndMillis(overnight, log.scheduledDateIso, zoneId) ?: return takenOn
     return if (log.actionTimestampMillis in start..end) log.scheduledDateIso else takenOn
@@ -296,6 +316,18 @@ object DoseEngine {
     targetDate: LocalDate,
     allLogs: List<DoseLog>,
     zoneId: ZoneId = ZoneId.systemDefault(),
+  ): Boolean = isScheduleDueOnDateFromMedLogs(
+    schedule = schedule,
+    targetDate = targetDate,
+    medLiveLogs = allLogs.filter { it.deletedAtEpochMillis == null && it.medicationId == schedule.medicationId },
+    zoneId = zoneId,
+  )
+
+  private fun isScheduleDueOnDateFromMedLogs(
+    schedule: MedicationSchedule,
+    targetDate: LocalDate,
+    medLiveLogs: List<DoseLog>,
+    zoneId: ZoneId = ZoneId.systemDefault(),
   ): Boolean {
     if (!schedule.enabled || schedule.deletedAtEpochMillis != null) return false
 
@@ -303,10 +335,8 @@ object DoseEngine {
     // prescription as missed. A dose that was actually logged on that date stays visible.
     if (!schedule.isInDateRange(targetDate)) {
       val targetDateIso = targetDate.toString()
-      return allLogs.any {
-        it.deletedAtEpochMillis == null &&
-          it.medicationId == schedule.medicationId &&
-          it.scheduledDateIso == targetDateIso &&
+      return medLiveLogs.any {
+        it.scheduledDateIso == targetDateIso &&
           (it.scheduleId == null || it.scheduleId == schedule.id)
       }
     }
@@ -327,11 +357,7 @@ object DoseEngine {
 
       ScheduleFrequencyType.RELATIVE_TO_LAST_DOSE -> {
         val targetDateIso = targetDate.toString()
-        val medLogs = allLogs.filter {
-          it.medicationId == schedule.medicationId &&
-            it.deletedAtEpochMillis == null &&
-            it.status == DoseStatus.TAKEN
-        }
+        val medLogs = medLiveLogs.filter { it.status == DoseStatus.TAKEN }
         // If already taken on targetDate, keep it visible on targetDate's board
         if (medLogs.any { it.scheduledDateIso == targetDateIso }) {
           return true
@@ -372,6 +398,13 @@ object DoseEngine {
     }
   }
 
+  private data class MedDayContext(
+    val med: Medication,
+    val suggestedSite: String?,
+    val lastSite: String?,
+    val pacing: PacingEvaluation,
+  )
+
   /**
    * Builds the full daily dashboard board for the specified date.
    */
@@ -390,66 +423,97 @@ object DoseEngine {
     val indicationMap = indications.filter { it.deletedAtEpochMillis == null }.associateBy { it.id }
     val prescriberMap = providers.filter { it.deletedAtEpochMillis == null }.associateBy { it.id }
     val sortedBuckets = buckets.chronological()
+    val bucketsById = buckets.associateBy { it.id }
 
     val activeSchedules = schedules.filter {
       it.deletedAtEpochMillis == null && it.enabled && activeMedMap.containsKey(it.medicationId)
     }
 
-    val activeScheduleIdsByMed = activeSchedules
-      .groupBy { it.medicationId }
-      .mapValues { (_, list) -> list.map { it.id }.toSet() }
+    val zoneId = ZoneId.systemDefault()
+    val inRangeSchedulesByMedBucket = HashMap<Pair<String, String>, MutableSet<String>>()
+    activeSchedules.forEach { schedule ->
+      if (schedule.frequencyType == ScheduleFrequencyType.AS_NEEDED) return@forEach
+      val inRangeForDay = if (schedule.frequencyType == ScheduleFrequencyType.SPECIFIC_DATES) {
+        schedule.specificDatesIso.contains(dateIso)
+      } else {
+        schedule.isInDateRange(targetDate)
+      }
+      if (!inRangeForDay) return@forEach
+      schedule.bucketIds.forEach { bucketId ->
+        val bucket = bucketsById[bucketId] ?: return@forEach
+        if (schedule.isWindowInRange(targetDate, bucket, buckets)) {
+          inRangeSchedulesByMedBucket.getOrPut(schedule.medicationId to bucketId) { HashSet() }.add(schedule.id)
+        }
+      }
+    }
 
-    val logsForDate = logs.filter {
-      it.deletedAtEpochMillis == null && it.scheduledDateIso == dateIso
+    val liveLogsByMed = logs.asSequence()
+      .filter { it.deletedAtEpochMillis == null }
+      .groupBy { it.medicationId }
+
+    val logsForDateByMed = liveLogsByMed.mapValues { (_, medLogs) ->
+      medLogs.filter { it.scheduledDateIso == dateIso }
+    }
+
+    val medContexts = HashMap<String, MedDayContext>()
+    fun medContext(stored: Medication): MedDayContext = medContexts.getOrPut(stored.id) {
+      val med = Adjustments.asOf(stored, targetDate)
+      val medLogs = liveLogsByMed[stored.id].orEmpty()
+      MedDayContext(
+        med = med,
+        suggestedSite = suggestSiteFromMedLogs(med, medLogs),
+        lastSite = getLastSiteUsedFromMedLogs(medLogs),
+        pacing = evaluatePacingFromMedLogs(med, medLogs, nowMillis, dateIso, bucketsById),
+      )
     }
 
     val bucketGroups = sortedBuckets.mapNotNull { bucket ->
       val matchingSchedules = activeSchedules.filter { schedule ->
-        val hasLoggedDose = logsForDate.any {
-          logMatchesItem(it, schedule, bucket, activeScheduleIdsByMed[schedule.medicationId].orEmpty())
+        val medLogsForDate = logsForDateByMed[schedule.medicationId].orEmpty()
+        val inRangeIds = inRangeSchedulesByMedBucket[schedule.medicationId to bucket.id].orEmpty()
+        val isInRangeForBucket = schedule.id in inRangeIds
+        val hasLoggedDose = medLogsForDate.any {
+          logMatchesItem(it, schedule, bucket, inRangeIds)
         }
         val windowEnd = DoseAlarmTiming.windowEndMillis(bucket, dateIso)
+        val createdOnTargetDate = schedule.createdAtEpochMillis > 0 &&
+          Instant.ofEpochMilli(schedule.createdAtEpochMillis).atZone(zoneId).toLocalDate() == targetDate
         val createdAfterWindow = schedule.startDateOrNull() == targetDate &&
           schedule.startBucketId == null &&
-          schedule.createdAtEpochMillis > 0 &&
+          createdOnTargetDate &&
           windowEnd != null &&
           schedule.createdAtEpochMillis > windowEnd
 
         schedule.frequencyType != ScheduleFrequencyType.AS_NEEDED &&
           schedule.bucketIds.contains(bucket.id) &&
           (!createdAfterWindow || hasLoggedDose) &&
-          isScheduleDueOnDate(schedule, targetDate, logs) &&
-          // Partial first/last day (e.g. started with the evening dose): skip windows outside the
-          // range unless that dose was actually logged.
-          (schedule.isWindowInRange(targetDate, bucket, buckets) || hasLoggedDose)
+          isScheduleDueOnDateFromMedLogs(schedule, targetDate, liveLogsByMed[schedule.medicationId].orEmpty()) &&
+          // Partial first/last day or ended schedule version: skip windows outside range unless
+          // that dose was actually logged AND no current in-range schedule already covers the window.
+          (isInRangeForBucket || (hasLoggedDose && inRangeIds.isEmpty()))
       }
 
       val items = matchingSchedules.mapNotNull { schedule ->
         val stored = activeMedMap[schedule.medicationId] ?: return@mapNotNull null
-        // The day's own values: a titration step or new equipment applies from its date.
-        val med = Adjustments.asOf(stored, targetDate)
-        val activeScheduleIdsForMed = activeScheduleIdsByMed[med.id].orEmpty()
-        val existingLog = logsForDate
-          .filter { logMatchesItem(it, schedule, bucket, activeScheduleIdsForMed) }
+        val ctx = medContext(stored)
+        val inRangeIds = inRangeSchedulesByMedBucket[stored.id to bucket.id].orEmpty()
+        val existingLog = logsForDateByMed[stored.id].orEmpty()
+          .filter { logMatchesItem(it, schedule, bucket, inRangeIds) }
           .maxByOrNull { it.actionTimestampMillis }
-
-        val suggestedSite = existingLog?.siteUsed ?: suggestSite(med, logs)
-        val lastSite = getLastSiteUsed(med.id, logs)
-        val pacing = evaluatePacing(med, logs, nowMillis, dateIso, buckets)
 
         ScheduledDoseItem(
           key = "${schedule.id}_${bucket.id}_$dateIso",
-          medication = med,
+          medication = ctx.med,
           schedule = Adjustments.scheduleOn(stored, schedule, targetDate),
           bucket = bucket,
           dateIso = dateIso,
           existingLog = existingLog,
           isNewDose = Adjustments.doseChangesOn(stored, schedule, targetDate),
-          suggestedSite = suggestedSite,
-          lastSiteUsed = lastSite,
-          pacing = pacing,
-          indications = med.indicationIds.mapNotNull { indicationMap[it] },
-          prescriber = med.prescriberId?.let { prescriberMap[it] },
+          suggestedSite = existingLog?.siteUsed ?: ctx.suggestedSite,
+          lastSiteUsed = ctx.lastSite,
+          pacing = ctx.pacing,
+          indications = ctx.med.indicationIds.mapNotNull { indicationMap[it] },
+          prescriber = ctx.med.prescriberId?.let { prescriberMap[it] },
         )
       }
 
@@ -469,14 +533,14 @@ object DoseEngine {
     val prnItems = activeMedMap.values
       .filter { med -> prnSchedulesByMed.containsKey(med.id) || !scheduledMedIds.contains(med.id) }
       .map { stored ->
-        val med = Adjustments.asOf(stored, targetDate)
-        val prnSchedule = prnSchedulesByMed[med.id]
+        val ctx = medContext(stored)
+        val prnSchedule = prnSchedulesByMed[stored.id]
         PrnDoseItem(
-          medication = med,
+          medication = ctx.med,
           schedule = prnSchedule,
-          suggestedSite = suggestSite(med, logs),
-          pacing = evaluatePacing(med, logs, nowMillis, dateIso, buckets),
-          indications = med.indicationIds.mapNotNull { indicationMap[it] },
+          suggestedSite = ctx.suggestedSite,
+          pacing = ctx.pacing,
+          indications = ctx.med.indicationIds.mapNotNull { indicationMap[it] },
         )
       }
 

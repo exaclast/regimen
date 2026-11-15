@@ -69,6 +69,7 @@ class RegimenDatabase(context: Context) :
       CREATE TABLE time_buckets (
         id TEXT PRIMARY KEY NOT NULL,
         sort_order INTEGER NOT NULL,
+        deleted_at INTEGER,
         payload_json TEXT NOT NULL
       )
       """.trimIndent()
@@ -111,6 +112,7 @@ class RegimenDatabase(context: Context) :
     }
     if (oldVersion < 4) migrateMedicationPayloads(db, ::migrateSitePayload)
     if (oldVersion < 5) migrateMedicationPayloads(db, ::migrateSyringePayload)
+    if (oldVersion < 6) db.execSQL("ALTER TABLE time_buckets ADD COLUMN deleted_at INTEGER")
   }
 
   /** Rewrites only the payload: `updated_at` stays, since a migration isn't an edit to sync. */
@@ -238,10 +240,10 @@ class RegimenDatabase(context: Context) :
     writableDatabase.insertWithOnConflict("indications", null, values, SQLiteDatabase.CONFLICT_REPLACE)
   }
 
-  fun getAllBuckets(): List<TimeOfDayBucket> {
+  fun getAllBuckets(includeDeleted: Boolean = false): List<TimeOfDayBucket> {
     val result = mutableListOf<TimeOfDayBucket>()
     readableDatabase.rawQuery(
-      "SELECT id, payload_json FROM time_buckets ORDER BY sort_order ASC",
+      "SELECT id, payload_json FROM time_buckets ${liveOnly(includeDeleted)} ORDER BY sort_order ASC",
       null
     ).use { cursor ->
       while (cursor.moveToNext()) {
@@ -261,6 +263,7 @@ class RegimenDatabase(context: Context) :
     val values = ContentValues().apply {
       put("id", bucket.id)
       put("sort_order", bucket.sortOrder)
+      put("deleted_at", bucket.deletedAtEpochMillis)
       put("payload_json", json.encodeToString(bucket))
     }
     writableDatabase.insertWithOnConflict("time_buckets", null, values, SQLiteDatabase.CONFLICT_REPLACE)
@@ -361,7 +364,7 @@ class RegimenDatabase(context: Context) :
     writableDatabase.insertWithOnConflict("dose_logs", null, values, SQLiteDatabase.CONFLICT_REPLACE)
   }
 
-  fun clearUserRecords() {
+  fun clearUserRecords(includeBuckets: Boolean = false) {
     val db = writableDatabase
     db.beginTransaction()
     try {
@@ -370,6 +373,7 @@ class RegimenDatabase(context: Context) :
       db.delete("medications", null, null)
       db.delete("providers", null, null)
       db.delete("indications", null, null)
+      if (includeBuckets) db.delete("time_buckets", null, null)
       db.setTransactionSuccessful()
     } finally {
       db.endTransaction()
@@ -379,7 +383,7 @@ class RegimenDatabase(context: Context) :
   companion object {
     private const val TAG = "RegimenDatabase"
     private const val DB_NAME = "regimen_store.db"
-    private const val DB_VERSION = 5
+    private const val DB_VERSION = 6
 
     /**
      * v5: the free-text syringe description becomes a [SyringeType]. A recognised type drops the text, which

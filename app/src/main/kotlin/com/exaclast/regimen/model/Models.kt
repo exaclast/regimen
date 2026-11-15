@@ -453,6 +453,7 @@ data class TimeOfDayBucket(
   val alarmAtWindowEnd: Boolean = true,
   /** For sync conflict tie-breaks. 0 = never edited (a built-in default). */
   val updatedAtEpochMillis: Long = 0L,
+  val deletedAtEpochMillis: Long? = null,
 ) {
   init {
     require(hour in 0..23) { "Hour must be in 0..23, got $hour" }
@@ -633,9 +634,10 @@ data class MedicationSchedule(
     frequencyType != ScheduleFrequencyType.AS_NEEDED && bucketIds.none { id -> buckets.any { it.id == id } }
 
   /** The schedule's end date has passed: it no longer produces doses. */
-  fun hasEndedBefore(date: LocalDate): Boolean {
-    if (!usesDateRange) return false
-    return endDateOrNull()?.isBefore(date) == true
+  fun hasEndedBefore(date: LocalDate): Boolean = when (frequencyType) {
+    ScheduleFrequencyType.AS_NEEDED -> false
+    ScheduleFrequencyType.SPECIFIC_DATES -> lastDayOrNull()?.isBefore(date) == true
+    else -> endDateOrNull()?.isBefore(date) == true
   }
 }
 

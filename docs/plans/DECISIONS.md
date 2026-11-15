@@ -27,12 +27,12 @@ When a decision is made, add it here with the date. When one is reversed, say so
   `data_extraction_rules.xml`.
 - **No backup-format compatibility yet.** There are no users. The backup format is v1. Backups from before the Indications
   rename lose their indications.
-- **The database does migrate,** so dev installs keep their data (user decision, 2026-11-09). `RegimenDatabase` is at v5:
+- **The database does migrate,** so dev installs keep their data (user decision, 2026-11-09). `RegimenDatabase` is at v6:
   v2 renamed `prescribers`, v3 renamed `conditions` and moved medication link keys, v4 turned the rotation switch into a
-  site mode, v5 turned the free-text syringe description into a syringe type. Rows from before indication kinds
-  become Chronic.
+  site mode, v5 turned the free-text syringe description into a syringe type, v6 added `deleted_at` soft-deletion on
+  `time_buckets` (T-061). Rows from before indication kinds become Chronic.
 - **After the first stable release,** both the database and the backup format need real migrations. Anything that reshapes
-  data should land before then (milestone M3).
+  data should land before then (milestone M3 — shipped in v0.9).
 
 ### Sync
 
@@ -71,7 +71,8 @@ When a decision is made, add it here with the date. When one is reversed, say so
   dose went doesn't imply rotating. Only injectables default to Rotate.
 - **Dose changes are steps with an effective date, not edits** (2026-11-12, T-113), so a titration keeps its history and
   can be planned ahead. The record is a `MedicationAdjustment` on the medication (user's name, 2026-11-13). It covers dose
-  per schedule, default dose, strength and injection details, not frequency or windows (T-015).
+  per schedule, default dose, strength and injection details. Changes to windows, frequency, or date ranges version the
+  schedule itself by ending the prior schedule before the effective date and starting a new version (T-014, T-015).
 - **Editors show today's values and ask "From a date" or "Correction"** when a tracked value changes and doses were
   logged (2026-11-13). A correction rewrites whichever value is in effect today; a change of form is always a correction.
 - **A change to the strength or the vial or device size clears the NDC from that date** (user request, 2026-11-13). A

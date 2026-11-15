@@ -255,4 +255,40 @@ class BundleMergerTest {
     assertEquals(listOf(phone, tablet), result.bundle.devices.map { it.id })
     assertEquals(50L, result.bundle.devices.first().lastSyncedEpochMillis)
   }
+
+  @Test
+  fun equalTimestampConflictWithoutPrimaryConvergesAcrossDevices() {
+    val base = bundle(primary = null)
+    val editA = med.copy(notes = "alpha", updatedAtEpochMillis = 200)
+    val editB = med.copy(notes = "beta", updatedAtEpochMillis = 200)
+    val onPhone = BundleMerger.merge(
+      base,
+      bundle(primary = null, medications = listOf(editA)),
+      bundle(primary = null, medications = listOf(editB)),
+      localDeviceId = phone,
+    )
+    val onTablet = BundleMerger.merge(
+      base,
+      bundle(primary = null, medications = listOf(editB)),
+      bundle(primary = null, medications = listOf(editA)),
+      localDeviceId = tablet,
+    )
+    assertEquals(onPhone.bundle.medications.single(), onTablet.bundle.medications.single())
+  }
+
+  @Test
+  fun softDeletedWindowStaysDeletedOnSync() {
+    val window = TimeOfDayBucket(id = "lunch", name = "Lunch", hour = 12, updatedAtEpochMillis = 100)
+    val base = bundle(buckets = listOf(window))
+    val deletedWindow = window.copy(updatedAtEpochMillis = 250, deletedAtEpochMillis = 250)
+    val result = BundleMerger.merge(
+      base,
+      local = bundle(buckets = listOf(window)),
+      remote = bundle(buckets = listOf(deletedWindow)),
+      localDeviceId = phone,
+    )
+    assertEquals(250L, result.bundle.buckets.single().deletedAtEpochMillis)
+    assertTrue(result.localChanged)
+    assertFalse(result.remoteChanged)
+  }
 }

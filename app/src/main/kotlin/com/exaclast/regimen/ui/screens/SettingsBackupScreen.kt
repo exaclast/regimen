@@ -45,6 +45,7 @@ import com.exaclast.regimen.ui.navigation.BackupEncryptionMode
 @Composable
 fun SettingsBackupScreen(
   backupEncryptionConfigured: Boolean,
+  backupKeyLost: Boolean,
   pendingExport: Boolean,
   onConsumePendingExport: () -> Unit,
   suggestedBackupFileName: (encrypted: Boolean) -> String,
@@ -68,7 +69,7 @@ fun SettingsBackupScreen(
   ) { uri -> uri?.let(onRestoreFilePicked) }
   var confirmPlainExport by remember { mutableStateOf(false) }
 
-  // Export was tapped before a passphrase existed: continue once setup is done.
+  // Export was tapped before a passphrase existed (or while the device key was lost): continue once unlocked.
   LaunchedEffect(pendingExport, backupEncryptionConfigured) {
     if (!pendingExport || !backupEncryptionConfigured) return@LaunchedEffect
     onConsumePendingExport()
@@ -100,18 +101,27 @@ fun SettingsBackupScreen(
         SectionHeader(stringResource(R.string.settings_backup))
         GroupedColumn {
           GroupItem(0, 3, onClick = {
-            if (backupEncryptionConfigured) {
-              exportEncryptedLauncher.launch(suggestedBackupFileName(true))
-            } else {
-              onRequestExportAfterSetup()
-              onOpenBackupEncryption(BackupEncryptionMode.SETUP)
+            when {
+              backupEncryptionConfigured -> exportEncryptedLauncher.launch(suggestedBackupFileName(true))
+              backupKeyLost -> {
+                onRequestExportAfterSetup()
+                onOpenBackupEncryption(BackupEncryptionMode.UNLOCK_DEVICE)
+              }
+              else -> {
+                onRequestExportAfterSetup()
+                onOpenBackupEncryption(BackupEncryptionMode.SETUP)
+              }
             }
           }) {
             ListItem(
               supportingContent = {
                 Text(
                   stringResource(
-                    if (backupEncryptionConfigured) R.string.settings_export_help else R.string.settings_export_help_setup,
+                    when {
+                      backupEncryptionConfigured -> R.string.settings_export_help
+                      backupKeyLost -> R.string.settings_key_lost_help
+                      else -> R.string.settings_export_help_setup
+                    },
                   ),
                 )
               },
@@ -133,25 +143,42 @@ fun SettingsBackupScreen(
         }
         Spacer(Modifier.height(12.dp))
         GroupedColumn {
-          if (backupEncryptionConfigured) {
-            GroupItem(0, 2, onClick = { onOpenBackupEncryption(BackupEncryptionMode.CHANGE) }) {
-              ListItem(
-                supportingContent = { Text(stringResource(R.string.settings_change_passphrase_help)) },
-                colors = groupListItemColors(),
-              ) { Text(stringResource(R.string.settings_change_passphrase)) }
+          when {
+            backupEncryptionConfigured -> {
+              GroupItem(0, 2, onClick = { onOpenBackupEncryption(BackupEncryptionMode.CHANGE) }) {
+                ListItem(
+                  supportingContent = { Text(stringResource(R.string.settings_change_passphrase_help)) },
+                  colors = groupListItemColors(),
+                ) { Text(stringResource(R.string.settings_change_passphrase)) }
+              }
+              GroupItem(1, 2, onClick = { onOpenBackupEncryption(BackupEncryptionMode.SHOW_CODE) }) {
+                ListItem(
+                  supportingContent = { Text(stringResource(R.string.settings_show_code_help)) },
+                  colors = groupListItemColors(),
+                ) { Text(stringResource(R.string.settings_show_code)) }
+              }
             }
-            GroupItem(1, 2, onClick = { onOpenBackupEncryption(BackupEncryptionMode.SHOW_CODE) }) {
-              ListItem(
-                supportingContent = { Text(stringResource(R.string.settings_show_code_help)) },
-                colors = groupListItemColors(),
-              ) { Text(stringResource(R.string.settings_show_code)) }
+            backupKeyLost -> {
+              GroupItem(0, 2, onClick = { onOpenBackupEncryption(BackupEncryptionMode.UNLOCK_DEVICE) }) {
+                ListItem(
+                  supportingContent = { Text(stringResource(R.string.settings_key_lost_help)) },
+                  colors = groupListItemColors(),
+                ) { Text(stringResource(R.string.settings_key_lost_title), color = MaterialTheme.colorScheme.error) }
+              }
+              GroupItem(1, 2, onClick = { onOpenBackupEncryption(BackupEncryptionMode.RESET) }) {
+                ListItem(
+                  supportingContent = { Text(stringResource(R.string.backup_reset_help)) },
+                  colors = groupListItemColors(),
+                ) { Text(stringResource(R.string.backup_reset_passphrase_title)) }
+              }
             }
-          } else {
-            GroupItem(0, 1, onClick = { onOpenBackupEncryption(BackupEncryptionMode.SETUP) }) {
-              ListItem(
-                supportingContent = { Text(stringResource(R.string.settings_passphrase_not_set)) },
-                colors = groupListItemColors(),
-              ) { Text(stringResource(R.string.backup_passphrase_title)) }
+            else -> {
+              GroupItem(0, 1, onClick = { onOpenBackupEncryption(BackupEncryptionMode.SETUP) }) {
+                ListItem(
+                  supportingContent = { Text(stringResource(R.string.settings_passphrase_not_set)) },
+                  colors = groupListItemColors(),
+                ) { Text(stringResource(R.string.backup_passphrase_title)) }
+              }
             }
           }
         }

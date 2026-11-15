@@ -13,6 +13,37 @@ resolve.
 
 Newest first.
 
+- **T-085** (Robolectric test suite for repository and receivers; "Complete M3 (v0.9): foundations, schedule versioning, and tests"):
+  - Added Robolectric `4.18` and `androidx.test:core` with `isIncludeAndroidResources = true` in `app/build.gradle.kts` and `gradle/libs.versions.toml`, plus `@VisibleForTesting internal fun resetForTests()` on `RegimenRepository` and `DoseNotificationManager`.
+  - Added `RegimenRepositoryTest` (7 Robolectric tests covering backup bundle validation, SQLite trigger mid-transaction rollback preserving prior DB rows and prefs, soft-deleted `time_buckets` tombstone & restore, `PrimaryClaim`/`SyncDevice` persistence & merge convergence, tombstone preservation & random UUIDs across demo/clear, batch `logDoses` + `restoreAndDeleteDoseLogs`, and atomic `saveScheduleEdit`).
+  - Added `DoseActionReceiverTest` (7 Robolectric tests covering `ACTION_TAKE` single and multi-item with pacing block, `ACTION_SNOOZE`, quiet `ACTION_DISMISSED`, `ACTION_SKIP`, `ACTION_TRIGGER_WINDOW_START`, `ACTION_TRIGGER_SNOOZE_EXPIRED`, and `ACTION_BOOT_COMPLETED`).
+  Proof: `testDebugUnitTest` (278 tests pass, including 14 Robolectric tests).
+
+- **T-014, T-015** (schedule versioning and same-day window guard; "Complete M3 (v0.9): foundations, schedule versioning, and tests"):
+  - Added `ScheduleVersioning` (`domain/ScheduleVersioning.kt`) for `DOSE`, `FREQUENCY`, `WINDOWS`, and `DATES` changes: prompts "Change from a date" vs "Fix" when a schedule has logs, adjustments, or past scheduled days (skipping future-only specific dates and date-range bound edits); splits edited schedules by ending the prior version at `effectiveDate - 1` and inserting a new version from `effectiveDate` (preserving interval `anchorDateIso`, soft-deleting old `AS_NEEDED` schedules when switching to timed, and migrating future `MedicationAdjustment.scheduleDoses` entries).
+  - Updated `DoseEngine.buildDailyBoard` to guard same-day added windows in Fix mode via `addedWindowIdsToday` / `addedWindowDateIso`, restrict `createdAfterWindow` to schedules created on `targetDate`, and match same-day logs from ended prior schedule versions against replacement schedules without duplicate items.
+  - Added atomic `RegimenRepository.saveScheduleEdit`, wired `ChangeOrFixDialog(showNote = false)` in `Route.ScheduleEditor`, filtered ended schedules in `Route.AdjustmentEditor`, and collapsed ended schedules under "Past schedules (N)" in `MedicationDetailScreen`.
+  Proof: `testDebugUnitTest` (278 tests pass, including new `ScheduleVersioningTest` and `DoseEngineTest` cases); verified on Pixel (`57181FDCH0072D`) editing Augmentin's windows with `ChangeOrFixDialog`, splitting into "Past schedules (1)", and preserving yesterday's 2-window board.
+
+- **T-060** (offload receivers and worst reload-on-tap path; "Complete M3 (v0.9): foundations, schedule versioning, and tests"):
+  - Updated `DoseActionReceiver` to use `goAsync()` and run work off the main thread on a serialized `backgroundDispatcher`, replacing per-item DB loops with batched `RegimenRepository.logDoses` and `restoreAndDeleteDoseLogs` synchronized writes.
+  - Moved `DoseAlarmActivity` dose logging onto `Dispatchers.IO` via `logDoses`.
+  - Optimized `DoseEngine.buildDailyBoard` by pre-indexing logs, buckets, and per-medication day context; moved `RegimenViewModel` daily board calculation onto `Dispatchers.Default` (`flowOn`) and dose-logging / initial refresh writes onto `Dispatchers.IO`.
+  Proof: `testDebugUnitTest` (278 tests pass, including `DoseActionReceiverTest` and `RegimenRepositoryTest`); verified smooth board updates and navigation on Pixel (`57181FDCH0072D`).
+
+- **T-061, T-062, T-063, T-064** (sync readiness, tombstones, deterministic merge, and identity preservation; "Complete M3 (v0.9): foundations, schedule versioning, and tests"):
+  - **T-061**: Added `deletedAtEpochMillis` soft-deletion to `TimeOfDayBucket`, bumped `RegimenDatabase` to v6 (`deleted_at` column on `time_buckets` with migration), and preserved bucket tombstones across repository reads/writes and sync bundles.
+  - **T-062**: Persisted `PrimaryClaim` and `SyncDevice` list in `regimen_prefs` across `currentBundle` and `applyBundle` so sync state survives reloads.
+  - **T-063**: Fixed `SharedSettings.serializer()` usage and added deterministic SHA-256 content tie-breaking in `BundleMerger` so equal-timestamp conflicts converge identically across devices.
+  - **T-064**: Updated `clearAllUserData` and `resetToSampleData` to soft-delete records (preserving tombstones for sync) and generate random UUIDs for demo records instead of fixed IDs.
+  Proof: `testDebugUnitTest` (278 tests pass, including `BundleMergerTest` and `RegimenRepositoryTest`); DB v6 migration and `Load demo data` verified on Pixel (`57181FDCH0072D`).
+
+- **T-054, T-055, T-059** (atomic restore, hardened backup reading, and recovery code flow; "Complete M3 (v0.9): foundations, schedule versioning, and tests"):
+  - **T-054**: Added unsaved recovery code confirmation on ✕ and Back in `BackupScreens` and deferred adoption of a recovery-unlocked backup's passphrase until restore confirmation in `BackupManager` / `RegimenViewModel`.
+  - **T-055**: Hardened `BundleCrypto` and `BackupKeyStore` by capping header PBKDF2 iterations, capping backup file and decompressed sizes, clearing key material after use, caching `isConfigured`, and surfacing lost Android Keystore key diagnostics in `SettingsBackupScreen`.
+  - **T-059**: Reordered `RegimenRepository.applyBundle` so shared settings preferences are committed only after the SQLite database transaction succeeds.
+  Proof: `testDebugUnitTest` (278 tests pass, including `BundleCryptoTest` and `RegimenRepositoryTest`).
+
 - **T-122** (Settings page categorization and modular screen split; "Complete M1 (v0.8): harden trust, data integrity, and Settings"):
   - Reworked the monolithic 1,360-line Settings screen into a categorized hub with 6 distinct destination routes:
     - `Route.SettingsReminders` (`SettingsRemindersScreen.kt`): Dose reminders, end-of-window alarm, snooze interval, repeat interval, confirm before logging, dose windows management, and notification & alarm permissions checklist.

@@ -407,6 +407,7 @@
     <string name="med_log_window_dose_early">Log %1$s dose early</string>
     <string name="med_extra_dose">Extra dose</string>
     <string name="med_schedules">Schedules</string>
+    <string name="med_past_schedules">Past schedules (%1$d)</string>
     <string name="med_no_schedule">No schedule</string>
     <string name="med_no_schedule_help">Shows under "As needed" on Today</string>
     <string name="med_dose_from">%1$s %2$s from %3$s</string>
@@ -914,6 +915,9 @@
     <string name="adjust_part_default_dose">default dose</string>
     <string name="adjust_part_injection">injection details</string>
     <string name="adjust_part_dose">dose</string>
+    <string name="adjust_part_frequency">frequency</string>
+    <string name="adjust_part_windows">windows</string>
+    <string name="adjust_part_dates">dates</string>
     <string name="adjust_line_schedule_dose">%1$s: %2$s %3$s</string>
     <string name="adjust_line_strength">Strength: %1$s</string>
     <string name="adjust_line_ndc">NDC: %1$s</string>
@@ -1133,8 +1137,23 @@
 
     <string name="backup_err_not_set_up">Encryption isn\'t set up</string>
     <string name="backup_err_set_passphrase_first">Set a backup passphrase first</string>
+    <string name="backup_err_key_lost">This device\'s backup key was lost (for example, after a phone restore). Re-enter your passphrase in Backup settings.</string>
+    <string name="backup_err_too_large">This backup file is too large to read</string>
     <string name="backup_err_open_file">Couldn\'t open the file</string>
     <string name="backup_err_read_file">Couldn\'t read the file</string>
+    <string name="backup_unlock_device_title">Unlock backup key</string>
+    <string name="backup_unlock_device_help">This device\'s saved backup key was lost (for example, after a system restore). Enter your backup passphrase to restore access without changing your recovery code.</string>
+    <string name="settings_key_lost_title">Re-enter backup passphrase</string>
+    <string name="settings_key_lost_help">This device\'s saved key was lost (for example, after a restore). Re-enter your passphrase to keep exporting encrypted backups.</string>
+    <string name="backup_code_unsaved_title">Leave without confirming?</string>
+    <string name="backup_code_unsaved_text">You haven\'t confirmed that you saved your recovery code. Without your passphrase or recovery code, backups can\'t be restored.</string>
+    <string name="backup_code_leave">Leave anyway</string>
+    <string name="backup_code_go_back">Go back</string>
+    <string name="backup_set_new_passphrase_title">Set a passphrase</string>
+    <string name="backup_set_new_passphrase_help">You unlocked this backup with a recovery code. Set a passphrase for this device so you can create encrypted backups.</string>
+    <string name="backup_skip_for_now">Skip for now</string>
+    <string name="backup_passphrase_changed">Backup passphrase changed</string>
+    <string name="backup_key_unlocked">Backup key unlocked</string>
 
     <!-- Notification action confirmations (notifications/DoseActionReceiver) -->
     <string name="receiver_taken_site">Logged dose taken (%1$s)</string>

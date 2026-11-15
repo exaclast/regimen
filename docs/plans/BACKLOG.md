@@ -1,6 +1,6 @@
 # Regimen Backlog
 
-The one list of everything still to do. Last reconciled 2026-11-14 against commit `b9801c7` (milestones mapped to releases).
+The one list of everything still to do. Last reconciled 2026-11-15 against `"Complete M3 (v0.9): foundations, schedule versioning, and tests"` on `main`.
 
 | Other documents | What's in them |
 |-----------------|----------------|
@@ -14,7 +14,7 @@ The one list of everything still to do. Last reconciled 2026-11-14 against commi
 
 ## How to use this file
 
-**Adding something.** Add one row in the matching area, using the next free number (next: **T-123**). IDs never change
+**Adding something.** Add one row in the matching area, using the next free number (next: **T-124**). IDs never change
 or get reused. One sentence is enough; anything longer goes in `designs/`. An audit or device pass adds rows here, and its
 raw report goes in `archive/`.
 
@@ -50,8 +50,8 @@ is not part of the v1.0 promise.
 
 | | Milestone | Release | Why | Tasks |
 |-|-----------|---------|-----|-------|
-| **M1** | **Trust** | v0.8 | Make reminders reliable, protect health data, fix wrong information, and the two P0 data-loss bugs | T-001–006, T-011–013, T-016, T-019, T-026, T-027, T-038, T-050–053, T-057, T-058, T-068, T-084, T-122 |
-| **M3** | **Foundations** | v0.9 | Everything that reshapes stored data, plus the safety net. Scoped: T-060 is the receivers and the worst reload path, T-085 is Robolectric only | T-014, T-015, T-054, T-055, T-059–064, T-085 |
+| **M1** | **Trust** | v0.8 (done) | Make reminders reliable, protect health data, fix wrong information, and the two P0 data-loss bugs | T-001–006, T-011–013, T-016, T-019, T-026, T-027, T-038, T-050–053, T-057, T-058, T-068, T-084, T-122 |
+| **M3** | **Foundations** | v0.9 (done) | Everything that reshapes stored data, plus the safety net. Scoped: T-060 is the receivers and the worst reload path, T-085 is Robolectric only | T-014, T-015, T-054, T-055, T-059–064, T-085 |
 | **M5** | **Stable release** | v1.0 | Release gates and cheap wins on top of v0.9, including automatic local backups and the two width fixes that keep tablets from looking broken | T-029, T-039, T-040, T-044, T-056, T-066, T-072, T-078, T-087, T-090, T-093 |
 | **M2** | **Adaptive** | 1.x | Tablet, foldable and desktop. UI only, so it can overlap anything. T-066 and T-072 are pulled into v1.0 | T-036, T-069–071, T-073, T-074 |
 | **M4** | **Everyday features** | 1.x | The features that make it worth using daily; app lock and the widget are the first candidates | T-017, T-018, T-021, T-030, T-094–097, T-100 |
@@ -60,11 +60,12 @@ is not part of the v1.0 promise.
 
 ### Up next
 
-For v0.9 (M3: Foundations):
+For v1.0 (M5: Stable release):
 
-1. **T-060** Room migration (receivers and worst reload path)
-2. **T-014, T-015** Schedule window changes and schedule versioning
-3. **T-059, T-061, T-064** Local/shared settings split, sync payload format, tombstone expiry
+1. **T-093** Automatic encrypted local backups
+2. **T-066, T-072** Content width cap and compact top bar for tablets and short windows
+3. **T-056, T-087, T-090** Play policy compliance, R8 + resource shrinking, and dependency updates
+4. **T-029, T-039, T-040, T-044, T-078** Release-gate fixes and accessibility pass
 
 ---
 
@@ -83,8 +84,6 @@ For v0.9 (M3: Foundations):
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-014 | Adding a window to a schedule back-fills missed doses, because the schedule's start date covers the new window | P1 | M | M3 | B60 |
-| T-015 | Editing a schedule rewrites history. Version schedules: end the old one and start a new one on a meaningful edit. Needed before the calendar (T-101). Dose amount, strength and injection details already change by date (`MedicationAdjustment`, T-113); this is what's left (windows, frequency, date range) | P1 | L | M3 | B30 |
 | T-017 | Add Pause for a schedule. "Paused" displays but nothing sets it, and a disabled schedule makes the medication appear as As needed. Update `MedicationGroups` too | P2 | M | M4 | B42 |
 | T-018 | An every-N-days-from-last-dose schedule stays due every day after its due date until taken | P2 | S | M4 | Low |
 | T-020 | The "doses from yesterday" notice stays all day and can't be dismissed | P3 | S | — | B1 leftover |
@@ -129,21 +128,13 @@ For v0.9 (M3: Foundations):
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-054 | Recovery code: ✕ and back skip the "I've saved it" check; unlocking with a code adopts that file's passphrase before the restore is confirmed | P2 | S | M3 | B44 |
-| T-055 | Harden backup reading: cap PBKDF2 iterations from the header, cap file and decompressed size, clear keys after use, cache `isConfigured`, explain a lost Keystore key | P1 | S | M3 | O7 |
 | T-056 | Play policy: justify or replace `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` and `USE_FULL_SCREEN_INTENT`; complete Data Safety | P2 | M | M5 | O10 |
 
 ### Data integrity and sync readiness
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-059 | `applyBundle` writes settings before the transaction, so a failed restore leaves them out of step | P1 | S | M3 | B22 |
-| T-060 | All database and scheduling work runs on the main thread and reloads everything on each tap; receivers don't use `goAsync`. For v0.9, only the receivers (`goAsync`, work off the main thread) and the worst reload-on-tap path. The rest is T-121 | P1 | M | M3 | O1, A17 |
 | T-121 | The rest of the threading work: a background dispatcher for all database and scheduling work, batched writes, a recent-logs snapshot, coalesced `refresh` | P2 | L | — | split from T-060 |
-| T-061 | Dose windows are hard-deleted, so a deleted window can return on sync. Soft-delete them | P1 | M | M3 | O6, known gap |
-| T-062 | The primary claim and device list aren't stored, so `localChanged` would always be true with two devices | P1 | S | M3 | O6 |
-| T-063 | Merge ties don't converge: with equal timestamps each device picks the other's copy. Break ties on something stable | P1 | S | M3 | O6 |
-| T-064 | "Delete all data" and "Load demo data" erase tombstones, and demo records use fixed IDs | P1 | S | M3 | O6 |
 | T-065 | Wall-clock timestamps decide conflicts. Detect large skew or use a logical clock | P2 | S | M6 | O6 |
 
 ### Adaptive and desktop
@@ -177,7 +168,7 @@ Measurements and device notes are in `designs/form-factors.md`.
 
 | ID | Task | Pri | Size | Goal | Was |
 |----|------|-----|------|------|-----|
-| T-085 | Test the layers where bugs live: For v0.9: Robolectric for the repository and receivers. Compose tests for the take flow and state restoration, and instrumented Undo after Replace, come later. `androidTest` is empty | P1 | L | M3 | O5, known gap |
+| T-123 | Compose UI tests for the take flow and state restoration, plus instrumented Undo after Replace (`androidTest` is empty; Robolectric repository and receiver tests shipped in T-085) | P2 | L | — | split from T-085 |
 | T-087 | Turn on R8 and resource shrinking; `proguard-rules.pro` is referenced but missing | P2 | M | M5 | O2, A18 |
 | T-088 | Baseline Profile | P3 | S | — | O2 |
 | T-089 | Reduce recomposition: `RegimenApp` collects all of `uiState` at the root | P3 | M | — | O3 |
@@ -247,4 +238,6 @@ Shipped, but never confirmed on a device. Clear these opportunistically; if one 
 | Delete from a detail page | Delete a medication, a provider and an indication from their pages | Goes back once, to the list | T-045 |
 | Plan a change with a strength | Plan a change, type a strength | The NDC field's hint says it will be blank from that date | T-113 |
 | Insulin syringe migration | Install over a build from before `d617fdf` with a syringe description | Type is filled in, text gone | T-113 |
+| Schedule versioning & same-day window guard | Edit a schedule with logs using "Change from date"; also add a window earlier today in Fix mode | Old schedule ends before effective date and collapses under "Past schedules"; newly added earlier window today isn't back-filled as missed | T-014, T-015 |
+| Recovery code close & deferred adoption | Open recovery code and tap ✕/Back before confirming; also unlock a backup with a recovery code and cancel restore | Prompt asks before discarding unsaved code; canceling restore keeps the device's existing passphrase | T-054 |
 

@@ -23,10 +23,39 @@ import javax.crypto.spec.GCMParameterSpec
  */
 class BackupKeyStore(context: Context) {
 
+  enum class KeyStatus { NOT_SET_UP, CONFIGURED, KEY_LOST }
+
   private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+  @Volatile
+  private var cachedStatus: KeyStatus? = null
+
+  @Synchronized
+  fun status(): KeyStatus {
+    cachedStatus?.let { return it }
+    val envelope = envelope()
+    val hasWrapped = prefs.getString(KEY_WRAPPED_DATA_KEY, null) != null && prefs.getString(KEY_WRAP_IV, null) != null
+    val resolved = when {
+      envelope == null || !hasWrapped -> KeyStatus.NOT_SET_UP
+      else -> {
+        val key = dataKey()
+        if (key != null) {
+          key.fill(0)
+          KeyStatus.CONFIGURED
+        } else {
+          KeyStatus.KEY_LOST
+        }
+      }
+    }
+    cachedStatus = resolved
+    return resolved
+  }
+
   val isConfigured: Boolean
-    get() = envelope() != null && dataKey() != null
+    get() = status() == KeyStatus.CONFIGURED
+
+  val isKeyLost: Boolean
+    get() = status() == KeyStatus.KEY_LOST
 
   fun envelope(): BundleCrypto.KeyEnvelope? {
     val raw = prefs.getString(KEY_ENVELOPE, null) ?: return null
@@ -41,11 +70,15 @@ class BackupKeyStore(context: Context) {
   fun dataKey(): ByteArray? {
     val iv = prefs.getString(KEY_WRAP_IV, null) ?: return null
     val wrapped = prefs.getString(KEY_WRAPPED_DATA_KEY, null) ?: return null
-    return runCatching {
+    val result = runCatching {
       val cipher = Cipher.getInstance(TRANSFORMATION)
-      cipher.init(Cipher.DECRYPT_MODE, keystoreKey(create = false) ?: return null, GCMParameterSpec(128, decode(iv)))
+      cipher.init(Cipher.DECRYPT_MODE, keystoreKey(create = false) ?: return@runCatching null, GCMParameterSpec(128, decode(iv)))
       cipher.doFinal(decode(wrapped))
     }.getOrNull()
+    if (result == null && envelope() != null) {
+      cachedStatus = KeyStatus.KEY_LOST
+    }
+    return result
   }
 
   @Synchronized
@@ -59,11 +92,13 @@ class BackupKeyStore(context: Context) {
       .putString(KEY_WRAPPED_DATA_KEY, encode(wrapped))
       .putString(KEY_ENVELOPE, BackupFiles.json.encodeToString(BundleCrypto.KeyEnvelope.serializer(), envelope))
       .commit()
+    cachedStatus = KeyStatus.CONFIGURED
   }
 
   @Synchronized
   fun clear() {
     prefs.edit().clear().commit()
+    cachedStatus = KeyStatus.NOT_SET_UP
     runCatching { androidKeyStore().deleteEntry(KEYSTORE_ALIAS) }
   }
 

@@ -38,6 +38,7 @@ fun ChangeOrFixDialog(
   what: String,
   /** The change would clear the NDC (new strength or package), so say so and where to get the new one. */
   clearsNdc: Boolean = false,
+  showNote: Boolean = true,
   onDismiss: () -> Unit,
   onConfirm: (EditMode) -> Unit,
 ) {
@@ -78,14 +79,16 @@ fun ChangeOrFixDialog(
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
           }
-          OutlinedTextField(
-            value = note,
-            onValueChange = { note = it },
-            label = { Text(stringResource(R.string.field_note_optional)) },
-            placeholder = { Text(stringResource(R.string.change_or_fix_note_hint)) },
-            maxLines = 3,
-            modifier = Modifier.fillMaxWidth(),
-          )
+          if (showNote) {
+            OutlinedTextField(
+              value = note,
+              onValueChange = { note = it },
+              label = { Text(stringResource(R.string.field_note_optional)) },
+              placeholder = { Text(stringResource(R.string.change_or_fix_note_hint)) },
+              maxLines = 3,
+              modifier = Modifier.fillMaxWidth(),
+            )
+          }
         } else {
           Text(
             stringResource(R.string.change_or_fix_correction_help),
@@ -96,7 +99,7 @@ fun ChangeOrFixDialog(
       }
     },
     confirmButton = {
-      Button(onClick = { onConfirm(if (isChange) EditMode.Change(dateIso, note) else EditMode.Fix) }) { Text(stringResource(R.string.action_save)) }
+      Button(onClick = { onConfirm(if (isChange) EditMode.Change(dateIso, note.takeIf { showNote }) else EditMode.Fix) }) { Text(stringResource(R.string.action_save)) }
     },
     dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )

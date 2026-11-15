@@ -4,15 +4,27 @@ import android.app.AlarmManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.widget.Toast
 import androidx.core.app.NotificationManagerCompat
 import com.exaclast.regimen.R
 import com.exaclast.regimen.data.RegimenRepository
 import com.exaclast.regimen.model.DoseStatus
 import java.time.LocalDate
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * Handles alarm triggers, notification actions and system time/boot events.
+ *
+ * Work is offloaded from the main thread via [goAsync] onto a serialized background dispatcher so
+ * SQLite reads/writes, board calculations and alarm updates never trigger ANRs, while consecutive
+ * broadcasts still run in arrival order.
  *
  * Every trigger first calls [DoseNotificationManager.refresh] (re-arm alarms, reconcile the shade,
  * silently), then alerts for exactly the event that fired. The end-of-window alarm screen is opened
@@ -22,9 +34,28 @@ import java.time.LocalDate
 class DoseActionReceiver : BroadcastReceiver() {
 
   override fun onReceive(context: Context, intent: Intent) {
-    val repo = RegimenRepository.getInstance(context)
     val action = intent.action ?: return
+    // Dismissing a test notification doesn't touch data or alarms.
+    if (action == ACTION_DISMISS_TEST) {
+      NotificationManagerCompat.from(context).cancel(
+        DoseNotificationManager.TAG_TEST,
+        DoseNotificationManager.NOTIFICATION_ID_TEST,
+      )
+      return
+    }
+    val appContext = context.applicationContext
+    val pendingResult = goAsync()
+    CoroutineScope(SupervisorJob() + backgroundDispatcher).launch {
+      try {
+        handleAction(appContext, intent, action)
+      } finally {
+        pendingResult?.finish()
+      }
+    }
+  }
 
+  private fun handleAction(context: Context, intent: Intent, action: String) {
+    val repo = RegimenRepository.getInstance(context)
     when (action) {
       Intent.ACTION_BOOT_COMPLETED -> {
         val snapshot = repo.snapshot.value
@@ -58,12 +89,6 @@ class DoseActionReceiver : BroadcastReceiver() {
       // comes back (with sound) after the snooze length, instead of reappearing at the next
       // repeat reminder or data refresh.
       ACTION_DISMISSED -> handleDoseAction(context, repo, intent, ACTION_SNOOZE, quiet = true)
-
-      // Dismiss a test reminder/alarm without taking, skipping, or snoozing any doses.
-      ACTION_DISMISS_TEST -> NotificationManagerCompat.from(context).cancel(
-        DoseNotificationManager.TAG_TEST,
-        DoseNotificationManager.NOTIFICATION_ID_TEST,
-      )
     }
   }
 
@@ -177,20 +202,22 @@ class DoseActionReceiver : BroadcastReceiver() {
       ACTION_SNOOZE -> DoseStatus.SNOOZED
       else -> DoseStatus.SKIPPED
     }
-    val logged = items.mapNotNull { item ->
-      repo.logDose(
-        medicationId = item.medication.id,
-        scheduleId = item.schedule.id,
-        bucketId = item.bucket.id,
-        scheduledDateIso = item.dateIso,
-        status = status,
-        amountTaken = item.schedule.doseAmount,
-        amountUnit = item.schedule.doseUnit,
-        siteUsed = if (status == DoseStatus.SKIPPED) null else item.suggestedSite,
-        snoozedUntilMillis = if (status == DoseStatus.SNOOZED) snoozeUntil else null,
-        existingLogId = item.existingLog?.id,
-      )
-    }
+    val logged = repo.logDoses(
+      items.map { item ->
+        RegimenRepository.DoseLogRequest(
+          medicationId = item.medication.id,
+          scheduleId = item.schedule.id,
+          bucketId = item.bucket.id,
+          scheduledDateIso = item.dateIso,
+          status = status,
+          amountTaken = item.schedule.doseAmount,
+          amountUnit = item.schedule.doseUnit,
+          siteUsed = if (status == DoseStatus.SKIPPED) null else item.suggestedSite,
+          snoozedUntilMillis = if (status == DoseStatus.SNOOZED) snoozeUntil else null,
+          existingLogId = item.existingLog?.id,
+        )
+      },
+    )
 
     val res = context.resources
     val message = when (status) {
@@ -210,7 +237,7 @@ class DoseActionReceiver : BroadcastReceiver() {
       res.getQuantityString(R.plurals.receiver_blocked, doses.size, names)
     }
     val text = listOfNotNull(message.takeIf { logged.isNotEmpty() }, blockedNote).joinToString(" ")
-    if (text.isNotEmpty() && !quiet) Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+    if (text.isNotEmpty() && !quiet) showToast(context, text)
     // Nothing was logged for these, so update the notification to show the limit.
     if (blocked.isNotEmpty()) DoseNotificationManager.refresh(context, repo.snapshot.value)
 
@@ -219,6 +246,17 @@ class DoseActionReceiver : BroadcastReceiver() {
     val legacyNotificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0)
     if (legacyNotificationId != 0) {
       NotificationManagerCompat.from(context).cancel(legacyNotificationId)
+    }
+  }
+
+  private fun showToast(context: Context, text: String) {
+    val mainLooper = Looper.getMainLooper()
+    if (Looper.myLooper() == mainLooper) {
+      Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+    } else {
+      Handler(mainLooper).post {
+        Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+      }
     }
   }
 
@@ -232,6 +270,9 @@ class DoseActionReceiver : BroadcastReceiver() {
   companion object {
     /** Tolerates alarm delivery slightly ahead of the recorded snooze deadline. */
     private const val SNOOZE_GRACE_MILLIS = 60_000L
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    internal var backgroundDispatcher: CoroutineDispatcher = Dispatchers.IO.limitedParallelism(1)
 
     const val ACTION_TAKE = "com.exaclast.regimen.action.TAKE_DOSE"
     const val ACTION_SNOOZE = "com.exaclast.regimen.action.SNOOZE_DOSE"

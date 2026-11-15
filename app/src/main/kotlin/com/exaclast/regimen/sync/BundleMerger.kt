@@ -2,10 +2,17 @@ package com.exaclast.regimen.sync
 
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
+import com.exaclast.regimen.model.Indication
+import com.exaclast.regimen.model.Medication
+import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.PrimaryClaim
+import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.RegimenBackupBundle
 import com.exaclast.regimen.model.SharedSettings
 import com.exaclast.regimen.model.SyncDevice
+import com.exaclast.regimen.model.TimeOfDayBucket
+import java.security.MessageDigest
+import kotlinx.serialization.KSerializer
 
 /** A record both sides changed (or a dose both sides logged), and which version was kept. */
 data class MergeConflict(
@@ -30,11 +37,12 @@ data class MergeResult(
  *
  * Per record:
  * - Changed on one side only → that change, from whichever device. A record missing on one side
- *   but present in [base] was deleted there (dose windows are hard-deleted).
+ *   but present in [base] was deleted there; all record types also support soft-delete tombstones.
  * - Changed on both sides → a conflict. The primary device keeps its own version; any other
  *   device defers to the remote copy. Every conflict involving the primary therefore resolves in
  *   its favor as soon as it syncs, without tracking which device made each edit. With no primary
- *   claimed yet, the newer edit wins.
+ *   claimed yet, the newer edit wins (with a stable content digest tie-breaker so equal timestamps
+ *   converge across devices).
  *
  * Then, two devices that each logged the same scheduled dose (different log ids, same slot) keep
  * one log; the other is tombstoned so it syncs as deleted. What was done to the dose decides first
@@ -56,12 +64,19 @@ object BundleMerger {
       .fold(null as PrimaryClaim?) { best, claim -> if (claim.supersedes(best)) claim else best }
     val localIsPrimary = primary?.deviceId == localDeviceId
 
-    fun <T> decide(l: T?, r: T?, updatedAt: (T) -> Long): Side = when {
+    fun <T> contentDigest(value: T, serializer: KSerializer<T>): String {
+      val encoded = BackupFiles.json.encodeToString(serializer, value).toByteArray(Charsets.UTF_8)
+      return MessageDigest.getInstance("SHA-256").digest(encoded).joinToString("") { "%02x".format(it) }
+    }
+
+    fun <T> decide(l: T?, r: T?, updatedAt: (T) -> Long, serializer: KSerializer<T>): Side = when {
       localIsPrimary -> Side.LOCAL
       primary != null -> Side.REMOTE
       l == null -> Side.REMOTE
       r == null -> Side.LOCAL
       updatedAt(l) > updatedAt(r) -> Side.LOCAL
+      updatedAt(l) < updatedAt(r) -> Side.REMOTE
+      contentDigest(l, serializer) >= contentDigest(r, serializer) -> Side.LOCAL
       else -> Side.REMOTE
     }
 
@@ -69,6 +84,7 @@ object BundleMerger {
 
     fun <T : Any> mergeRecords(
       kind: String,
+      serializer: KSerializer<T>,
       baseList: List<T>?,
       localList: List<T>,
       remoteList: List<T>,
@@ -78,7 +94,7 @@ object BundleMerger {
       overrideConflict: (local: T, remote: T) -> Side? = { _, _ -> null },
     ): List<T> {
       fun choose(lv: T?, rv: T?): Side =
-        (if (lv != null && rv != null) overrideConflict(lv, rv) else null) ?: decide(lv, rv, updatedAt)
+        (if (lv != null && rv != null) overrideConflict(lv, rv) else null) ?: decide(lv, rv, updatedAt, serializer)
 
       val b = baseList?.associateBy(id)
       val l = localList.associateBy(id)
@@ -116,27 +132,27 @@ object BundleMerger {
     }
 
     val medications = mergeRecords(
-      "Medication", base?.medications, local.medications, remote.medications,
+      "Medication", Medication.serializer(), base?.medications, local.medications, remote.medications,
       { it.id }, { it.updatedAtEpochMillis },
     )
     val providers = mergeRecords(
-      "Provider", base?.providers, local.providers, remote.providers,
+      "Provider", Provider.serializer(), base?.providers, local.providers, remote.providers,
       { it.id }, { it.updatedAtEpochMillis },
     )
     val indications = mergeRecords(
-      "Indication", base?.indications, local.indications, remote.indications,
+      "Indication", Indication.serializer(), base?.indications, local.indications, remote.indications,
       { it.id }, { it.updatedAtEpochMillis },
     )
     val buckets = mergeRecords(
-      "Dose window", base?.buckets, local.buckets, remote.buckets,
+      "Dose window", TimeOfDayBucket.serializer(), base?.buckets, local.buckets, remote.buckets,
       { it.id }, { it.updatedAtEpochMillis },
     )
     val schedules = mergeRecords(
-      "Schedule", base?.schedules, local.schedules, remote.schedules,
+      "Schedule", MedicationSchedule.serializer(), base?.schedules, local.schedules, remote.schedules,
       { it.id }, { it.updatedAtEpochMillis },
     )
     val mergedLogs = mergeRecords(
-      "Dose log", base?.doseLogs, local.doseLogs, remote.doseLogs,
+      "Dose log", DoseLog.serializer(), base?.doseLogs, local.doseLogs, remote.doseLogs,
       { it.id }, { it.updatedAtEpochMillis }, ::snoozeNeverOverwrites,
     )
 
@@ -157,6 +173,7 @@ object BundleMerger {
 
     val shared = mergeRecords(
       "Settings",
+      SharedSettings.serializer(),
       base?.let { listOf(it.sharedSettings) },
       listOf(local.sharedSettings),
       listOf(remote.sharedSettings),
@@ -246,9 +263,9 @@ object BundleMerger {
 
   private fun mergeDevices(devices: List<SyncDevice>): List<SyncDevice> =
     devices.groupBy { it.id }.values.map { copies ->
-      val latest = copies.maxBy { it.lastSyncedEpochMillis }
+      val latest = copies.maxWith(compareBy<SyncDevice>({ it.lastSyncedEpochMillis }, { it.name }, { it.model }))
       latest.copy(firstSeenEpochMillis = copies.minOf { it.firstSeenEpochMillis })
-    }.sortedBy { it.firstSeenEpochMillis }
+    }.sortedWith(compareBy({ it.firstSeenEpochMillis }, { it.id }))
 
   /** Same shared data, ignoring export metadata and the exporting device's own settings. */
   fun sameContent(a: RegimenBackupBundle, b: RegimenBackupBundle): Boolean =

@@ -2,6 +2,7 @@ package com.exaclast.regimen.notifications
 
 import android.Manifest
 import androidx.annotation.StringRes
+import androidx.annotation.VisibleForTesting
 import com.exaclast.regimen.model.Texts
 import com.exaclast.regimen.model.texts
 import android.app.AlarmManager
@@ -84,6 +85,11 @@ object DoseNotificationManager {
 
   @Volatile
   private var channelsCreated = false
+
+  @VisibleForTesting
+  internal fun resetForTests() {
+    channelsCreated = false
+  }
 
   fun ensureChannels(context: Context) {
     if (channelsCreated) return
