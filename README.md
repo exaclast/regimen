@@ -121,7 +121,7 @@ adb shell am start -n com.exaclast.regimen.debug/com.exaclast.regimen.MainActivi
 
 The repository includes [`.github/workflows/android-release.yml`](.github/workflows/android-release.yml):
 - **Push / PR to `main`**: runs unit tests and uploads `regimen-debug-apk` as a workflow artifact.
-- **Tag push (`v*.*.*`) or manual dispatch**: runs unit tests, builds the signed release APK and AAB, uploads them as workflow artifacts, and (for tags) publishes a GitHub Release.
+- **Tag push (`v*.*.*`)**: runs unit tests and lint, builds the signed release APK and AAB with `.sha256` sidecars, uploads them as workflow artifacts, and publishes a GitHub Release.
 - **Pre-releases**: a tag containing a hyphen (e.g. `v0.4.0-alpha1`) is published as a pre-release; a plain tag (e.g. `v1.0.0`) is a stable release.
 
 ### Signing Setup
