@@ -84,6 +84,8 @@ When a decision is made, add it here with the date. When one is reversed, say so
 - **Syringes are a type plus a size, not free text** (2026-11-13). Free text repeated the size and needle. Insulin
   syringes have the needle attached, so there's no draw needle, and only they show unit markings.
 - **Needle hub colors follow ISO 6009** and say so, since some brands differ (user request, 2026-11-13).
+- **Separate medication kind from Rx vs OTC source (`T-127`, 2026-11-18).** Store two orthogonal fields on `Medication` (`kind`: Medication vs Vitamin / Mineral / Supplement; `source`: Prescribed vs OTC, requiring DB and backup migrations post-v1.0) rather than one combined type, because vitamins, minerals, and supplements can be either prescribed (e.g., IM cyanocobalamin, high-dose ergocalciferol) or OTC, and standard drugs can be Rx or OTC. Include supplement-friendly forms/units (softgel, gummy, powder/scoop, grams), adjust wording ("Started" instead of "Prescribed" for OTC/supplements), badge/group Rx, OTC, and Supplements in the Medications list and `CareSummary`, and map Rx (`MedicationRequest`) vs OTC/supplements (`MedicationStatement`) in FHIR R4 (`T-125`).
+- **Auto-detect Rx vs OTC in OpenFDA and use NIH DSLD for supplements (`T-128`, 2026-11-18).** Use OpenFDA product classification to suggest Prescribed vs OTC on NDC lookup when clear, and use NIH Dietary Supplement Label Database (DSLD `v9`) alongside Supplement Facts label extraction for vitamins, minerals, and supplements that lack NDCs.
 
 ### Organization
 
