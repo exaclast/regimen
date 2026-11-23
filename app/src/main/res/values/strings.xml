@@ -118,6 +118,9 @@
     <string name="field_notes">Notes</string>
     <string name="field_phone">Phone</string>
     <string name="field_email">Email</string>
+    <string name="field_npi">NPI</string>
+    <string name="field_npi_optional">NPI (optional)</string>
+    <string name="field_npi_hint">e.g. 1234567890</string>
     <string name="field_practice">Practice</string>
     <string name="field_started">Started</string>
     <string name="field_ended">Ended</string>

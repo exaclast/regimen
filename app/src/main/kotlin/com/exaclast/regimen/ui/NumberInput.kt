@@ -19,6 +19,9 @@ object NumberInput {
    */
   fun filterNdc(raw: String): String = raw.filter { it in '0'..'9' || it == '-' }
 
+  /** An NPI as typed or pasted: digits (0-9) only, capped at 10 digits. */
+  fun filterNpi(raw: String): String = raw.filter { it in '0'..'9' }.take(10)
+
   private val UNICODE_FRACTIONS = mapOf(
     '½' to 0.5,
     '¼' to 0.25,

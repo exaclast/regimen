@@ -309,6 +309,7 @@ fun ProviderDetailScreen(
       item(key = "care") {
         SectionHeader(stringResource(R.string.provider_care))
         val rows = listOfNotNull(
+          provider.npi?.takeIf { it.isNotBlank() }?.let { stringResource(R.string.field_npi) to it },
           stringResource(R.string.field_started) to (UiFormat.dateIso(provider.careStartDateIso) ?: stringResource(R.string.value_not_set)),
           stringResource(R.string.field_ended) to (UiFormat.dateIso(provider.careEndDateIso) ?: stringResource(R.string.value_ongoing)),
           provider.notes?.takeIf { it.isNotBlank() }?.let { stringResource(R.string.field_notes) to it },
@@ -494,6 +495,7 @@ fun ProviderEditorScreen(
   var practice by rememberSaveable { mutableStateOf(initialProvider?.practice.orEmpty()) }
   var phone by rememberSaveable { mutableStateOf(initialProvider?.phone.orEmpty()) }
   var email by rememberSaveable { mutableStateOf(initialProvider?.email.orEmpty()) }
+  var npi by rememberSaveable { mutableStateOf(initialProvider?.npi.orEmpty()) }
   var isPcp by rememberSaveable { mutableStateOf(initialProvider?.isPcp ?: false) }
   var seenRegularly by rememberSaveable { mutableStateOf(initialProvider?.seenRegularly ?: false) }
   var startDate by rememberSaveable { mutableStateOf(initialProvider?.careStartDateIso.orEmpty()) }
@@ -504,6 +506,7 @@ fun ProviderEditorScreen(
     practice != initialProvider?.practice.orEmpty() ||
     phone != initialProvider?.phone.orEmpty() ||
     email != initialProvider?.email.orEmpty() ||
+    npi != initialProvider?.npi.orEmpty() ||
     isPcp != (initialProvider?.isPcp ?: false) ||
     seenRegularly != (initialProvider?.seenRegularly ?: false) ||
     startDate != initialProvider?.careStartDateIso.orEmpty() ||
@@ -526,6 +529,7 @@ fun ProviderEditorScreen(
           practice = practice.trim().takeIf { it.isNotBlank() },
           phone = phone.trim().takeIf { it.isNotBlank() },
           email = email.trim().takeIf { it.isNotBlank() },
+          npi = npi.trim().takeIf { it.isNotBlank() },
           isPcp = isPcp,
           seenRegularly = seenRegularly,
           careStartDateIso = startDate.takeIf { it.isNotBlank() },
@@ -572,6 +576,15 @@ fun ProviderEditorScreen(
       label = { Text(stringResource(R.string.field_email)) },
       singleLine = true,
       keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+      modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedTextField(
+      value = npi,
+      onValueChange = { npi = com.exaclast.regimen.ui.NumberInput.filterNpi(it) },
+      label = { Text(stringResource(R.string.field_npi_optional)) },
+      placeholder = { Text(stringResource(R.string.field_npi_hint)) },
+      singleLine = true,
+      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
       modifier = Modifier.fillMaxWidth(),
     )
     GroupedColumn {

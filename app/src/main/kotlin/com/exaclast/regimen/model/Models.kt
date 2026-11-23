@@ -303,6 +303,7 @@ data class Provider(
   val practice: String? = null,
   val phone: String? = null,
   val email: String? = null,
+  val npi: String? = null,
   val isPcp: Boolean = false,
   /** Someone the patient keeps going back to, as opposed to a specialist seen only when needed. */
   val seenRegularly: Boolean = false,
