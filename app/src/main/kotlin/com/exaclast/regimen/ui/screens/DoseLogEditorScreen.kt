@@ -5,14 +5,18 @@ package com.exaclast.regimen.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.R
@@ -31,10 +36,13 @@ import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.formatExact
+import com.exaclast.regimen.model.formatNum
 import com.exaclast.regimen.ui.checkRequiredPositiveDecimal
+import com.exaclast.regimen.ui.components.ConfirmDialog
 import com.exaclast.regimen.ui.components.DatePickerField
 import com.exaclast.regimen.ui.components.EditorScaffold
 import com.exaclast.regimen.ui.components.TimePickerField
+import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.label
 import java.time.Instant
 import java.time.LocalDate
@@ -50,6 +58,7 @@ fun DoseLogEditorScreen(
   medication: Medication,
   onClose: () -> Unit,
   onSave: (DoseLog) -> Unit,
+  onDelete: () -> Unit,
 ) {
   val zone = ZoneId.systemDefault()
   val original = remember(log.id) { Instant.ofEpochMilli(log.actionTimestampMillis).atZone(zone).toLocalDateTime() }
@@ -60,6 +69,7 @@ fun DoseLogEditorScreen(
   var amountText by rememberSaveable { mutableStateOf(formatExact(log.amountTaken)) }
   var site by rememberSaveable { mutableStateOf(log.siteUsed.orEmpty()) }
   var notes by rememberSaveable { mutableStateOf(log.notes.orEmpty()) }
+  var confirmDelete by rememberSaveable { mutableStateOf(false) }
 
   val amountCheck = checkRequiredPositiveDecimal(amountText)
   // Leave the stored time alone unless it was changed, so a note edit doesn't round it to the minute.
@@ -164,6 +174,30 @@ fun DoseLogEditorScreen(
       placeholder = { Text(stringResource(R.string.log_time_note_hint)) },
       minLines = 2,
       modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedButton(
+      onClick = { confirmDelete = true },
+      colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+      modifier = Modifier.fillMaxWidth(),
+    ) { Text(stringResource(R.string.dose_log_delete)) }
+  }
+
+  if (confirmDelete) {
+    val loggedAt = stringResource(
+      if (log.status == DoseStatus.SKIPPED) R.string.log_skipped_at else R.string.log_taken_at,
+      UiFormat.dateTime(LocalResources.current, log.actionTimestampMillis),
+    )
+    ConfirmDialog(
+      title = stringResource(R.string.today_delete_log_title, medication.primaryName),
+      text = "${formatNum(log.amountTaken)} ${log.amountUnit.symbol} · $loggedAt",
+      confirmLabel = stringResource(R.string.action_delete),
+      destructive = true,
+      onConfirm = {
+        confirmDelete = false
+        onDelete()
+      },
+      onDismiss = { confirmDelete = false },
     )
   }
 }

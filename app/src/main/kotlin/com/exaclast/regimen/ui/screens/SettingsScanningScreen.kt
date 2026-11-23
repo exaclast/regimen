@@ -9,10 +9,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Checkbox
@@ -20,6 +23,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -31,14 +35,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -138,10 +146,42 @@ fun SettingsScanningScreen(
             allowFdaLookup = settings.allowFdaLookup,
             onAllowFdaLookupChange = { onSaveSettings(settings.copy(allowFdaLookup = it)) },
           )
+          Spacer(Modifier.height(6.dp))
+          PatientNameField(
+            savedName = settings.patientName,
+            onSave = { onSaveSettings(settings.copy(patientName = it)) },
+          )
         }
       }
     }
     }
+  }
+}
+
+/** Saves when editing finishes (Done or focus leaves), not on every keystroke. */
+@Composable
+fun PatientNameField(savedName: String, onSave: (String) -> Unit) {
+  var text by rememberSaveable(savedName) { mutableStateOf(savedName) }
+  val focusManager = LocalFocusManager.current
+  fun commit() {
+    if (text.trim() != savedName) onSave(text.trim())
+  }
+  Column {
+    OutlinedTextField(
+      value = text,
+      onValueChange = { text = it },
+      label = { Text(stringResource(R.string.settings_label_name)) },
+      supportingText = { Text(stringResource(R.string.settings_label_name_help)) },
+      singleLine = true,
+      keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+      keyboardActions = KeyboardActions(onDone = {
+        commit()
+        focusManager.clearFocus()
+      }),
+      modifier = Modifier
+        .fillMaxWidth()
+        .onFocusChanged { if (!it.isFocused) commit() },
+    )
   }
 }
 

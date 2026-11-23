@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.util.Log
 import androidx.core.content.FileProvider
 import com.exaclast.regimen.R
 import com.exaclast.regimen.model.Message
@@ -45,18 +46,11 @@ object DrugBarcodeScanner {
    * ([FeatureStatus.AVAILABLE], [FeatureStatus.DOWNLOADABLE], or [FeatureStatus.DOWNLOADING]).
    * Returns false on emulators or devices without AICore so the UI can disable the feature cleanly.
    */
-  suspend fun isGeminiNanoAvailable(): Boolean = withContext(Dispatchers.IO) {
-    runCatching {
-      val model = newClient()
-      try {
-        val status = model.checkStatus()
-        status == FeatureStatus.AVAILABLE ||
-          status == FeatureStatus.DOWNLOADABLE ||
-          status == FeatureStatus.DOWNLOADING
-      } finally {
-        model.close()
-      }
-    }.getOrDefault(false)
+  suspend fun isGeminiNanoAvailable(): Boolean {
+    val status = checkNanoStatus()
+    return status == FeatureStatus.AVAILABLE ||
+      status == FeatureStatus.DOWNLOADABLE ||
+      status == FeatureStatus.DOWNLOADING
   }
 
   /**
@@ -66,12 +60,18 @@ object DrugBarcodeScanner {
     runCatching {
       val model = newClient()
       try {
-        model.checkStatus()
+        model.checkStatus().also { status ->
+          Log.d(TAG, "Gemini Nano checkStatus -> $status")
+        }
       } finally {
         model.close()
       }
+    }.onFailure { err ->
+      Log.w(TAG, "Gemini Nano checkStatus failed", err)
     }.getOrDefault(FeatureStatus.UNAVAILABLE)
   }
+
+  private const val TAG = "DrugBarcodeScanner"
 
   /**
    * Initiates the background model download for Gemini Nano via AICore.

@@ -208,7 +208,6 @@ fun RegimenApp(
                     note,
                   )
                 },
-                onDeleteLog = viewModel::deleteDoseLog,
                 onEditLog = { navigator.navigate(Route.DoseLogEditor(it.id)) },
                 onOpenMedication = { navigator.navigate(Route.MedicationDetail(it)) },
                 onOpenWindow = { navigator.navigate(Route.DoseWindowEditor(it)) },
@@ -427,6 +426,10 @@ fun RegimenApp(
                     viewModel.saveDoseLog(updated)
                     navigator.back()
                   },
+                  onDelete = {
+                    viewModel.deleteDoseLog(log)
+                    navigator.back()
+                  },
                 )
               }
             }
@@ -577,7 +580,7 @@ fun RegimenApp(
                 onSetAutoBackupKeepCount = viewModel::setAutoBackupKeepCount,
                 onBackUpNow = viewModel::backUpNow,
                 onClearAllData = viewModel::clearAllUserData,
-                onResetSampleData = if (isDebugBuild) viewModel::resetToSampleData else null,
+                onResetSampleData = viewModel::resetToSampleData,
                 onBack = navigator::back,
               )
             }

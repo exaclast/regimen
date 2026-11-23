@@ -245,10 +245,10 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
     }
   }
 
-  fun skipScheduledDose(item: ScheduledDoseItem) {
+  fun skipScheduledDose(item: ScheduledDoseItem, reason: String? = null) {
     viewModelScope.launch {
       val log = withContext(Dispatchers.IO) {
-        writeScheduledLog(item, DoseStatus.SKIPPED, site = null)
+        writeScheduledLog(item, DoseStatus.SKIPPED, site = null, notes = reason)
       } ?: return@launch
       post(str(R.string.vm_skipped, item.medication.primaryName), UndoAction.RestoreLogs(listOf(item.existingLog to log.id)))
     }

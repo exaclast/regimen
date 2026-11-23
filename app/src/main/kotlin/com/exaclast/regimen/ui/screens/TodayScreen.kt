@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Snooze
 import androidx.compose.material.icons.filled.Today
@@ -151,13 +152,12 @@ fun TodayScreen(
   onGoToToday: () -> Unit,
   onOpenSettings: () -> Unit,
   onOpenSummary: () -> Unit,
-  onTake: (item: ScheduledDoseItem, site: String?, takenAtMillis: Long?) -> Unit,
-  onSkip: (ScheduledDoseItem) -> Unit,
+  onTake: (item: ScheduledDoseItem, site: String?, takenAtMillis: Long?, note: String?) -> Unit,
+  onSkip: (item: ScheduledDoseItem, reason: String?) -> Unit,
   onSnooze: (ScheduledDoseItem) -> Unit,
   onClearLog: (ScheduledDoseItem) -> Unit,
   onTakeAll: (List<ScheduledDoseItem>) -> Unit,
   onLogPrn: (item: PrnDoseItem, site: String?, takenAtMillis: Long?, note: String?) -> Unit,
-  onDeleteLog: (DoseLog) -> Unit,
   onEditLog: (DoseLog) -> Unit,
   onOpenMedication: (String) -> Unit,
   onOpenWindow: (String) -> Unit,
@@ -211,11 +211,12 @@ fun TodayScreen(
   var takeAllPrompt by remember { mutableStateOf<List<ScheduledDoseItem>?>(null) }
   var pickingExtraDose by rememberSaveable { mutableStateOf(false) }
   var timePromptKey by rememberSaveable { mutableStateOf<String?>(null) }
+  var skipPromptKey by rememberSaveable { mutableStateOf<String?>(null) }
   val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
 
   fun commit(request: TakeRequest, site: String?) {
     when (request) {
-      is TakeRequest.Scheduled -> onTake(request.item, site, request.takenAtMillis)
+      is TakeRequest.Scheduled -> onTake(request.item, site, request.takenAtMillis, request.note)
       is TakeRequest.Prn -> onLogPrn(request.item, site, request.takenAtMillis, request.note)
     }
   }
@@ -271,6 +272,19 @@ fun TodayScreen(
     requestTake(TakeRequest.Prn(item.copy(pacing = pacing), takenAtMillis, note))
   }
 
+  fun requestScheduledAtTime(item: ScheduledDoseItem, takenAtMillis: Long?, note: String?) {
+    if (takenAtMillis == null) {
+      requestTake(TakeRequest.Scheduled(item, note = note))
+      return
+    }
+    val snapshot = uiState.snapshot
+    val day = java.time.Instant.ofEpochMilli(takenAtMillis).atZone(ZoneId.systemDefault()).toLocalDate().toString()
+    val pacing = DoseEngine.evaluatePacing(
+      item.medication, snapshot.doseLogs, takenAtMillis, day, snapshot.buckets, backdated = true,
+    )
+    requestTake(TakeRequest.Scheduled(item.copy(pacing = pacing), takenAtMillis = takenAtMillis, note = note), confirmedEarly = true)
+  }
+
   val title = if (uiState.isToday) stringResource(R.string.today_title) else UiFormat.date(selectedDate)
   val progress = when {
     board.totalScheduledCount == 0 -> stringResource(R.string.today_nothing_scheduled)
@@ -294,8 +308,9 @@ fun TodayScreen(
         val windowEnd = DoseAlarmTiming.windowEndMillis(item.bucket, item.dateIso)
         afterPacing(TakeRequest.Scheduled(item, takenAtMillis = windowEnd), alreadyConfirmed = false)
       },
+      onTakeAtOtherTime = { timePromptKey = "sched|${it.key}" },
       onSnooze = onSnooze,
-      onSkip = onSkip,
+      onSkip = { skipPromptKey = it.key },
       onClearLog = onClearLog,
       onChangeSite = { requestTake(TakeRequest.Scheduled(it, chooseSite = true)) },
       onTakeAll = { pending ->
@@ -467,7 +482,6 @@ fun TodayScreen(
           DayLogList(
             logs = dayLogs,
             medications = uiState.snapshot.allMedications,
-            onDelete = onDeleteLog,
             onEdit = onEditLog,
           )
         }
@@ -499,28 +513,61 @@ fun TodayScreen(
         val schedId = parts.getOrNull(2)
         val startOther = parts.getOrNull(3)?.toBooleanStrictOrNull() ?: true
         board.prnItems.firstOrNull { it.medication.id == medId && (it.schedule?.id ?: "") == schedId }
-          ?.let { LogTimeRequest(it, startWithOtherTime = startOther) }
+          ?.let { LogTimeRequest.Prn(it, startWithOtherTime = startOther) }
       }
       "extra" -> {
         val medId = parts.getOrNull(1)
         val startOther = parts.getOrNull(2)?.toBooleanStrictOrNull() ?: false
         uiState.snapshot.medications.firstOrNull { it.id == medId }
-          ?.let { LogTimeRequest(extraDoseItem(it), startWithOtherTime = startOther) }
+          ?.let { LogTimeRequest.Prn(extraDoseItem(it), startWithOtherTime = startOther) }
+      }
+      "sched" -> {
+        val itemKey = key.removePrefix("sched|")
+        val allGroups = board.bucketGroups + if (uiState.isToday) uiState.carriedOver else emptyList()
+        allGroups.asSequence().flatMap { it.items }.firstOrNull { it.key == itemKey }
+          ?.let { LogTimeRequest.Scheduled(it) }
       }
       else -> null
     }
   }
 
+  val skipPrompt = skipPromptKey?.let { key ->
+    val allGroups = board.bucketGroups + if (uiState.isToday) uiState.carriedOver else emptyList()
+    allGroups.asSequence().flatMap { it.items }.firstOrNull { it.key == key }
+  }
+
+  skipPrompt?.let { item ->
+    SkipReasonDialog(
+      item = item,
+      onDismiss = { skipPromptKey = null },
+      onConfirm = { reason ->
+        skipPromptKey = null
+        onSkip(item, reason)
+      },
+    )
+  }
+
   timePrompt?.let { request ->
+    val doseLabel = when (request) {
+      is LogTimeRequest.Prn -> "${formatNum(request.item.doseAmount)} ${request.item.doseUnit.symbol}"
+      is LogTimeRequest.Scheduled -> request.item.doseText()
+    }
+    val defaultDateIso = when (request) {
+      is LogTimeRequest.Prn -> uiState.selectedDateIso
+      is LogTimeRequest.Scheduled -> request.item.dateIso
+    }
     LogTimeDialog(
-      title = stringResource(R.string.today_log_named, request.item.medication.primaryName),
-      doseLabel = "${formatNum(request.item.doseAmount)} ${request.item.doseUnit.symbol}",
-      defaultDateIso = uiState.selectedDateIso,
+      title = stringResource(R.string.today_log_named, request.medication.primaryName),
+      doseLabel = doseLabel,
+      defaultDateIso = defaultDateIso,
       startWithOtherTime = request.startWithOtherTime,
       onDismiss = { timePromptKey = null },
       onConfirm = { takenAtMillis, note ->
         timePromptKey = null
-        requestPrnDose(request.item, takenAtMillis, note)
+        when (request) {
+          is LogTimeRequest.Prn -> requestPrnDose(request.item, takenAtMillis, note)
+          is LogTimeRequest.Scheduled -> requestScheduledAtTime(request.item, takenAtMillis, note)
+        }
       },
     )
   }
@@ -613,6 +660,41 @@ fun TodayScreen(
   }
 }
 
+/** Prompts for an optional reason when skipping a scheduled dose. */
+@Composable
+private fun SkipReasonDialog(
+  item: ScheduledDoseItem,
+  onDismiss: () -> Unit,
+  onConfirm: (reason: String?) -> Unit,
+) {
+  var reason by rememberSaveable(item.key) { mutableStateOf("") }
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(stringResource(R.string.today_skip_named_question, item.medication.primaryName)) },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("${item.doseText()} · ${item.bucket.name}", style = MaterialTheme.typography.bodyLarge)
+        OutlinedTextField(
+          value = reason,
+          onValueChange = { reason = it },
+          label = { Text(stringResource(R.string.field_skip_reason_optional)) },
+          placeholder = { Text(stringResource(R.string.skip_reason_hint)) },
+          maxLines = 3,
+          modifier = Modifier.fillMaxWidth(),
+        )
+      }
+    },
+    confirmButton = {
+      Button(onClick = { onConfirm(reason.trim().takeIf { it.isNotEmpty() }) }) {
+        Text(stringResource(R.string.action_skip))
+      }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+    },
+  )
+}
+
 /** Pick any medication to log an extra dose of; searchable, since the list can be long. */
 @Composable
 private fun ExtraDosePickerDialog(
@@ -671,8 +753,19 @@ private fun ExtraDosePickerDialog(
   )
 }
 
-/** An as-needed or extra dose waiting for the user to say when it was taken. */
-private data class LogTimeRequest(val item: PrnDoseItem, val startWithOtherTime: Boolean)
+/** A scheduled, as-needed, or extra dose waiting for the user to say when it was taken. */
+private sealed interface LogTimeRequest {
+  val medication: Medication
+  val startWithOtherTime: Boolean
+
+  data class Prn(val item: PrnDoseItem, override val startWithOtherTime: Boolean) : LogTimeRequest {
+    override val medication get() = item.medication
+  }
+
+  data class Scheduled(val item: ScheduledDoseItem, override val startWithOtherTime: Boolean = true) : LogTimeRequest {
+    override val medication get() = item.medication
+  }
+}
 
 /** A pending "take" through the pacing/confirmation flow. */
 private sealed interface TakeRequest {
@@ -685,6 +778,7 @@ private sealed interface TakeRequest {
     val item: ScheduledDoseItem,
     val takenAtMillis: Long? = null,
     val chooseSite: Boolean = false,
+    val note: String? = null,
   ) : TakeRequest {
     override val medication get() = item.medication
     override val pacing get() = item.pacing
@@ -726,6 +820,7 @@ private fun WindowSection(
   occurrenceLabel: String? = null,
   onTake: (ScheduledDoseItem) -> Unit,
   onTakenOnTime: (ScheduledDoseItem) -> Unit,
+  onTakeAtOtherTime: (ScheduledDoseItem) -> Unit,
   onSnooze: (ScheduledDoseItem) -> Unit,
   onSkip: (ScheduledDoseItem) -> Unit,
   onClearLog: (ScheduledDoseItem) -> Unit,
@@ -814,6 +909,7 @@ private fun WindowSection(
               snoozeMinutes = settings.snoozeMinutes,
               onTake = { onTake(item) },
               onTakenOnTime = { onTakenOnTime(item) },
+              onTakeAtOtherTime = { onTakeAtOtherTime(item) },
               onSnooze = { onSnooze(item) },
               onSkip = { onSkip(item) },
               onClearLog = { onClearLog(item) },
@@ -900,6 +996,7 @@ private fun DoseCard(
   snoozeMinutes: Int,
   onTake: () -> Unit,
   onTakenOnTime: () -> Unit,
+  onTakeAtOtherTime: () -> Unit,
   onSnooze: () -> Unit,
   onSkip: () -> Unit,
   onClearLog: () -> Unit,
@@ -918,7 +1015,8 @@ private fun DoseCard(
   val statusText = when {
     item.isTaken -> stringResource(R.string.status_taken_at, UiFormat.time(item.existingLog!!.actionTimestampMillis)) +
       (item.existingLog.siteUsed?.let { " · $it" } ?: "")
-    item.isSkipped -> stringResource(R.string.status_skipped)
+    item.isSkipped -> stringResource(R.string.status_skipped) +
+      (item.existingLog?.notes?.takeIf { it.isNotBlank() }?.let { " · $it" } ?: "")
     snoozedUntil != null -> stringResource(R.string.status_snoozed_until, UiFormat.time(snoozedUntil))
     missed -> stringResource(R.string.phase_missed)
     else -> null
@@ -941,17 +1039,12 @@ private fun DoseCard(
     DoseAlarmTiming.windowEndMillis(item.bucket, item.dateIso)?.takeIf { it <= nowMillis }
   } else null
 
-  val isPastDay = item.dateIso < LocalDate.now().toString()
   val a11yActions = buildList {
-    if (canLogOnTime && isPastDay) {
+    if (canAct) add(CustomAccessibilityAction(takeLabel.removeSuffix("…")) { onTake(); true })
+    if (canLogOnTime) {
       add(CustomAccessibilityAction(stringResource(R.string.a11y_taken_on_time, UiFormat.time(windowEnd))) { onTakenOnTime(); true })
-      add(CustomAccessibilityAction(stringResource(R.string.take_now)) { onTake(); true })
-    } else {
-      if (canAct) add(CustomAccessibilityAction(takeLabel.removeSuffix("…")) { onTake(); true })
-      if (canLogOnTime) {
-        add(CustomAccessibilityAction(stringResource(R.string.a11y_taken_on_time, UiFormat.time(windowEnd))) { onTakenOnTime(); true })
-      }
     }
+    if (canAct) add(CustomAccessibilityAction(stringResource(R.string.a11y_taken_at_other_time)) { onTakeAtOtherTime(); true })
     if (canSnooze) add(CustomAccessibilityAction(pluralStringResource(R.plurals.a11y_snooze_minutes, snoozeMinutes, snoozeMinutes)) { onSnooze(); true })
     if (canAct && med.activeSites.size > 1) {
       add(CustomAccessibilityAction(stringResource(R.string.take_different_site)) { onChangeSite(); true })
@@ -964,6 +1057,7 @@ private fun DoseCard(
       } else {
         add(CustomAccessibilityAction(stringResource(R.string.mark_taken)) { onTake(); true })
       }
+      add(CustomAccessibilityAction(stringResource(R.string.a11y_mark_taken_at_other_time)) { onTakeAtOtherTime(); true })
     }
     if (canMarkSkipped) add(CustomAccessibilityAction(stringResource(R.string.mark_skipped)) { onSkip(); true })
     if (item.existingLog != null) add(CustomAccessibilityAction(stringResource(R.string.mark_not_taken)) { onClearLog(); true })
@@ -1018,7 +1112,19 @@ private fun DoseCard(
         Box {
           IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.action_more)) }
           DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            if (canLogOnTime) {
+              DropdownMenuItem(
+                text = { Text(stringResource(R.string.taken_on_time)) },
+                leadingIcon = { Icon(Icons.Default.Check, contentDescription = null) },
+                onClick = { menuOpen = false; onTakenOnTime() },
+              )
+            }
             if (canAct) {
+              DropdownMenuItem(
+                text = { Text(stringResource(R.string.taken_at_other_time)) },
+                leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null) },
+                onClick = { menuOpen = false; onTakeAtOtherTime() },
+              )
               DropdownMenuItem(
                 text = { Text(stringResource(R.string.action_skip)) },
                 leadingIcon = { Icon(Icons.Default.Close, contentDescription = null) },
@@ -1051,6 +1157,11 @@ private fun DoseCard(
                   onClick = { menuOpen = false; onTake() },
                 )
               }
+              DropdownMenuItem(
+                text = { Text(stringResource(R.string.mark_taken_at_other_time)) },
+                leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null) },
+                onClick = { menuOpen = false; onTakeAtOtherTime() },
+              )
             }
             if (canMarkSkipped) {
               DropdownMenuItem(
@@ -1103,35 +1214,14 @@ private fun DoseCard(
 
         if (canAct) {
           Spacer(Modifier.height(4.dp))
-          val takenOnTimeLabel = stringResource(R.string.taken_on_time)
-          val takeNowLabel = stringResource(R.string.take_now)
           val snoozeLabel = stringResource(R.string.action_snooze)
+          val skipLabel = stringResource(R.string.action_skip)
           if (isLargeFontScale()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-              when {
-                canLogOnTime && isPastDay -> {
-                  Button(onClick = onTakenOnTime, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(takenOnTimeLabel, textAlign = TextAlign.Center)
-                  }
-                  OutlinedButton(onClick = onTake, modifier = Modifier.fillMaxWidth()) {
-                    Text(takeNowLabel, textAlign = TextAlign.Center)
-                  }
-                }
-                canLogOnTime -> {
-                  Button(onClick = onTake, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(takeLabel, textAlign = TextAlign.Center)
-                  }
-                  OutlinedButton(onClick = onTakenOnTime, modifier = Modifier.fillMaxWidth()) {
-                    Text(takenOnTimeLabel, textAlign = TextAlign.Center)
-                  }
-                }
-                !item.pacing.canTakeNow || phase == WindowPhase.UPCOMING ->
-                  OutlinedButton(onClick = onTake, modifier = Modifier.fillMaxWidth()) { Text(takeLabel, textAlign = TextAlign.Center) }
-                else -> Button(onClick = onTake, modifier = Modifier.fillMaxWidth()) {
+              if (!item.pacing.canTakeNow || phase == WindowPhase.UPCOMING) {
+                OutlinedButton(onClick = onTake, modifier = Modifier.fillMaxWidth()) { Text(takeLabel, textAlign = TextAlign.Center) }
+              } else {
+                Button(onClick = onTake, modifier = Modifier.fillMaxWidth()) {
                   Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
                   Spacer(Modifier.width(8.dp))
                   Text(takeLabel, textAlign = TextAlign.Center)
@@ -1144,44 +1234,47 @@ private fun DoseCard(
                   Text(snoozeLabel, textAlign = TextAlign.Center)
                 }
               }
+              OutlinedButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(skipLabel, textAlign = TextAlign.Center)
+              }
             }
           } else {
+            val compactPadding = if (canSnooze) PaddingValues(horizontal = 10.dp, vertical = 8.dp) else ButtonDefaults.ContentPadding
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-              when {
-                canLogOnTime && isPastDay -> {
-                  Button(onClick = onTakenOnTime, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(takenOnTimeLabel, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
-                  }
-                  OutlinedButton(onClick = onTake, modifier = Modifier.weight(1f)) {
-                    Text(takeNowLabel, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
-                  }
-                }
-                canLogOnTime -> {
-                  Button(onClick = onTake, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(takeLabel, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
-                  }
-                  OutlinedButton(onClick = onTakenOnTime, modifier = Modifier.weight(1f)) {
-                    Text(takenOnTimeLabel, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
-                  }
-                }
-                !item.pacing.canTakeNow || phase == WindowPhase.UPCOMING ->
-                  OutlinedButton(onClick = onTake, modifier = Modifier.weight(1f)) { Text(takeLabel, textAlign = TextAlign.Center) }
-                else -> Button(onClick = onTake, modifier = Modifier.weight(1f)) {
+              if (!item.pacing.canTakeNow || phase == WindowPhase.UPCOMING) {
+                OutlinedButton(
+                  onClick = onTake,
+                  modifier = Modifier.weight(1f),
+                  contentPadding = compactPadding,
+                ) { Text(takeLabel, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center) }
+              } else {
+                Button(
+                  onClick = onTake,
+                  modifier = Modifier.weight(1f),
+                  contentPadding = compactPadding,
+                ) {
                   Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                  Spacer(Modifier.width(8.dp))
-                  Text(takeLabel, textAlign = TextAlign.Center)
+                  Spacer(Modifier.width(6.dp))
+                  Text(takeLabel, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
                 }
               }
               if (canSnooze) {
-                FilledTonalButton(onClick = onSnooze) {
+                FilledTonalButton(onClick = onSnooze, contentPadding = compactPadding) {
                   Icon(Icons.Default.Snooze, contentDescription = null, modifier = Modifier.size(18.dp))
-                  Spacer(Modifier.width(8.dp))
-                  Text(snoozeLabel)
+                  Spacer(Modifier.width(6.dp))
+                  Text(snoozeLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+              }
+              OutlinedButton(
+                onClick = onSkip,
+                modifier = if (canSnooze) Modifier else Modifier.weight(1f),
+                contentPadding = compactPadding,
+              ) {
+                Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(skipLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
               }
             }
           }
@@ -1284,7 +1377,6 @@ private fun PrnCard(
 private fun DayLogList(
   logs: List<DoseLog>,
   medications: List<Medication>,
-  onDelete: (DoseLog) -> Unit,
   onEdit: (DoseLog) -> Unit,
 ) {
   val medMap = remember(medications) { medications.associateBy { it.id } }
@@ -1309,11 +1401,6 @@ private fun DayLogList(
               maxLines = 2,
               overflow = TextOverflow.Ellipsis,
             )
-          },
-          trailingContent = {
-            IconButton(onClick = { onDelete(log) }) {
-              Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.today_delete_log_entry, name))
-            }
           },
           colors = groupListItemColors(),
         ) { Text("$name · ${formatNum(log.amountTaken)} ${log.amountUnit.symbol}") }

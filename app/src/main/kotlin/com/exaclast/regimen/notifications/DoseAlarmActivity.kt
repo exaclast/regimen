@@ -21,6 +21,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -70,6 +71,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.exaclast.regimen.MainActivity
@@ -134,17 +136,17 @@ class DoseAlarmActivity : ComponentActivity() {
           dateIso = target.dateIso,
           isDeviceLocked = isDeviceLocked,
           onRequestUnlock = { requestUnlock() },
-          onTake = { items ->
+          onTake = { items, finishAfter ->
             logAll(items, DoseStatus.TAKEN)
-            finish()
+            if (finishAfter) finish()
           },
-          onSnooze = { items, snoozeMinutes ->
+          onSnooze = { items, snoozeMinutes, finishAfter ->
             logAll(items, DoseStatus.SNOOZED, snoozeUntil = System.currentTimeMillis() + snoozeMinutes * 60_000L)
-            finish()
+            if (finishAfter) finish()
           },
-          onSkip = { items ->
+          onSkip = { items, finishAfter ->
             logAll(items, DoseStatus.SKIPPED)
-            finish()
+            if (finishAfter) finish()
           },
           onOpenApp = ::openApp,
           onNothingPending = ::silence,
@@ -299,9 +301,9 @@ fun DoseAlarmScreen(
   dateIso: String,
   isDeviceLocked: Boolean = false,
   onRequestUnlock: () -> Unit = {},
-  onTake: (List<ScheduledDoseItem>) -> Unit,
-  onSnooze: (List<ScheduledDoseItem>, Int) -> Unit,
-  onSkip: (List<ScheduledDoseItem>) -> Unit,
+  onTake: (List<ScheduledDoseItem>, Boolean) -> Unit,
+  onSnooze: (List<ScheduledDoseItem>, Int, Boolean) -> Unit,
+  onSkip: (List<ScheduledDoseItem>, Boolean) -> Unit,
   onOpenApp: () -> Unit,
   onNothingPending: () -> Unit,
   onDismiss: () -> Unit,
@@ -530,11 +532,13 @@ fun DoseAlarmScreen(
           largeFontScale = largeFontScale,
           snoozeLabel = snoozeLabel,
           dismissLabel = stringResource(R.string.action_dismiss),
-          onSnooze = { onSnooze(activeItems, snapshot.settings.snoozeMinutes) },
+          onSnooze = { onSnooze(activeItems, snapshot.settings.snoozeMinutes, true) },
           onSecondary = onDismiss,
         )
       } else {
-        // Items list
+        // Items list; when more than one dose is due, each card offers individual actions
+        // while the bottom "all" buttons apply to whichever doses remain.
+        val showItemActions = activeItems.size > 1
         LazyColumn(
           modifier = Modifier
             .fillMaxWidth()
@@ -542,7 +546,14 @@ fun DoseAlarmScreen(
           verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
           items(activeItems, key = { it.key }) { item ->
-            AlarmItemCard(item = item)
+            AlarmItemCard(
+              item = item,
+              showActions = showItemActions,
+              largeFontScale = largeFontScale,
+              onTake = { onTake(listOf(item), activeItems.size <= 1) },
+              onSnooze = { onSnooze(listOf(item), snapshot.settings.snoozeMinutes, activeItems.size <= 1) },
+              onSkip = { onSkip(listOf(item), activeItems.size <= 1) },
+            )
           }
         }
 
@@ -566,7 +577,7 @@ fun DoseAlarmScreen(
           verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
           Button(
-            onClick = { if (readyItems.isEmpty()) onOpenApp() else onTake(readyItems) },
+            onClick = { if (readyItems.isEmpty()) onOpenApp() else onTake(readyItems, true) },
             modifier = Modifier
               .fillMaxWidth()
               .heightIn(min = 56.dp),
@@ -589,8 +600,8 @@ fun DoseAlarmScreen(
             largeFontScale = largeFontScale,
             snoozeLabel = snoozeLabel,
             dismissLabel = skipLabel,
-            onSnooze = { onSnooze(activeItems, snapshot.settings.snoozeMinutes) },
-            onSecondary = { onSkip(activeItems) },
+            onSnooze = { onSnooze(activeItems, snapshot.settings.snoozeMinutes, true) },
+            onSecondary = { onSkip(activeItems, true) },
           )
         }
       }
@@ -669,7 +680,14 @@ private fun AlarmSecondaryActions(
 }
 
 @Composable
-private fun AlarmItemCard(item: ScheduledDoseItem) {
+private fun AlarmItemCard(
+  item: ScheduledDoseItem,
+  showActions: Boolean,
+  largeFontScale: Boolean,
+  onTake: () -> Unit,
+  onSnooze: () -> Unit,
+  onSkip: () -> Unit,
+) {
   val med = item.medication
   Card(
     shape = RoundedCornerShape(20.dp),
@@ -746,6 +764,85 @@ private fun AlarmItemCard(item: ScheduledDoseItem) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.outline,
           )
+        }
+      }
+
+      if (showActions) {
+        Spacer(Modifier.height(12.dp))
+        val takeLabel = stringResource(R.string.take)
+        val snoozeLabel = stringResource(R.string.action_snooze)
+        val skipLabel = stringResource(R.string.action_skip)
+        if (largeFontScale) {
+          Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            FilledTonalButton(
+              onClick = onTake,
+              enabled = item.pacing.canTakeNow,
+              modifier = Modifier.fillMaxWidth(),
+              shape = RoundedCornerShape(12.dp),
+            ) {
+              Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.width(6.dp))
+              Text(takeLabel, textAlign = TextAlign.Center)
+            }
+            OutlinedButton(
+              onClick = onSnooze,
+              modifier = Modifier.fillMaxWidth(),
+              shape = RoundedCornerShape(12.dp),
+            ) {
+              Icon(Icons.Default.Alarm, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.width(6.dp))
+              Text(snoozeLabel, textAlign = TextAlign.Center)
+            }
+            OutlinedButton(
+              onClick = onSkip,
+              modifier = Modifier.fillMaxWidth(),
+              shape = RoundedCornerShape(12.dp),
+            ) {
+              Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.width(6.dp))
+              Text(skipLabel, textAlign = TextAlign.Center)
+            }
+          }
+        } else {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            FilledTonalButton(
+              onClick = onTake,
+              enabled = item.pacing.canTakeNow,
+              modifier = Modifier.weight(1f),
+              shape = RoundedCornerShape(12.dp),
+              contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+            ) {
+              Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.width(4.dp))
+              Text(takeLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            OutlinedButton(
+              onClick = onSnooze,
+              modifier = Modifier.weight(1f),
+              shape = RoundedCornerShape(12.dp),
+              contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+            ) {
+              Icon(Icons.Default.Alarm, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.width(4.dp))
+              Text(snoozeLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            OutlinedButton(
+              onClick = onSkip,
+              modifier = Modifier.weight(1f),
+              shape = RoundedCornerShape(12.dp),
+              contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+            ) {
+              Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.width(4.dp))
+              Text(skipLabel, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+          }
         }
       }
     }
