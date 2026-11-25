@@ -34,7 +34,7 @@ import com.exaclast.regimen.R
 import com.exaclast.regimen.domain.DoseLogEdits
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
-import com.exaclast.regimen.model.Medication
+import com.exaclast.regimen.model.RegimenItem
 import com.exaclast.regimen.model.formatExact
 import com.exaclast.regimen.model.formatNum
 import com.exaclast.regimen.ui.checkRequiredPositiveDecimal
@@ -55,7 +55,7 @@ import java.time.ZoneId
 @Composable
 fun DoseLogEditorScreen(
   log: DoseLog,
-  medication: Medication,
+  medication: RegimenItem,
   onClose: () -> Unit,
   onSave: (DoseLog) -> Unit,
   onDelete: () -> Unit,

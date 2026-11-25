@@ -39,6 +39,7 @@ import com.exaclast.regimen.domain.ScheduleVersioning
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
+import com.exaclast.regimen.model.Supplement
 import com.exaclast.regimen.model.ThemeMode
 import com.exaclast.regimen.notifications.DoseNotificationStage
 import com.exaclast.regimen.ui.RegimenViewModel
@@ -53,6 +54,7 @@ import com.exaclast.regimen.ui.navigation.isFullScreenTask
 import com.exaclast.regimen.ui.screens.AdjustmentEditorScreen
 import com.exaclast.regimen.ui.screens.BackupEncryptionScreen
 import com.exaclast.regimen.ui.screens.BackupRestoreScreen
+import com.exaclast.regimen.ui.screens.CareScreen
 import com.exaclast.regimen.ui.screens.CareSummaryScreen
 import com.exaclast.regimen.ui.screens.IndicationDetailScreen
 import com.exaclast.regimen.ui.screens.IndicationEditorScreen
@@ -75,6 +77,7 @@ import com.exaclast.regimen.ui.screens.SettingsAppearanceScreen
 import com.exaclast.regimen.ui.screens.SettingsScanningScreen
 import com.exaclast.regimen.ui.screens.SettingsDiagnosticsScreen
 import com.exaclast.regimen.ui.screens.StartupPermissionsDialog
+import com.exaclast.regimen.ui.screens.SupplementEditorScreen
 import com.exaclast.regimen.ui.screens.TodayScreen
 import com.exaclast.regimen.ui.theme.RegimenTheme
 import kotlinx.coroutines.flow.collectLatest
@@ -129,8 +132,7 @@ fun RegimenApp(
   val current = navigator.current ?: Route.Today
   val visibleTabs = TopLevel.entries.filter { tab ->
     when (tab) {
-      TopLevel.PROVIDERS -> snapshot.tracksProviders
-      TopLevel.INDICATIONS -> snapshot.tracksIndications
+      TopLevel.CARE -> snapshot.tracksProviders || snapshot.tracksIndications
       else -> true
     }
   }
@@ -228,6 +230,29 @@ fun RegimenApp(
                 onGroupingChange = { viewModel.saveSettings(settings.copy(medicationGrouping = it)) },
                 onOpenMedication = { navigator.navigate(Route.MedicationDetail(it)) },
                 onAddMedication = { navigator.navigate(Route.MedicationEditor()) },
+                isSupplements = false,
+              )
+            }
+
+            entry<Route.Supplements> {
+              MedicationListScreen(
+                snapshot = snapshot,
+                grouping = settings.medicationGrouping,
+                onGroupingChange = { viewModel.saveSettings(settings.copy(medicationGrouping = it)) },
+                onOpenMedication = { navigator.navigate(Route.MedicationDetail(it)) },
+                onAddMedication = { navigator.navigate(Route.SupplementEditor()) },
+                isSupplements = true,
+              )
+            }
+
+            entry<Route.Care> {
+              CareScreen(
+                snapshot = snapshot,
+                onOpenIndication = { navigator.navigate(Route.IndicationDetail(it)) },
+                onAddIndication = { navigator.navigate(Route.IndicationEditor()) },
+                onOpenProvider = { navigator.navigate(Route.ProviderDetail(it)) },
+                onAddProvider = { navigator.navigate(Route.ProviderEditor()) },
+                onOpenSummary = { navigator.navigate(Route.CareSummary) },
               )
             }
 
@@ -244,7 +269,10 @@ fun RegimenApp(
                 },
                 // Also used when the medication is deleted, so it must not pop the screen beneath.
                 onBack = { navigator.backFrom(key) },
-                onEdit = { navigator.navigate(Route.MedicationEditor(key.id)) },
+                onEdit = {
+                  val isSupp = snapshot.medications.find { it.id == key.id } is Supplement
+                  navigator.navigate(if (isSupp) Route.SupplementEditor(key.id) else Route.MedicationEditor(key.id))
+                },
                 onDelete = {
                   viewModel.deleteMedication(key.id)
                   navigator.back()
@@ -295,7 +323,7 @@ fun RegimenApp(
             }
 
             entry<Route.MedicationEditor> { key ->
-              val existing = key.id?.let { id -> snapshot.medications.find { it.id == id } }
+              val existing = key.id?.let { id -> snapshot.medications.find { it.id == id } as? Medication }
               if (key.id != null && existing == null) {
                 LaunchedEffect(key) { navigator.backFrom(key) }
               } else {
@@ -303,7 +331,7 @@ fun RegimenApp(
                 val today = java.time.LocalDate.now()
                 // An edit to a dose, strength or injection details that doses were logged with asks first.
                 var pendingEdit by remember { mutableStateOf<Medication?>(null) }
-                fun finish(saved: Medication) {
+                fun finish(saved: com.exaclast.regimen.model.RegimenItem) {
                   viewModel.saveMedication(saved)
                   if (existing == null) {
                     navigator.replace(Route.MedicationDetail(saved.id, promptForSchedule = true))
@@ -327,7 +355,7 @@ fun RegimenApp(
                 }
                 MedicationEditorScreen(
                   // Editors show today's values; adjustments are kept by applyMedicationEdit.
-                  initialMedication = existing?.let { Adjustments.asOf(it, today) },
+                  initialMedication = existing?.let { Adjustments.asOf(it, today) as Medication },
                   indications = snapshot.indications.filter {
                     !snapshot.isArchived(it, today) || it.id in existing?.indicationIds.orEmpty()
                   },
@@ -344,6 +372,57 @@ fun RegimenApp(
                       existing == null -> finish(med)
                       Adjustments.shouldAskForMedication(existing, med, snapshot.doseLogs, today) -> pendingEdit = med
                       else -> finish(Adjustments.applyMedicationEdit(existing, med, Adjustments.EditMode.Fix, today))
+                    }
+                  },
+                )
+              }
+            }
+
+            entry<Route.SupplementEditor> { key ->
+              val existing = key.id?.let { id -> snapshot.medications.find { it.id == id } as? Supplement }
+              if (key.id != null && existing == null) {
+                LaunchedEffect(key) { navigator.backFrom(key) }
+              } else {
+                val today = java.time.LocalDate.now()
+                var pendingEdit by remember { mutableStateOf<Supplement?>(null) }
+                fun finish(saved: com.exaclast.regimen.model.RegimenItem) {
+                  viewModel.saveMedication(saved)
+                  if (existing == null) {
+                    navigator.replace(Route.MedicationDetail(saved.id, promptForSchedule = true))
+                  } else {
+                    navigator.back()
+                  }
+                }
+                pendingEdit?.let { edited ->
+                  val current = Adjustments.asOf(existing!!, today)
+                  val parts = Adjustments.askParts(current, edited)
+                  ChangeOrFixDialog(
+                    what = android.icu.text.ListFormatter.getInstance(LocalConfiguration.current.locales[0])
+                      .format(parts.map { stringResource(it.labelRes) }),
+                    clearsNdc = false,
+                    onDismiss = { pendingEdit = null },
+                    onConfirm = { mode ->
+                      pendingEdit = null
+                      finish(Adjustments.applyMedicationEdit(existing, edited, mode, today))
+                    },
+                  )
+                }
+                SupplementEditorScreen(
+                  initialSupplement = existing?.let { Adjustments.asOf(it, today) as Supplement },
+                  indications = snapshot.indications.filter {
+                    !snapshot.isArchived(it, today) || it.id in existing?.indicationIds.orEmpty()
+                  },
+                  providers = snapshot.providers.filter {
+                    !IndicationTimeline.isPast(it, today) || it.id == existing?.prescriberId
+                  },
+                  showIndications = snapshot.tracksIndications,
+                  showProviders = snapshot.tracksProviders,
+                  onDismiss = navigator::back,
+                  onSave = { supp ->
+                    when {
+                      existing == null -> finish(supp)
+                      Adjustments.shouldAskForMedication(existing, supp, snapshot.doseLogs, today) -> pendingEdit = supp
+                      else -> finish(Adjustments.applyMedicationEdit(existing, supp, Adjustments.EditMode.Fix, today))
                     }
                   },
                 )

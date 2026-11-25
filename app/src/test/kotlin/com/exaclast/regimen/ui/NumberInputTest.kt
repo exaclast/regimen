@@ -70,4 +70,14 @@ class NumberInputTest {
     assertNull(NumberInput.parseIsoDate("2026-13-01"))
     assertNull(NumberInput.parseIsoDate("2026-2-3"))
   }
+
+  @Test
+  fun filterIcd10_normalizesAndCapsCharacters() {
+    assertEquals("E11.9", NumberInput.filterIcd10("e11.9"))
+    assertEquals("S72.001A", NumberInput.filterIcd10("s72.001a"))
+    assertEquals("E11.9", NumberInput.filterIcd10("..e11..9"))
+    assertEquals("J01.90", NumberInput.filterIcd10(" J01.90 "))
+    assertEquals("S72.001A", NumberInput.filterIcd10("s72.001abc"))
+    assertEquals("", NumberInput.filterIcd10("...---"))
+  }
 }

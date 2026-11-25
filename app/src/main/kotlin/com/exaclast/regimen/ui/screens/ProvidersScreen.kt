@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -68,8 +69,8 @@ import com.exaclast.regimen.R
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.IndicationTimeline
 import com.exaclast.regimen.model.Indication
-import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.Provider
+import com.exaclast.regimen.model.RegimenItem
 import com.exaclast.regimen.ui.components.AdaptiveMediumTopAppBar
 import com.exaclast.regimen.ui.components.AppSnackbarHost
 import com.exaclast.regimen.ui.components.CenteredContentBox
@@ -96,12 +97,6 @@ fun ProviderListScreen(
 ) {
   val listState = rememberLazyListState()
   val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
-  val today = LocalDate.now()
-  val (past, providers) = snapshot.providers.partition { IndicationTimeline.isPast(it, today) }
-  val (regular, asNeeded) = providers.partition { it.isRegular }
-  var showPast by rememberSaveable { mutableStateOf(false) }
-  val regularTitle = stringResource(R.string.providers_regular)
-  val asNeededTitle = stringResource(R.string.providers_as_needed)
   Scaffold(
     contentWindowInsets = tabContentInsets(),
     topBar = { TopAppBar(title = { Text(stringResource(R.string.providers_title)) }) },
@@ -115,41 +110,78 @@ fun ProviderListScreen(
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
-    if (snapshot.providers.isEmpty()) {
-      EmptyListMessage(stringResource(R.string.providers_empty), Modifier.padding(padding))
-      return@Scaffold
+    ProviderListBody(
+      snapshot = snapshot,
+      listState = listState,
+      onOpenProvider = onOpenProvider,
+      modifier = Modifier.padding(padding),
+    )
+  }
+}
+
+@Composable
+internal fun ProviderListBody(
+  snapshot: RegimenSnapshot,
+  listState: LazyListState,
+  onOpenProvider: (String) -> Unit,
+  modifier: Modifier = Modifier,
+  topContent: (@Composable () -> Unit)? = null,
+) {
+  val today = LocalDate.now()
+  val (past, providers) = snapshot.providers.partition { IndicationTimeline.isPast(it, today) }
+  val (regular, asNeeded) = providers.partition { it.isRegular }
+  var showPast by rememberSaveable { mutableStateOf(false) }
+  val regularTitle = stringResource(R.string.providers_regular)
+  val asNeededTitle = stringResource(R.string.providers_as_needed)
+
+  if (snapshot.providers.isEmpty()) {
+    if (topContent != null) {
+      CenteredContentBox(modifier = modifier.fillMaxSize()) { extra ->
+        Column(
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(start = 16.dp + extra, end = 16.dp + extra, top = 8.dp),
+        ) {
+          topContent()
+          EmptyListMessage(stringResource(R.string.providers_empty), Modifier.weight(1f))
+        }
+      }
+    } else {
+      EmptyListMessage(stringResource(R.string.providers_empty), modifier)
     }
-    CenteredContentBox(
-      modifier = Modifier
-        .fillMaxSize()
-        .padding(padding),
-    ) { extra ->
-      LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = ListContentPadding.addHorizontal(extra),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-      ) {
-        listOf(regularTitle to regular, asNeededTitle to asNeeded).filter { it.second.isNotEmpty() }.forEach { (title, group) ->
-          item(key = "header-$title") { SectionHeader(title) }
-          itemsIndexed(group, key = { _, p -> p.id }) { index, doc ->
-            GroupItem(index = index, count = group.size, onClick = { onOpenProvider(doc.id) }) {
-              ProviderListItem(doc, snapshot, past = false)
-            }
+    return
+  }
+  CenteredContentBox(
+    modifier = modifier.fillMaxSize(),
+  ) { extra ->
+    LazyColumn(
+      state = listState,
+      modifier = Modifier.fillMaxSize(),
+      contentPadding = ListContentPadding.addHorizontal(extra),
+      verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+      if (topContent != null) {
+        item(key = "top-content") { topContent() }
+      }
+      listOf(regularTitle to regular, asNeededTitle to asNeeded).filter { it.second.isNotEmpty() }.forEach { (title, group) ->
+        item(key = "header-$title") { SectionHeader(title) }
+        itemsIndexed(group, key = { _, p -> p.id }) { index, doc ->
+          GroupItem(index = index, count = group.size, onClick = { onOpenProvider(doc.id) }) {
+            ProviderListItem(doc, snapshot, past = false)
           }
         }
-        if (past.isNotEmpty()) {
-          item(key = "past-header") {
-            SectionHeader(
-              title = stringResource(R.string.providers_past, past.size),
-              action = { TextButton(onClick = { showPast = !showPast }) { Text(stringResource(if (showPast) R.string.action_hide else R.string.action_show)) } },
-            )
-          }
-          if (showPast) {
-            itemsIndexed(past, key = { _, p -> p.id }) { index, doc ->
-              GroupItem(index = index, count = past.size, onClick = { onOpenProvider(doc.id) }) {
-                ProviderListItem(doc, snapshot, past = true)
-              }
+      }
+      if (past.isNotEmpty()) {
+        item(key = "past-header") {
+          SectionHeader(
+            title = stringResource(R.string.providers_past, past.size),
+            action = { TextButton(onClick = { showPast = !showPast }) { Text(stringResource(if (showPast) R.string.action_hide else R.string.action_show)) } },
+          )
+        }
+        if (showPast) {
+          itemsIndexed(past, key = { _, p -> p.id }) { index, doc ->
+            GroupItem(index = index, count = past.size, onClick = { onOpenProvider(doc.id) }) {
+              ProviderListItem(doc, snapshot, past = true)
             }
           }
         }
@@ -458,7 +490,7 @@ internal fun OverflowDeleteMenu(
 
 @Composable
 internal fun LinkedMedicationGroup(
-  medications: List<Medication>,
+  medications: List<RegimenItem>,
   emptyText: String,
   onOpenMedication: (String) -> Unit,
 ) {

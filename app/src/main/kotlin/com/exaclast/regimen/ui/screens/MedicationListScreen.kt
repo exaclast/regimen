@@ -61,9 +61,12 @@ import com.exaclast.regimen.R
 import com.exaclast.regimen.data.RegimenSnapshot
 import com.exaclast.regimen.domain.Adjustments
 import com.exaclast.regimen.domain.MedicationGroups
+import com.exaclast.regimen.model.ItemSource
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationGrouping
+import com.exaclast.regimen.model.RegimenItem
+import com.exaclast.regimen.model.Supplement
 import com.exaclast.regimen.ui.ScheduleText
 import androidx.compose.ui.platform.LocalResources
 import com.exaclast.regimen.model.texts
@@ -86,6 +89,7 @@ fun MedicationListScreen(
   onGroupingChange: (MedicationGrouping) -> Unit,
   onOpenMedication: (String) -> Unit,
   onAddMedication: () -> Unit,
+  isSupplements: Boolean = false,
 ) {
   var searching by rememberSaveable { mutableStateOf(false) }
   var query by rememberSaveable { mutableStateOf("") }
@@ -93,23 +97,39 @@ fun MedicationListScreen(
   val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
 
   var showFinished by rememberSaveable { mutableStateOf(false) }
-  // The indication chip goes away with indication tracking; the saved choice is kept for if it returns.
-  val groupingOptions = MedicationGrouping.entries.filter {
-    it != MedicationGrouping.INDICATION || snapshot.tracksIndications
-  }
-  val activeGrouping = grouping.takeIf { it in groupingOptions } ?: MedicationGrouping.SCHEDULE
   val today = LocalDate.now()
 
-  val grouped = remember(snapshot.medications, snapshot.schedules, snapshot.indications, activeGrouping, today, query) {
+  val kindItems = remember(snapshot.medications, isSupplements) {
+    if (isSupplements) {
+      snapshot.medications.filterIsInstance<Supplement>()
+    } else {
+      snapshot.medications.filterIsInstance<Medication>()
+    }
+  }
+  val activeIndicationIds = remember(snapshot.indications) {
+    snapshot.indications.mapTo(mutableSetOf()) { it.id }
+  }
+  val hasLinkedIndications = remember(kindItems, activeIndicationIds) {
+    kindItems.any { item -> item.indicationIds.any { it in activeIndicationIds } }
+  }
+  // The indication chip goes away when indication tracking is off or no items here link to one; the saved choice is kept.
+  val groupingOptions = MedicationGrouping.entries.filter {
+    it != MedicationGrouping.INDICATION || (snapshot.tracksIndications && hasLinkedIndications)
+  }
+  val activeGrouping = grouping.takeIf { it in groupingOptions } ?: MedicationGrouping.SCHEDULE
+
+  val grouped = remember(kindItems, snapshot.schedules, snapshot.indications, activeGrouping, today, query) {
     val q = query.trim().lowercase()
     MedicationGroups
-      .group(activeGrouping, snapshot.medications, snapshot.schedules, snapshot.indications, today)
+      .group(activeGrouping, kindItems, snapshot.schedules, snapshot.indications, today)
       .filter {
         q.isEmpty() ||
-          it.formulaName.lowercase().contains(q) ||
-          it.brandName?.lowercase()?.contains(q) == true ||
+          it.primaryName.lowercase().contains(q) ||
+          it.secondaryName?.lowercase()?.contains(q) == true ||
           it.indicationText.lowercase().contains(q) ||
-          it.ndc11?.contains(q) == true
+          it.ndc11OrNull?.contains(q) == true ||
+          it.manufacturer?.lowercase()?.contains(q) == true ||
+          it.ingredientsOrEmpty.any { ing -> ing.name.lowercase().contains(q) }
       }
   }
 
@@ -117,7 +137,7 @@ fun MedicationListScreen(
     contentWindowInsets = tabContentInsets(),
     topBar = {
       SearchableTopBar(
-        title = stringResource(R.string.medications_title),
+        title = stringResource(if (isSupplements) R.string.supplements_title else R.string.medications_title),
         searching = searching,
         query = query,
         onQueryChange = { query = it },
@@ -125,7 +145,7 @@ fun MedicationListScreen(
           searching = active
           if (!active) query = ""
         },
-        searchPlaceholder = stringResource(R.string.medications_search),
+        searchPlaceholder = stringResource(if (isSupplements) R.string.supplements_search else R.string.medications_search),
       )
     },
     floatingActionButton = {
@@ -133,14 +153,14 @@ fun MedicationListScreen(
         onClick = onAddMedication,
         expanded = fabExpanded,
         icon = { Icon(Icons.Default.Add, contentDescription = null) },
-        text = { Text(stringResource(R.string.medications_add)) },
+        text = { Text(stringResource(if (isSupplements) R.string.supplements_add else R.string.medications_add)) },
       )
     },
     snackbarHost = { AppSnackbarHost() },
   ) { padding ->
-    if (snapshot.medications.isEmpty()) {
+    if (kindItems.isEmpty()) {
       EmptyListMessage(
-        text = stringResource(R.string.medications_empty),
+        text = stringResource(if (isSupplements) R.string.supplements_empty else R.string.medications_empty),
         modifier = Modifier.padding(padding),
       )
       return@Scaffold
@@ -205,15 +225,26 @@ fun MedicationListScreen(
 }
 
 @Composable
-private fun MedicationListItem(med: Medication, snapshot: RegimenSnapshot) {
+private fun MedicationListItem(med: RegimenItem, snapshot: RegimenSnapshot) {
   val today = remember { LocalDate.now() }
   val current = remember(med, today) { Adjustments.asOf(med, today) }
+  val sourceTag = when {
+    current is Supplement && current.source == ItemSource.PRESCRIBED -> stringResource(R.string.enum_source_prescribed)
+    current is Medication && current.source == ItemSource.OTC -> stringResource(R.string.enum_source_otc)
+    else -> null
+  }
+  val detailsLine = listOfNotNull(
+    sourceTag,
+    current.secondaryName,
+    current.strength.takeIf { it.isNotBlank() },
+    (current as? Supplement)?.manufacturer?.takeIf { it.isNotBlank() },
+  ).joinToString(" · ").takeIf { it.isNotEmpty() }
   ListItem(
     leadingContent = { FormIcon(med.form) },
     supportingContent = {
       Text(
         text = listOfNotNull(
-          listOfNotNull(current.secondaryName, current.strength).joinToString(" · "),
+          detailsLine,
           ScheduleText.summary(LocalResources.current.texts(), snapshot.schedules.filter { it.medicationId == med.id }, snapshot.buckets),
         ).joinToString("\n"),
         maxLines = 3,

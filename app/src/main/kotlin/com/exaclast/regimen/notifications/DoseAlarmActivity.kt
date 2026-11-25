@@ -753,7 +753,7 @@ private fun AlarmItemCard(
         }
       }
 
-      med.injectableDetails?.let { inj ->
+      med.injectableOrNull?.let { inj ->
         val draw = inj.formattedDrawNeedle()?.takeUnless { med.form.isPrefilledInjector }?.let { stringResource(R.string.alarm_draw, it) }
         val inject = inj.formattedInjectNeedle()?.let { stringResource(R.string.alarm_inject, it) }
         val needles = listOfNotNull(draw, inject).joinToString(" • ")

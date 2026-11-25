@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -62,10 +64,12 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.R
 import com.exaclast.regimen.data.RegimenSnapshot
+import com.exaclast.regimen.ui.NumberInput
 import com.exaclast.regimen.domain.IndicationTimeline
 import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.AllergenType
@@ -101,6 +105,7 @@ private fun IndicationKind.shortStatusLabel(res: Resources, status: IndicationSt
 
 private fun Indication.matches(query: String): Boolean =
   query.isBlank() || name.contains(query.trim(), ignoreCase = true) ||
+    icd10?.contains(query.trim(), ignoreCase = true) == true ||
     details?.contains(query.trim(), ignoreCase = true) == true ||
     reaction?.contains(query.trim(), ignoreCase = true) == true
 
@@ -157,6 +162,36 @@ fun IndicationListScreen(
 ) {
   val listState = rememberLazyListState()
   val fabExpanded by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
+  Scaffold(
+    contentWindowInsets = tabContentInsets(),
+    topBar = { TopAppBar(title = { Text(stringResource(R.string.indications_title)) }) },
+    floatingActionButton = {
+      ExtendedFloatingActionButton(
+        onClick = onAddIndication,
+        expanded = fabExpanded,
+        icon = { Icon(Icons.Default.Add, contentDescription = null) },
+        text = { Text(stringResource(R.string.indications_add)) },
+      )
+    },
+    snackbarHost = { AppSnackbarHost() },
+  ) { padding ->
+    IndicationListBody(
+      snapshot = snapshot,
+      listState = listState,
+      onOpenIndication = onOpenIndication,
+      modifier = Modifier.padding(padding),
+    )
+  }
+}
+
+@Composable
+internal fun IndicationListBody(
+  snapshot: RegimenSnapshot,
+  listState: LazyListState,
+  onOpenIndication: (String) -> Unit,
+  modifier: Modifier = Modifier,
+  topContent: (@Composable () -> Unit)? = null,
+) {
   val today = LocalDate.now()
   val res = LocalResources.current
   var query by rememberSaveable { mutableStateOf("") }
@@ -172,114 +207,114 @@ fun IndicationListScreen(
   // Searching looks through past indications too.
   val pastExpanded = showPast || query.isNotBlank()
 
-  Scaffold(
-    contentWindowInsets = tabContentInsets(),
-    topBar = { TopAppBar(title = { Text(stringResource(R.string.indications_title)) }) },
-    floatingActionButton = {
-      ExtendedFloatingActionButton(
-        onClick = onAddIndication,
-        expanded = fabExpanded,
-        icon = { Icon(Icons.Default.Add, contentDescription = null) },
-        text = { Text(stringResource(R.string.indications_add)) },
-      )
-    },
-    snackbarHost = { AppSnackbarHost() },
-  ) { padding ->
-    if (snapshot.indications.isEmpty()) {
-      EmptyListMessage(stringResource(R.string.indications_empty), Modifier.padding(padding))
-      return@Scaffold
+  if (snapshot.indications.isEmpty()) {
+    if (topContent != null) {
+      CenteredContentBox(modifier = modifier.fillMaxSize()) { extra ->
+        Column(
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(start = 16.dp + extra, end = 16.dp + extra, top = 8.dp),
+        ) {
+          topContent()
+          EmptyListMessage(stringResource(R.string.indications_empty), Modifier.weight(1f))
+        }
+      }
+    } else {
+      EmptyListMessage(stringResource(R.string.indications_empty), modifier)
     }
-    CenteredContentBox(
-      modifier = Modifier
-        .fillMaxSize()
-        .padding(padding),
-    ) { extra ->
-      LazyColumn(
-        state = listState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = ListContentPadding.addHorizontal(extra),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-      ) {
-        if (pastAll.isNotEmpty() || snapshot.indications.size > 6) {
-          item(key = "search") {
-            OutlinedTextField(
-              value = query,
-              onValueChange = { query = it },
-              placeholder = { Text(stringResource(R.string.indications_search)) },
-              leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-              trailingIcon = if (query.isNotEmpty()) {
-                { IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.search_clear)) } }
-              } else null,
-              singleLine = true,
-              modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp),
-            )
+    return
+  }
+  CenteredContentBox(
+    modifier = modifier.fillMaxSize(),
+  ) { extra ->
+    LazyColumn(
+      state = listState,
+      modifier = Modifier.fillMaxSize(),
+      contentPadding = ListContentPadding.addHorizontal(extra),
+      verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+      if (topContent != null) {
+        item(key = "top-content") { topContent() }
+      }
+      if (pastAll.isNotEmpty() || snapshot.indications.size > 6) {
+        item(key = "search") {
+          OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            placeholder = { Text(stringResource(R.string.indications_search)) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            trailingIcon = if (query.isNotEmpty()) {
+              { IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, contentDescription = stringResource(R.string.search_clear)) } }
+            } else null,
+            singleLine = true,
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(bottom = 12.dp),
+          )
+        }
+      }
+      if (current.isEmpty() && query.isBlank()) {
+        item(key = "no-current") {
+          Text(
+            stringResource(R.string.indications_none_current),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+          )
+        }
+      }
+      currentGroups.forEach { (title, group) ->
+        item(key = "header-$title") { SectionHeader(stringResource(title)) }
+        itemsIndexed(group, key = { _, c -> c.id }) { index, indication ->
+          GroupItem(index = index, count = group.size, onClick = { onOpenIndication(indication.id) }) {
+            ListItem(
+              supportingContent = { Text(indicationSummary(res, indication, snapshot, archived = false, showKind = false)) },
+              colors = groupListItemColors(),
+            ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
           }
         }
-        if (current.isEmpty() && query.isBlank()) {
-          item(key = "no-current") {
-            Text(
-              stringResource(R.string.indications_none_current),
-              style = MaterialTheme.typography.bodyMedium,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
-            )
+      }
+      if (suspectedCurrent.isNotEmpty()) {
+        item(key = "header-suspected") { SectionHeader(stringResource(R.string.indication_suspected)) }
+        itemsIndexed(suspectedCurrent, key = { _, c -> c.id }) { index, indication ->
+          GroupItem(index = index, count = suspectedCurrent.size, onClick = { onOpenIndication(indication.id) }) {
+            ListItem(
+              supportingContent = { Text(indicationSummary(res, indication, snapshot, archived = false, showSuspected = false)) },
+              colors = groupListItemColors(),
+            ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
           }
         }
-        currentGroups.forEach { (title, group) ->
-          item(key = "header-$title") { SectionHeader(stringResource(title)) }
-          itemsIndexed(group, key = { _, c -> c.id }) { index, indication ->
-            GroupItem(index = index, count = group.size, onClick = { onOpenIndication(indication.id) }) {
-              ListItem(
-                supportingContent = { Text(indicationSummary(res, indication, snapshot, archived = false, showKind = false)) },
-                colors = groupListItemColors(),
-              ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-            }
-          }
-        }
-        if (suspectedCurrent.isNotEmpty()) {
-          item(key = "header-suspected") { SectionHeader(stringResource(R.string.indication_suspected)) }
-          itemsIndexed(suspectedCurrent, key = { _, c -> c.id }) { index, indication ->
-            GroupItem(index = index, count = suspectedCurrent.size, onClick = { onOpenIndication(indication.id) }) {
-              ListItem(
-                supportingContent = { Text(indicationSummary(res, indication, snapshot, archived = false, showSuspected = false)) },
-                colors = groupListItemColors(),
-              ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-            }
-          }
-        }
-        if (pastAll.isNotEmpty()) {
-          item(key = "past-header") {
-            SectionHeader(
-              title = stringResource(R.string.indications_past, if (query.isBlank()) pastAll.size else past.size),
-              action = if (query.isBlank()) {
-                {
-                  TextButton(onClick = { showPast = !showPast }) { Text(stringResource(if (showPast) R.string.action_hide else R.string.action_show)) }
-                }
-              } else null,
-            )
-          }
-          if (pastExpanded) {
-            itemsIndexed(past, key = { _, c -> c.id }) { index, indication ->
-              GroupItem(index = index, count = past.size, onClick = { onOpenIndication(indication.id) }) {
-                ListItem(
-                  supportingContent = { Text(indicationSummary(res, indication, snapshot, archived = true)) },
-                  colors = groupListItemColors(),
-                ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+      }
+      if (pastAll.isNotEmpty()) {
+        item(key = "past-header") {
+          SectionHeader(
+            title = stringResource(R.string.indications_past, if (query.isBlank()) pastAll.size else past.size),
+            action = if (query.isBlank()) {
+              {
+                TextButton(onClick = { showPast = !showPast }) { Text(stringResource(if (showPast) R.string.action_hide else R.string.action_show)) }
               }
+            } else null,
+          )
+        }
+        if (pastExpanded) {
+          itemsIndexed(past, key = { _, c -> c.id }) { index, indication ->
+            GroupItem(index = index, count = past.size, onClick = { onOpenIndication(indication.id) }) {
+              ListItem(
+                supportingContent = { Text(indicationSummary(res, indication, snapshot, archived = true)) },
+                colors = groupListItemColors(),
+              ) { Text(indication.name, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
           }
         }
-        if (query.isNotBlank() && current.isEmpty() && past.isEmpty()) {
-          item(key = "no-results") {
-            Text(
-              stringResource(R.string.indications_no_match, query.trim()),
-              style = MaterialTheme.typography.bodyMedium,
-              color = MaterialTheme.colorScheme.onSurfaceVariant,
-              modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
-            )
-          }
+      }
+      if (query.isNotBlank() && current.isEmpty() && past.isEmpty()) {
+        item(key = "no-results") {
+          Text(
+            stringResource(R.string.indications_no_match, query.trim()),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+          )
         }
       }
     }
@@ -384,6 +419,7 @@ fun IndicationDetailScreen(
           stringResource(R.string.field_diagnosis) to stringResource(
             if (indication.suspected) R.string.indication_diagnosis_suspected else R.string.indication_diagnosis_diagnosed,
           ),
+          indication.icd10?.takeIf { indication.kind.hasIcd10 && it.isNotBlank() }?.let { stringResource(R.string.field_icd10) to it },
           indication.severity?.let { stringResource(R.string.field_severity) to stringResource(it.labelRes) },
           primaries.takeIf { it.isNotEmpty() }
             ?.let { stringResource(R.string.indication_secondary_to) to it.joinToString { p -> p.name } },
@@ -549,6 +585,7 @@ fun IndicationEditorScreen(
 ) {
   val source = initialIndication ?: template
   var name by rememberSaveable { mutableStateOf(source?.name.orEmpty()) }
+  var icd10 by rememberSaveable { mutableStateOf(source?.icd10.orEmpty()) }
   var details by rememberSaveable { mutableStateOf(source?.details.orEmpty()) }
   var kind by rememberSaveable { mutableStateOf(source?.kind ?: IndicationKind.CHRONIC) }
   var status by rememberSaveable { mutableStateOf(source?.status ?: IndicationStatus.ACTIVE) }
@@ -574,6 +611,7 @@ fun IndicationEditorScreen(
   val courseEnd = initialIndication?.let { IndicationTimeline.courseEnd(it, snapshot.medications, snapshot.schedules) }
   val endBeforeStart = !isAllergy && startDateIso.isNotBlank() && endDateIso.isNotBlank() && endDateIso < startDateIso
   val hasUnsavedChanges = name != source?.name.orEmpty() ||
+    icd10 != source?.icd10.orEmpty() ||
     details != source?.details.orEmpty() ||
     kind != (source?.kind ?: IndicationKind.CHRONIC) ||
     status != (source?.status ?: IndicationStatus.ACTIVE) ||
@@ -600,6 +638,7 @@ fun IndicationEditorScreen(
         Indication(
           id = initialIndication?.id ?: java.util.UUID.randomUUID().toString(),
           name = name.trim(),
+          icd10 = icd10.trim().trimEnd('.').takeIf { kind.hasIcd10 && it.isNotEmpty() },
           details = details.trim().takeIf { it.isNotBlank() },
           kind = kind,
           status = status,
@@ -672,6 +711,17 @@ fun IndicationEditorScreen(
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+    if (kind.hasIcd10) {
+      OutlinedTextField(
+        value = icd10,
+        onValueChange = { icd10 = NumberInput.filterIcd10(it) },
+        label = { Text(stringResource(R.string.field_icd10_optional)) },
+        placeholder = { Text(stringResource(R.string.field_icd10_hint)) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
+        modifier = Modifier.fillMaxWidth(),
+      )
+    }
     if (isAllergy) {
       if (kind == IndicationKind.ALLERGY) {
         Text(stringResource(R.string.indication_allergic_to), style = MaterialTheme.typography.titleSmall)

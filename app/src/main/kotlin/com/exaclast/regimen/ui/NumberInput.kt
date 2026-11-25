@@ -3,6 +3,7 @@ package com.exaclast.regimen.ui
 import com.exaclast.regimen.R
 import com.exaclast.regimen.model.Message
 import java.time.LocalDate
+import java.util.Locale
 
 /**
  * Strict parsing for user-entered numbers. Any text that can't be read unambiguously returns null,
@@ -21,6 +22,24 @@ object NumberInput {
 
   /** An NPI as typed or pasted: digits (0-9) only, capped at 10 digits. */
   fun filterNpi(raw: String): String = raw.filter { it in '0'..'9' }.take(10)
+
+  /**
+   * An ICD-10 code as typed or pasted: uppercased ASCII letters, digits, and at most one
+   * decimal point (not leading), capped at 8 characters (e.g. `E11.9`, `S72.001A`).
+   */
+  fun filterIcd10(raw: String): String = buildString {
+    var hasDot = false
+    for (ch in raw.uppercase(Locale.US)) {
+      when {
+        ch in 'A'..'Z' || ch in '0'..'9' -> append(ch)
+        ch == '.' && !hasDot && isNotEmpty() -> {
+          append(ch)
+          hasDot = true
+        }
+      }
+      if (length >= 8) break
+    }
+  }
 
   private val UNICODE_FRACTIONS = mapOf(
     '½' to 0.5,

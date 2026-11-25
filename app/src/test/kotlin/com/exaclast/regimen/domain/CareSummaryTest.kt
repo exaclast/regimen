@@ -11,9 +11,12 @@ import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.IndicationKind
 import com.exaclast.regimen.model.IndicationStatus
+import com.exaclast.regimen.model.KeyIngredient
 import com.exaclast.regimen.model.Medication
+import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Provider
+import com.exaclast.regimen.model.Supplement
 import java.time.LocalDate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -181,6 +184,22 @@ class CareSummaryTest {
   }
 
   @Test
+  fun icd10Code_appearsForConditions_andIsOmittedForReactions() {
+    val summary = build(
+      RegimenSnapshot(
+        indications = listOf(
+          Indication(name = "Type 2 Diabetes", icd10 = "E11.9", kind = IndicationKind.CHRONIC),
+          Indication(name = "Penicillin", icd10 = "T36.0X5A", kind = IndicationKind.ALLERGY, allergenType = AllergenType.DRUG),
+        ),
+      ),
+    )
+    val reactionLine = summary.sections.single { it.title == "Drug allergies and intolerances" }.lines.single()
+    assertEquals(null, reactionLine.secondary)
+    val indicationLine = summary.sections.single { it.title == "Indications" }.lines.single()
+    assertEquals("ICD-10 E11.9, Chronic, Active", indicationLine.secondary)
+  }
+
+  @Test
   fun deletedMedication_withRecentLogs_isIncludedInPastSevenDaysSection() {
     val deletedMed = Medication(id = "del1", formulaName = "Prednisone", strength = "20 mg", deletedAtEpochMillis = now)
     val summary = build(
@@ -219,6 +238,32 @@ class CareSummaryTest {
     val line = summary.sections.single { it.title == "Current medications" }.lines.single()
     assertEquals("Metformin 1000 mg", line.primary)
     assertTrue(line.secondary!!.startsWith("2 tab,"))
+  }
+
+  @Test
+  fun supplements_appearInSeparateSectionWithKeyIngredientBullets() {
+    val preWorkout = Supplement(
+      name = "Pre-Workout",
+      form = MedicationForm.POWDER,
+      defaultDoseAmount = 1.0,
+      defaultDoseUnit = DoseUnit.SCOOP,
+      ingredients = listOf(KeyIngredient("Caffeine", "175 mg"), KeyIngredient("Beta-Alanine", "1.5 g")),
+    )
+    val summary = build(
+      RegimenSnapshot(
+        medications = listOf(metformin, preWorkout),
+        schedules = listOf(
+          scheduled(metformin),
+          MedicationSchedule(medicationId = preWorkout.id),
+        ),
+      ),
+    )
+    assertEquals(listOf("Current medications", "Supplements"), summary.sections.map { it.title })
+    val suppLine = summary.sections[1].lines.single()
+    assertEquals("Pre-Workout", suppLine.primary)
+    assertEquals(listOf("Caffeine — 175 mg", "Beta-Alanine — 1.5 g"), suppLine.bullets)
+    val text = CareSummary.toText(TestTexts, summary, asOf = "Nov 13")
+    assertTrue(text.contains("Supplements\n- Pre-Workout — 1 scoop, none taken in the past 90 days\n  • Caffeine — 175 mg\n  • Beta-Alanine — 1.5 g"))
   }
 
   @Test

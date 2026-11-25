@@ -78,7 +78,7 @@
     <string name="adjust_dose_now">%1$s: now %2$s %3$s</string>
     <string name="adjust_default_dose_now">Default dose: now %1$s %2$s</string>
     <string name="adjust_strength_now">Strength: now %1$s</string>
-    <string name="adjust_ndc_label">NDC-11 (optional)</string>
+    <string name="adjust_ndc_label">NDC (optional)</string>
     <string name="adjust_ndc_blank">Blank from this date</string>
     <string name="adjust_ndc_help_cleared">A different strength has a different NDC. Leave it blank and use the FDA lookup when the change starts.</string>
     <string name="adjust_ndc_help">Only if it changes. Leave blank to keep the NDC before this date.</string>
@@ -96,6 +96,11 @@
 
     <!-- Medication list -->
     <string name="medications_title">Medications</string>
+    <string name="supplements_title">Supplements</string>
+    <string name="care_title">Care</string>
+    <string name="supplements_search">Search supplements or ingredients</string>
+    <string name="supplements_empty">No supplements yet. Tap Add supplement to get started.</string>
+    <string name="supplements_add">Add supplement</string>
     <string name="medications_search">Search medications</string>
     <string name="medications_add">Add medication</string>
     <string name="medications_empty">No medications yet. Add one to start tracking doses.</string>
@@ -130,6 +135,9 @@
     <string name="field_severity">Severity</string>
     <string name="field_reaction">Reaction</string>
     <string name="field_diagnosis">Diagnosis</string>
+    <string name="field_icd10">ICD-10</string>
+    <string name="field_icd10_optional">ICD-10 code (optional)</string>
+    <string name="field_icd10_hint">e.g. E11.9</string>
     <string name="value_not_set">Not set</string>
     <string name="value_ongoing">Ongoing</string>
 
@@ -324,6 +332,8 @@
         <item quantity="other">%1$d doses from yesterday weren\'t logged.</item>
     </plurals>
     <string name="today_from_last_night">From last night</string>
+    <string name="today_as_needed_medications">As-needed medications</string>
+    <string name="today_as_needed_supplements">As-needed supplements</string>
     <string name="today_logged_today">Logged today</string>
     <string name="today_logged_this_day">Logged this day</string>
     <string name="today_log_named">Log %1$s</string>
@@ -738,9 +748,38 @@
     <string name="editor_max_daily_amount_unit">Max Daily Amount (%1$s)</string>
     <string name="editor_max_daily_amount_hint">Optional total daily limit</string>
     <string name="editor_summary_ndc">NDC %1$s</string>
-    <string name="editor_optional_summary_providers">NDC-11, manufacturer, prescriber, prescribed date &amp; notes</string>
-    <string name="editor_optional_summary">NDC-11, manufacturer, prescribed date &amp; notes</string>
+    <string name="editor_optional_summary_providers">NDC, manufacturer, prescriber, prescribed date &amp; notes</string>
+    <string name="editor_optional_summary">NDC, manufacturer, prescribed date &amp; notes</string>
+    <string name="editor_supplement_optional_summary_providers">Brand, provider, start date &amp; notes</string>
+    <string name="editor_supplement_optional_summary">Brand, start date &amp; notes</string>
     <string name="editor_optional_title">Optional Rx &amp; Drug Details</string>
+    <string name="editor_supplement_title_add">Add supplement</string>
+    <string name="editor_supplement_title_edit">Edit supplement</string>
+    <string name="editor_supplement_name">Supplement name *</string>
+    <string name="editor_supplement_name_hint">e.g. Vitamin C, Pre-Workout, Fiber</string>
+    <string name="editor_strength_short">Strength</string>
+    <string name="editor_strength_optional_hint">Optional, e.g. 1000 mg</string>
+    <string name="editor_strength_optional">Strength (optional)</string>
+    <string name="editor_key_ingredients">Key ingredients</string>
+    <string name="editor_key_ingredients_none">Optional</string>
+    <plurals name="editor_key_ingredients_count">
+        <item quantity="one">%d ingredient</item>
+        <item quantity="other">%d ingredients</item>
+    </plurals>
+    <string name="editor_ingredient_name">Ingredient</string>
+    <string name="editor_ingredient_name_hint">e.g. Caffeine, Vitamin C</string>
+    <string name="editor_ingredient_amount_short">Amount</string>
+    <string name="editor_ingredient_amount">Amount (optional)</string>
+    <string name="editor_ingredient_amount_hint">e.g. 200 mg, 5 g</string>
+    <string name="editor_add_ingredient">Add ingredient</string>
+    <string name="editor_remove_ingredient">Remove %1$s</string>
+    <string name="editor_brand_manufacturer">Brand / Manufacturer</string>
+    <string name="editor_start_date">Start date</string>
+    <string name="editor_recommended_by">Prescriber / Provider</string>
+    <string name="editor_supplement_optional_title">Optional Details</string>
+    <string name="med_key_ingredients">Key ingredients</string>
+    <string name="med_started">Started</string>
+    <string name="med_source">Source</string>
     <string name="editor_ndc_hint">e.g. 00781-1852-20</string>
     <string name="editor_lookup">Lookup</string>
     <string name="editor_none_selected">None selected</string>
@@ -833,8 +872,14 @@
     <string name="enum_site_mode_rotate">Rotate</string>
     <string name="enum_site_mode_rotate_help">Suggests the next site in order after the last one used</string>
 
+    <string name="enum_source_prescribed">Prescribed</string>
+    <string name="enum_source_otc">OTC</string>
     <string name="enum_form_tablet">Tablet</string>
     <string name="enum_form_capsule">Capsule</string>
+    <string name="enum_form_softgel">Softgel</string>
+    <string name="enum_form_gummy">Gummy</string>
+    <string name="enum_form_chewable">Chewable</string>
+    <string name="enum_form_powder">Powder</string>
     <string name="enum_form_vial">Injectable (Vial)</string>
     <string name="enum_form_pen">Injectable (Pen / Auto-injector / Prefilled syringe)</string>
     <string name="enum_form_topical">Topical (Gel / Cream / Patch)</string>
@@ -850,11 +895,18 @@
 
     <string name="enum_unit_mg">Milligrams (mg)</string>
     <string name="enum_unit_mcg">Micrograms (mcg)</string>
+    <string name="enum_unit_g">Grams (g)</string>
     <string name="enum_unit_ml">Milliliters (mL)</string>
     <string name="enum_unit_units">Units (syringe or pen)</string>
     <string name="enum_unit_iu">International Units (IU)</string>
     <string name="enum_unit_tablet">Tablet(s)</string>
     <string name="enum_unit_capsule">Capsule(s)</string>
+    <string name="enum_unit_softgel">Softgel(s)</string>
+    <string name="enum_unit_gummy">Gummy / Gummies</string>
+    <string name="enum_unit_scoop">Scoop(s)</string>
+    <string name="enum_unit_packet">Packet(s)</string>
+    <string name="enum_unit_tsp">Teaspoon(s) (tsp)</string>
+    <string name="enum_unit_tbsp">Tablespoon(s) (tbsp)</string>
     <string name="enum_unit_application">Application / Pump(s)</string>
     <string name="enum_unit_puff">Puff(s) / Spray(s)</string>
     <string name="enum_unit_drop">Drop(s)</string>
@@ -941,6 +993,7 @@
     <!-- Health summary content (domain/CareSummary) -->
     <string name="summary_section_other_allergies">Other allergies</string>
     <string name="summary_section_current">Current medications</string>
+    <string name="summary_section_supplements">Supplements</string>
     <plurals name="summary_section_finished">
         <item quantity="one">Finished or as-needed, taken in the past %1$d day</item>
         <item quantity="other">Finished or as-needed, taken in the past %1$d days</item>
@@ -955,6 +1008,7 @@
     <string name="summary_ended">ended %1$s</string>
     <string name="summary_reaction">%1$s (%2$s, %3$s)</string>
     <string name="summary_severity">%1$s severity</string>
+    <string name="summary_icd10">ICD-10 %1$s</string>
     <string name="summary_secondary_to">secondary to %1$s</string>
     <string name="summary_pcp">PCP</string>
     <plurals name="summary_none_taken">
@@ -970,10 +1024,10 @@
     <!-- FDA lookup results and errors (data/FdaNdcLookupService) -->
     <string name="fda_hint_short_code">Scanned code \'%1$s\' is an internal packaging/lot code (%2$d digits), not an FDA NDC. Tap \'Scan Label\' to read the printed drug text instead.</string>
     <string name="fda_hint_pharmacy">Pharmacy vial barcode (\'%1$s\') encodes a store prescription refill number rather than an FDA NDC. Tap \'Scan Label\' to read the printed medication text.</string>
-    <string name="fda_invalid_ndc">Please enter a valid 10- or 11-digit NDC (or tap \'Scan Label\' to read printed bottle text).</string>
+    <string name="fda_invalid_ndc">Please enter a valid NDC (e.g. 00781-1852 or 00781-1852-20), or tap \'Scan Label\' to read printed bottle text.</string>
     <string name="fda_no_ndc_record">No matching FDA NDC record found for %1$s. Tap \'Scan Label\' to read the printed drug name &amp; strength.</string>
     <string name="fda_no_record_for_ndc_no_name">No matching FDA record found for NDC \'%1$s\', and no drug name was provided to cross-reference.</string>
-    <string name="fda_enter_name">Scan a medication label or enter a Brand / Formula Name (or NDC-11) to cross-reference against OpenFDA.</string>
+    <string name="fda_enter_name">Scan a medication label or enter a Brand / Formula Name (or NDC) to cross-reference against OpenFDA.</string>
     <string name="fda_no_records_for_name">No OpenFDA records matched \'%1$s\'.</string>
     <string name="fda_no_records_for_name_strength">No OpenFDA records matched \'%1$s\' (%2$s).</string>
     <string name="fda_no_records">No matching FDA records found.</string>
@@ -1027,6 +1081,7 @@
 
     <!-- Backup files and errors (sync/) -->
     <string name="backup_kind_medications">Medications</string>
+    <string name="backup_kind_supplements">Supplements</string>
     <string name="backup_kind_schedules">Schedules</string>
     <string name="backup_kind_dose_history">Dose history</string>
     <string name="backup_kind_dose_windows">Dose windows</string>

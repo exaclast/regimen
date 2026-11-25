@@ -9,6 +9,8 @@ import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.Labeled
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.Provider
+import com.exaclast.regimen.model.RegimenItem
+import com.exaclast.regimen.model.Supplement
 import com.exaclast.regimen.model.Texts
 import com.exaclast.regimen.model.formatNum
 import java.time.LocalDate
@@ -23,7 +25,11 @@ object CareSummary {
 
   const val RECENT_DAYS = 90
 
-  data class Line(val primary: String, val secondary: String? = null)
+  data class Line(
+    val primary: String,
+    val secondary: String? = null,
+    val bullets: List<String> = emptyList(),
+  )
 
   data class Section(val title: String, val lines: List<Line>)
 
@@ -63,19 +69,41 @@ object CareSummary {
         course == MedicationCourse.SHORT_TERM || course == MedicationCourse.ONGOING
       }
 
+    val regimenMeds = regimen.filterIsInstance<Medication>()
+    val regimenSupps = regimen.filterIsInstance<Supplement>()
+    val recentItems = (other + snapshot.deletedMedications).filter { it.id in takenByMedication }
+    val recentMeds = recentItems.filterIsInstance<Medication>()
+    val recentSupps = recentItems.filterIsInstance<Supplement>()
+
+    val supplementLines = (
+      regimenSupps.map { s ->
+        val current = Adjustments.asOf(s, today)
+        current to regimenLine(texts, current, takenByMedication[s.id], formatTaken)
+      } + recentSupps.map { s ->
+        val current = Adjustments.asOf(s, today)
+        val course = MedicationGroups.courseOf(s, snapshot.schedules, snapshot.indications, today)
+        current to takenLine(texts, current, takenByMedication.getValue(s.id), formatTaken, course = course)
+      }
+      )
+      .sortedBy { it.first.sortKey() }
+      .map { (item, line) ->
+        line.copy(bullets = item.ingredientsOrEmpty.map { it.formatted() })
+      }
+
     val sections = listOf(
       Section(texts.get(R.string.enum_allergen_drug_section), reactionLines(texts, drugReactions)),
       Section(texts.get(R.string.summary_section_other_allergies), reactionLines(texts, otherReactions)),
       Section(
         texts.get(R.string.summary_section_current),
-        regimen
+        regimenMeds
           .map { Adjustments.asOf(it, today) }
           .sortedBy { it.sortKey() }
           .map { regimenLine(texts, it, takenByMedication[it.id], formatTaken) },
       ),
+      Section(texts.get(R.string.summary_section_supplements), supplementLines),
       Section(
         texts.plural(R.plurals.summary_section_finished, RECENT_DAYS, RECENT_DAYS),
-        (other + snapshot.deletedMedications).filter { it.id in takenByMedication }.sortedBy { it.sortKey() }.map { m ->
+        recentMeds.sortedBy { it.sortKey() }.map { m ->
           val course = MedicationGroups.courseOf(m, snapshot.schedules, snapshot.indications, today)
           takenLine(texts, Adjustments.asOf(m, today), takenByMedication.getValue(m.id), formatTaken, course = course)
         },
@@ -118,6 +146,9 @@ object CareSummary {
       section.lines.forEach { line ->
         append("\n- ${line.primary}")
         line.secondary?.let { append(" — $it") }
+        line.bullets.forEach { bullet ->
+          append("\n  • $bullet")
+        }
       }
     }
     append("\n\n").append(texts.get(R.string.summary_text_footer))
@@ -128,9 +159,18 @@ object CareSummary {
     snapshot.indicationEnd(i)?.date
       ?: java.time.Instant.ofEpochMilli(i.updatedAtEpochMillis).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
 
-  private fun Medication.sortKey() = formulaName.lowercase()
+  private fun RegimenItem.sortKey() = when (this) {
+    is Medication -> formulaName.lowercase()
+    is Supplement -> name.lowercase()
+  }
 
-  private fun Medication.title() = listOf(formulaName, strength.trim()).filter { it.isNotEmpty() }.joinToString(" ")
+  private fun RegimenItem.title() = listOf(
+    when (this) {
+      is Medication -> formulaName
+      is Supplement -> name
+    },
+    strength.trim(),
+  ).filter { it.isNotEmpty() }.joinToString(" ")
 
   private fun Texts.lower(value: Labeled) = label(value).lowercase(locale)
 
@@ -149,6 +189,7 @@ object CareSummary {
     return Line(
       i.name,
       listOfNotNull(
+        i.icd10?.takeIf { i.kind.hasIcd10 && it.isNotBlank() }?.let { texts.get(R.string.summary_icd10, it) },
         texts.label(i.kind),
         texts.label(i.status).takeIf { i.kind.statuses.size > 2 },
         i.severity?.let { texts.get(R.string.summary_severity, texts.lower(it)) },
@@ -169,7 +210,7 @@ object CareSummary {
     )
 
   /** A regimen drug is always listed; with nothing taken lately it shows the usual dose instead. */
-  private fun regimenLine(texts: Texts, m: Medication, taken: List<DoseLog>?, formatTaken: (Long) -> String): Line =
+  private fun regimenLine(texts: Texts, m: RegimenItem, taken: List<DoseLog>?, formatTaken: (Long) -> String): Line =
     if (taken.isNullOrEmpty()) {
       Line(
         m.title(),
@@ -181,7 +222,7 @@ object CareSummary {
 
   private fun takenLine(
     texts: Texts,
-    m: Medication,
+    m: RegimenItem,
     taken: List<DoseLog>,
     formatTaken: (Long) -> String,
     course: MedicationCourse? = null,

@@ -113,10 +113,13 @@ import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.InjectableDetails
 import com.exaclast.regimen.model.InjectionRoute
+import com.exaclast.regimen.model.ItemSource
+import com.exaclast.regimen.model.Labeled
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Provider
+import com.exaclast.regimen.model.RegimenItem
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.NeedleHub
 import com.exaclast.regimen.model.SiteMode
@@ -137,6 +140,7 @@ import com.exaclast.regimen.model.texts
 import com.exaclast.regimen.model.userMessage
 import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.label
+import com.exaclast.regimen.ui.FieldCheck
 import com.exaclast.regimen.ui.NumberInput
 import com.exaclast.regimen.ui.checkOptionalPositiveDecimal
 import com.exaclast.regimen.ui.checkOptionalPositiveInt
@@ -198,7 +202,7 @@ internal fun HubColorHint(gauge: Int?) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun <T> DropdownSelectorField(
+internal fun <T> DropdownSelectorField(
   label: String,
   selectedText: String,
   options: List<T>,
@@ -244,7 +248,7 @@ private fun <T> DropdownSelectorField(
 }
 
 @Composable
-private fun CollapsibleFormSection(
+internal fun CollapsibleFormSection(
   title: String,
   subtitle: String? = null,
   initiallyExpanded: Boolean = false,
@@ -303,6 +307,244 @@ private fun CollapsibleFormSection(
   }
 }
 
+@Composable
+internal fun IndicationSelectorSection(
+  indications: List<Indication>,
+  selectedIds: List<String>,
+  onSelectionChange: (List<String>) -> Unit,
+) {
+  Text(stringResource(R.string.indications_title), style = MaterialTheme.typography.titleSmall)
+  IndicationTimeline.sections(indications).forEach { (title, group) ->
+    Text(
+      stringResource(title),
+      style = MaterialTheme.typography.labelMedium,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    FlowRow(
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+      group.forEach { indication ->
+        val selected = indication.id in selectedIds
+        FilterChip(
+          selected = selected,
+          onClick = {
+            onSelectionChange(if (selected) selectedIds - indication.id else selectedIds + indication.id)
+          },
+          label = { Text(indication.name) },
+          leadingIcon = if (selected) {
+            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
+          } else null,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+internal fun SitesEditorSection(
+  form: MedicationForm,
+  siteMode: SiteMode,
+  onSiteModeChange: (SiteMode) -> Unit,
+  sites: SnapshotStateList<String>,
+  onSitesChanged: () -> Unit,
+  newCustomSite: String,
+  onNewCustomSiteChange: (String) -> Unit,
+) {
+  val rotating = siteMode == SiteMode.ROTATE
+  Surface(
+    shape = MaterialTheme.shapes.medium,
+    color = MaterialTheme.colorScheme.surfaceContainerLow,
+    modifier = Modifier.fillMaxWidth(),
+  ) {
+    Column(
+      modifier = Modifier.padding(14.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Text(
+        text = stringResource(R.string.med_sites),
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary,
+      )
+      AdaptiveSingleChoiceRow(
+        options = SiteMode.entries,
+        selected = siteMode,
+        onSelect = onSiteModeChange,
+        label = { it.label() },
+      )
+      Text(
+        text = stringResource(siteMode.descriptionRes),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+
+      if (siteMode != SiteMode.OFF) {
+        if (sites.isEmpty()) {
+          Text(
+            text = stringResource(R.string.editor_sites_required),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+          )
+        }
+        DropdownSelectorField(
+          label = stringResource(R.string.editor_site_preset),
+          selectedText = if (sites.isEmpty()) {
+            stringResource(R.string.editor_no_sites)
+          } else {
+            pluralStringResource(R.plurals.editor_site_count, sites.size, sites.size)
+          },
+          options = Medication.sitePresets(form),
+          optionLabel = { it.first },
+          onOptionSelected = { (_, siteList) ->
+            sites.clear()
+            sites.addAll(siteList)
+            onSitesChanged()
+          },
+          modifier = Modifier.fillMaxWidth(),
+        )
+
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          sites.forEachIndexed { idx, site ->
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              // Order only matters when rotating.
+              Text(
+                text = if (rotating) stringResource(R.string.editor_site_numbered, idx + 1, site) else site,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+              )
+              if (rotating) {
+                IconButton(
+                  onClick = {
+                    if (idx > 0) {
+                      val item = sites.removeAt(idx)
+                      sites.add(idx - 1, item)
+                      onSitesChanged()
+                    }
+                  },
+                  enabled = idx > 0,
+                ) {
+                  Icon(Icons.Default.ArrowUpward, contentDescription = stringResource(R.string.editor_move_up), modifier = Modifier.size(18.dp))
+                }
+                IconButton(
+                  onClick = {
+                    if (idx < sites.lastIndex) {
+                      val item = sites.removeAt(idx)
+                      sites.add(idx + 1, item)
+                      onSitesChanged()
+                    }
+                  },
+                  enabled = idx < sites.lastIndex,
+                ) {
+                  Icon(Icons.Default.ArrowDownward, contentDescription = stringResource(R.string.editor_move_down), modifier = Modifier.size(18.dp))
+                }
+              }
+              IconButton(
+                onClick = {
+                  sites.removeAt(idx)
+                  onSitesChanged()
+                },
+              ) {
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.editor_remove_site), modifier = Modifier.size(18.dp))
+              }
+            }
+          }
+        }
+
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          OutlinedTextField(
+            value = newCustomSite,
+            onValueChange = onNewCustomSiteChange,
+            label = { Text(stringResource(R.string.editor_add_custom_site)) },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+          )
+          OutlinedButton(
+            onClick = {
+              if (newCustomSite.isNotBlank()) {
+                sites.add(newCustomSite.trim())
+                onSitesChanged()
+                onNewCustomSiteChange("")
+              }
+            },
+          ) {
+            Text(stringResource(R.string.action_add))
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+internal fun PacingEditorSection(
+  minIntervalHoursText: String,
+  onMinIntervalHoursChange: (String) -> Unit,
+  minIntervalCheck: FieldCheck<Double?>,
+  maxDailyDosesText: String,
+  onMaxDailyDosesChange: (String) -> Unit,
+  maxDailyDosesCheck: FieldCheck<Double?>,
+  maxDailyAmountText: String,
+  onMaxDailyAmountChange: (String) -> Unit,
+  maxDailyAmountCheck: FieldCheck<Double?>,
+  defaultDoseUnit: DoseUnit,
+  initiallyExpanded: Boolean,
+) {
+  val pacingSummary = listOfNotNull(
+    minIntervalHoursText.takeIf { it.isNotBlank() }?.let { stringResource(R.string.editor_summary_interval, it) },
+    maxDailyDosesText.takeIf { it.isNotBlank() }?.let { stringResource(R.string.editor_summary_max_doses, it) },
+  ).joinToString(" • ").ifEmpty { stringResource(R.string.editor_pacing_summary_empty) }
+
+  CollapsibleFormSection(
+    title = stringResource(R.string.editor_pacing_title),
+    subtitle = pacingSummary,
+    initiallyExpanded = initiallyExpanded,
+  ) {
+    AdaptiveFieldPair(
+      first = { m ->
+        ValidatedNumberField(
+          check = minIntervalCheck,
+          keyboardType = KeyboardType.Decimal,
+          value = minIntervalHoursText,
+          onValueChange = onMinIntervalHoursChange,
+          label = { Text(stringResource(R.string.editor_min_interval_hours)) },
+          placeholder = { Text(stringResource(R.string.editor_min_interval_hint)) },
+          singleLine = true,
+          modifier = m,
+        )
+      },
+      second = { m ->
+        ValidatedNumberField(
+          check = maxDailyDosesCheck,
+          keyboardType = KeyboardType.Decimal,
+          value = maxDailyDosesText,
+          onValueChange = onMaxDailyDosesChange,
+          label = { Text(stringResource(R.string.editor_max_daily_doses)) },
+          placeholder = { Text(stringResource(R.string.editor_max_daily_doses_hint)) },
+          singleLine = true,
+          modifier = m,
+        )
+      },
+    )
+    ValidatedNumberField(
+      check = maxDailyAmountCheck,
+      keyboardType = KeyboardType.Decimal,
+      value = maxDailyAmountText,
+      onValueChange = onMaxDailyAmountChange,
+      label = { Text(stringResource(R.string.editor_max_daily_amount_unit, defaultDoseUnit.symbol)) },
+      placeholder = { Text(stringResource(R.string.editor_max_daily_amount_hint)) },
+      singleLine = true,
+      modifier = Modifier.fillMaxWidth(),
+    )
+  }
+}
+
 /**
  * Streamlined Medication Editor Dialog:
  * - Clean vertical hierarchy with full-width long fields and 2-column short fields
@@ -324,6 +566,10 @@ fun MedicationEditorScreen(
   onDismiss: () -> Unit,
   onSave: (Medication) -> Unit,
 ) {
+  var source by rememberSaveable {
+    mutableStateOf(initialMedication?.source ?: ItemSource.PRESCRIBED)
+  }
+
   var formulaName by rememberSaveable { mutableStateOf(initialMedication?.formulaName.orEmpty()) }
   var brandName by rememberSaveable { mutableStateOf(initialMedication?.brandName.orEmpty()) }
   var manufacturer by rememberSaveable { mutableStateOf(initialMedication?.manufacturer.orEmpty()) }
@@ -407,7 +653,7 @@ fun MedicationEditorScreen(
   var selectedIndicationIds by rememberSaveable { mutableStateOf(initialMedication?.indicationIds.orEmpty()) }
   var indicationText by rememberSaveable { mutableStateOf(initialMedication?.indicationText.orEmpty()) }
   var selectedPrescriberId by rememberSaveable { mutableStateOf(initialMedication?.prescriberId) }
-  var prescribedDateIso by rememberSaveable { mutableStateOf(initialMedication?.prescribedDateIso.orEmpty()) }
+  var prescribedDateIso by rememberSaveable { mutableStateOf(initialMedication?.startedDateIso.orEmpty()) }
   var notes by rememberSaveable { mutableStateOf(initialMedication?.notes.orEmpty()) }
 
   // Gemini Nano (AICore) Label Scanner & Cross-Reference lookup state
@@ -710,11 +956,12 @@ fun MedicationEditorScreen(
     } else null
 
     val medId = initialMedication?.id ?: java.util.UUID.randomUUID().toString()
-    val savedMed = Medication(
+    val savedItem = Medication(
       id = medId,
       formulaName = formulaName.trim(),
       strength = strength.trim(),
       form = form,
+      source = source,
       defaultDoseAmount = doseAmt,
       defaultDoseUnit = defaultDoseUnit,
       injectableDetails = injDetails,
@@ -733,7 +980,7 @@ fun MedicationEditorScreen(
       notes = notes.trim().takeIf { it.isNotBlank() },
       createdAtEpochMillis = initialMedication?.createdAtEpochMillis ?: System.currentTimeMillis(),
     )
-    onSave(savedMed)
+    onSave(savedItem)
   }
 
   val initialForm = initialMedication?.form ?: MedicationForm.TABLET
@@ -754,8 +1001,13 @@ fun MedicationEditorScreen(
   val initialMinIntervalHoursText = remember(initialMedication?.id) {
     initialMedication?.minIntervalMinutes?.let { formatNum(it / 60.0) }.orEmpty()
   }
+  val initialFormulaName = remember(initialMedication?.id) {
+    initialMedication?.formulaName.orEmpty()
+  }
+  val initialSource = initialMedication?.source ?: ItemSource.PRESCRIBED
   val hasUnsavedChanges =
-    formulaName != initialMedication?.formulaName.orEmpty() ||
+    source != initialSource ||
+      formulaName != initialFormulaName ||
       brandName != initialMedication?.brandName.orEmpty() ||
       manufacturer != initialMedication?.manufacturer.orEmpty() ||
       ndc11 != initialMedication?.ndc11.orEmpty() ||
@@ -784,8 +1036,10 @@ fun MedicationEditorScreen(
       prescribedDateIso != initialMedication?.prescribedDateIso.orEmpty() ||
       notes != initialMedication?.notes.orEmpty()
 
+  val editorTitle = if (initialMedication == null) R.string.medications_add else R.string.med_edit
+
   EditorScaffold(
-    title = stringResource(if (initialMedication == null) R.string.medications_add else R.string.med_edit),
+    title = stringResource(editorTitle),
     onClose = onDismiss,
     onSave = { saveMedication() },
     saveEnabled = formulaName.isNotBlank() && strength.isNotBlank() && invalidFieldLabels.isEmpty(),
@@ -803,6 +1057,13 @@ fun MedicationEditorScreen(
       null
     },
   ) {
+          AdaptiveSingleChoiceRow(
+            options = ItemSource.entries,
+            selected = source,
+            onSelect = { source = it },
+            label = { resources.label(it) },
+          )
+
           // 1. Top Label OCR Scanner & OpenFDA Cross-Reference Bar + Core Medication Identity
           val activeFeedback = ndcErrorText ?: ndcStatusText
           val showActionHeader = isGeminiNanoSupported || allowFdaLookup || !activeFeedback.isNullOrBlank()
@@ -961,12 +1222,19 @@ fun MedicationEditorScreen(
                 optionLabel = { resources.label(it) },
                 onOptionSelected = { selectedForm ->
                   form = selectedForm
-                  if (selectedForm.isInjectable && defaultDoseUnit == DoseUnit.TABLET) {
-                    defaultDoseUnit = DoseUnit.MG
-                  } else if (selectedForm == MedicationForm.TOPICAL) {
-                    defaultDoseUnit = DoseUnit.APPLICATION
-                  } else if (selectedForm == MedicationForm.CAPSULE && defaultDoseUnit == DoseUnit.TABLET) {
-                    defaultDoseUnit = DoseUnit.CAPSULE
+                  defaultDoseUnit = when (selectedForm) {
+                    MedicationForm.INJECTABLE_VIAL, MedicationForm.INJECTABLE_PEN ->
+                      if (defaultDoseUnit in listOf(DoseUnit.TABLET, DoseUnit.CAPSULE, DoseUnit.SOFTGEL, DoseUnit.GUMMY, DoseUnit.SCOOP)) DoseUnit.MG else defaultDoseUnit
+                    MedicationForm.TOPICAL -> DoseUnit.APPLICATION
+                    MedicationForm.CAPSULE -> DoseUnit.CAPSULE
+                    MedicationForm.SOFTGEL -> DoseUnit.SOFTGEL
+                    MedicationForm.GUMMY -> DoseUnit.GUMMY
+                    MedicationForm.POWDER -> DoseUnit.SCOOP
+                    MedicationForm.TABLET, MedicationForm.CHEWABLE -> DoseUnit.TABLET
+                    MedicationForm.LIQUID -> DoseUnit.ML
+                    MedicationForm.INHALER -> DoseUnit.PUFF
+                    MedicationForm.DROPS -> DoseUnit.DROP
+                    MedicationForm.OTHER -> defaultDoseUnit
                   }
                 },
                 modifier = fieldModifier,
@@ -1010,35 +1278,13 @@ fun MedicationEditorScreen(
             }
           }
 
-          // Indications (any number, grouped by kind + optional notes)
+          // Indications (any number, grouped by kind)
           if (showIndications && indications.isNotEmpty()) {
-            Text(stringResource(R.string.indications_title), style = MaterialTheme.typography.titleSmall)
-            IndicationTimeline.sections(indications).forEach { (title, group) ->
-              Text(
-                stringResource(title),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-              FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-              ) {
-                group.forEach { indication ->
-                  val selected = indication.id in selectedIndicationIds
-                  FilterChip(
-                    selected = selected,
-                    onClick = {
-                      selectedIndicationIds =
-                        if (selected) selectedIndicationIds - indication.id else selectedIndicationIds + indication.id
-                    },
-                    label = { Text(indication.name) },
-                    leadingIcon = if (selected) {
-                      { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                    } else null,
-                  )
-                }
-              }
-            }
+            IndicationSelectorSection(
+              indications = indications,
+              selectedIds = selectedIndicationIds,
+              onSelectionChange = { selectedIndicationIds = it },
+            )
           }
 
           // 2. Injectable specifications (only when Form is Injectable). Prefilled devices
@@ -1217,188 +1463,34 @@ fun MedicationEditorScreen(
 
           // 3. Sites (any form a dose goes somewhere on the body): off, record, or rotate.
           if (form.hasSites) {
-            val rotating = siteMode == SiteMode.ROTATE
-            Surface(
-              shape = MaterialTheme.shapes.medium,
-              color = MaterialTheme.colorScheme.surfaceContainerLow,
-              modifier = Modifier.fillMaxWidth(),
-            ) {
-              Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-              ) {
-                Text(
-                  text = stringResource(R.string.med_sites),
-                  style = MaterialTheme.typography.titleSmall,
-                  fontWeight = FontWeight.Bold,
-                  color = MaterialTheme.colorScheme.primary,
-                )
-                AdaptiveSingleChoiceRow(
-                  options = SiteMode.entries,
-                  selected = siteMode,
-                  onSelect = { mode ->
-                    siteMode = mode
-                    siteModeChosen = true
-                  },
-                  label = { it.label() },
-                )
-                Text(
-                  text = stringResource(siteMode.descriptionRes),
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-
-                if (siteMode != SiteMode.OFF) {
-                  if (sites.isEmpty()) {
-                    Text(
-                      text = stringResource(R.string.editor_sites_required),
-                      style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.error,
-                    )
-                  }
-                  DropdownSelectorField(
-                    label = stringResource(R.string.editor_site_preset),
-                    selectedText = if (sites.isEmpty()) {
-                      stringResource(R.string.editor_no_sites)
-                    } else {
-                      pluralStringResource(R.plurals.editor_site_count, sites.size, sites.size)
-                    },
-                    options = Medication.sitePresets(form),
-                    optionLabel = { it.first },
-                    onOptionSelected = { (_, siteList) ->
-                      sites.clear()
-                      sites.addAll(siteList)
-                      sitesChosen = true
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                  )
-
-                  Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    sites.forEachIndexed { idx, site ->
-                      Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                      ) {
-                        // Order only matters when rotating.
-                        Text(
-                          text = if (rotating) stringResource(R.string.editor_site_numbered, idx + 1, site) else site,
-                          style = MaterialTheme.typography.bodyMedium,
-                          modifier = Modifier.weight(1f),
-                        )
-                        if (rotating) {
-                          IconButton(
-                            onClick = {
-                              if (idx > 0) {
-                                val item = sites.removeAt(idx)
-                                sites.add(idx - 1, item)
-                                sitesChosen = true
-                              }
-                            },
-                            enabled = idx > 0,
-                          ) {
-                            Icon(Icons.Default.ArrowUpward, contentDescription = stringResource(R.string.editor_move_up), modifier = Modifier.size(18.dp))
-                          }
-                          IconButton(
-                            onClick = {
-                              if (idx < sites.lastIndex) {
-                                val item = sites.removeAt(idx)
-                                sites.add(idx + 1, item)
-                                sitesChosen = true
-                              }
-                            },
-                            enabled = idx < sites.lastIndex,
-                          ) {
-                            Icon(Icons.Default.ArrowDownward, contentDescription = stringResource(R.string.editor_move_down), modifier = Modifier.size(18.dp))
-                          }
-                        }
-                        IconButton(
-                          onClick = {
-                            sites.removeAt(idx)
-                            sitesChosen = true
-                          },
-                        ) {
-                          Icon(Icons.Default.Close, contentDescription = stringResource(R.string.editor_remove_site), modifier = Modifier.size(18.dp))
-                        }
-                      }
-                    }
-                  }
-
-                  Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                  ) {
-                    OutlinedTextField(
-                      value = newCustomSite,
-                      onValueChange = { newCustomSite = it },
-                      label = { Text(stringResource(R.string.editor_add_custom_site)) },
-                      singleLine = true,
-                      modifier = Modifier.weight(1f),
-                    )
-                    OutlinedButton(
-                      onClick = {
-                        if (newCustomSite.isNotBlank()) {
-                          sites.add(newCustomSite.trim())
-                          sitesChosen = true
-                          newCustomSite = ""
-                        }
-                      },
-                    ) {
-                      Text(stringResource(R.string.action_add))
-                    }
-                  }
-                }
-              }
-            }
+            SitesEditorSection(
+              form = form,
+              siteMode = siteMode,
+              onSiteModeChange = { mode ->
+                siteMode = mode
+                siteModeChosen = true
+              },
+              sites = sites,
+              onSitesChanged = { sitesChosen = true },
+              newCustomSite = newCustomSite,
+              onNewCustomSiteChange = { newCustomSite = it },
+            )
           }
 
           // 4. Collapsible Pacing & Daily Limits Section
-          val pacingSummary = listOfNotNull(
-            minIntervalHoursText.takeIf { it.isNotBlank() }?.let { stringResource(R.string.editor_summary_interval, it) },
-            maxDailyDosesText.takeIf { it.isNotBlank() }?.let { stringResource(R.string.editor_summary_max_doses, it) },
-          ).joinToString(" • ").ifEmpty { stringResource(R.string.editor_pacing_summary_empty) }
-
-          CollapsibleFormSection(
-            title = stringResource(R.string.editor_pacing_title),
-            subtitle = pacingSummary,
+          PacingEditorSection(
+            minIntervalHoursText = minIntervalHoursText,
+            onMinIntervalHoursChange = { minIntervalHoursText = it },
+            minIntervalCheck = minIntervalCheck,
+            maxDailyDosesText = maxDailyDosesText,
+            onMaxDailyDosesChange = { maxDailyDosesText = it },
+            maxDailyDosesCheck = maxDailyDosesCheck,
+            maxDailyAmountText = maxDailyAmountText,
+            onMaxDailyAmountChange = { maxDailyAmountText = it },
+            maxDailyAmountCheck = maxDailyAmountCheck,
+            defaultDoseUnit = defaultDoseUnit,
             initiallyExpanded = hasInitialPacing,
-          ) {
-            AdaptiveFieldPair(
-              first = { m ->
-                ValidatedNumberField(
-                  check = minIntervalCheck,
-                  keyboardType = KeyboardType.Decimal,
-                  value = minIntervalHoursText,
-                  onValueChange = { minIntervalHoursText = it },
-                  label = { Text(stringResource(R.string.editor_min_interval_hours)) },
-                  placeholder = { Text(stringResource(R.string.editor_min_interval_hint)) },
-                  singleLine = true,
-                  modifier = m,
-                )
-              },
-              second = { m ->
-                ValidatedNumberField(
-                  check = maxDailyDosesCheck,
-                  keyboardType = KeyboardType.Decimal,
-                  value = maxDailyDosesText,
-                  onValueChange = { maxDailyDosesText = it },
-                  label = { Text(stringResource(R.string.editor_max_daily_doses)) },
-                  placeholder = { Text(stringResource(R.string.editor_max_daily_doses_hint)) },
-                  singleLine = true,
-                  modifier = m,
-                )
-              },
-            )
-            ValidatedNumberField(
-              check = maxDailyAmountCheck,
-              keyboardType = KeyboardType.Decimal,
-              value = maxDailyAmountText,
-              onValueChange = { maxDailyAmountText = it },
-              label = { Text(stringResource(R.string.editor_max_daily_amount_unit, defaultDoseUnit.symbol)) },
-              placeholder = { Text(stringResource(R.string.editor_max_daily_amount_hint)) },
-              singleLine = true,
-              modifier = Modifier.fillMaxWidth(),
-            )
-          }
+          )
 
           // 5. Collapsible Optional Rx & Drug Details Section (NDC-11, Manufacturer, Provider, Notes)
           val optionalSummary = listOfNotNull(
@@ -1406,7 +1498,11 @@ fun MedicationEditorScreen(
             manufacturer.takeIf { it.isNotBlank() },
             providers.find { it.id == selectedPrescriberId }?.name?.takeIf { showProviders },
           ).joinToString(" • ").ifEmpty {
-            stringResource(if (showProviders) R.string.editor_optional_summary_providers else R.string.editor_optional_summary)
+            if (showProviders) {
+              stringResource(R.string.editor_optional_summary_providers)
+            } else {
+              stringResource(R.string.editor_optional_summary)
+            }
           }
 
           CollapsibleFormSection(
@@ -1471,7 +1567,7 @@ fun MedicationEditorScreen(
             }
 
             DatePickerField(
-              label = stringResource(R.string.editor_prescribed_date),
+              label = stringResource(if (source == ItemSource.OTC) R.string.editor_start_date else R.string.editor_prescribed_date),
               valueIso = prescribedDateIso,
               onValueChange = { prescribedDateIso = it },
               modifier = Modifier.fillMaxWidth(),
@@ -1960,7 +2056,7 @@ private fun <T : Any> rememberSavableList(initial: () -> List<T>): SnapshotState
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ScheduleEditorScreen(
-  medication: Medication,
+  medication: RegimenItem,
   initialSchedule: MedicationSchedule?,
   buckets: List<TimeOfDayBucket>,
   onDismiss: () -> Unit,

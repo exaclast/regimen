@@ -43,8 +43,8 @@ import androidx.compose.ui.unit.dp
 import com.exaclast.regimen.R
 import com.exaclast.regimen.domain.WindowDeletion
 import com.exaclast.regimen.model.AppSettings
-import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
+import com.exaclast.regimen.model.RegimenItem
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.ui.ScheduleText
@@ -91,7 +91,7 @@ fun DoseWindowEditorScreen(
   canDelete: Boolean,
   allWindows: List<TimeOfDayBucket>,
   schedules: List<MedicationSchedule>,
-  medications: List<Medication>,
+  medications: List<RegimenItem>,
   globalNotificationsEnabled: Boolean,
   globalAlarmsEnabled: Boolean,
   onClose: () -> Unit,
@@ -252,7 +252,7 @@ private fun DeleteWindowDialog(
   window: TimeOfDayBucket,
   allWindows: List<TimeOfDayBucket>,
   schedules: List<MedicationSchedule>,
-  medications: List<Medication>,
+  medications: List<RegimenItem>,
   onConfirm: (String?) -> Unit,
   onDismiss: () -> Unit,
 ) {

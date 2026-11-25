@@ -149,7 +149,7 @@ object DrugLabelParser {
         "patientName": "Patient or customer name printed on the prescription label (e.g. \"John Smith\"), or null",
         "pharmacyName": "Dispensing pharmacy or clinic name (e.g. \"CVS Pharmacy\", \"Walgreens\", \"Kroger\"), or null",
         "rxNumber": "Prescription / Rx number printed on label (e.g. \"Rx 1234567\"), or null",
-        "ndc": "10- or 11-digit National Drug Code if printed (e.g. \"41167-4122-2\"), or null (ignore 6-digit packaging codes or store Rx numbers)",
+        "ndc": "9-, 10-, or 11-digit National Drug Code if printed (e.g. \"41167-4122\" or \"41167-4122-2\"), or null (ignore 6-digit packaging codes or store Rx numbers)",
         "formulaName": "Generic / active ingredient name(s) in Title Case without strength (e.g. \"Amoxicillin / Clavulanate\", \"Fexofenadine HCl\", \"Acetaminophen / Ibuprofen\"), or null. NEVER put the patient name or pharmacy here.",
         "brandName": "Proprietary commercial brand name if printed on the label (e.g. \"Allegra\", \"Advil Dual Action\"), or null for generic prescriptions. NEVER put the patient name, prescriber name, or pharmacy name here.",
         "strength": "Strength per unit or concentration (e.g. \"1 mg\", \"180 mg\", \"250 mg / 125 mg\", \"200 mg/mL\"), or null",
@@ -187,7 +187,7 @@ object DrugLabelParser {
       ?.trim()
       ?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
       ?.let { FdaNdcLookupService.normalizeIfUnambiguousNdc(it) }
-      ?.takeIf { it.count { ch -> ch.isDigit() } in 10..11 }
+      ?.takeIf { it.count { ch -> ch.isDigit() } in 8..11 }
 
     val mappedForm = mapFormString(extracted.form)
     val mappedUnit = mappedForm?.let { defaultUnitForForm(it) }
@@ -351,8 +351,11 @@ object DrugLabelParser {
 
   private fun defaultUnitForForm(form: MedicationForm): DoseUnit {
     return when (form) {
-      MedicationForm.TABLET -> DoseUnit.TABLET
+      MedicationForm.TABLET, MedicationForm.CHEWABLE -> DoseUnit.TABLET
       MedicationForm.CAPSULE -> DoseUnit.CAPSULE
+      MedicationForm.SOFTGEL -> DoseUnit.SOFTGEL
+      MedicationForm.GUMMY -> DoseUnit.GUMMY
+      MedicationForm.POWDER -> DoseUnit.SCOOP
       MedicationForm.INJECTABLE_VIAL, MedicationForm.INJECTABLE_PEN -> DoseUnit.MG
       MedicationForm.TOPICAL -> DoseUnit.APPLICATION
       MedicationForm.LIQUID -> DoseUnit.ML

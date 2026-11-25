@@ -277,6 +277,17 @@ class BundleMergerTest {
   }
 
   @Test
+  fun supplementsMergeAcrossDevices() {
+    val supp = com.exaclast.regimen.model.Supplement(id = "s1", name = "Vitamin C", updatedAtEpochMillis = 100)
+    val base = RegimenBackupBundle(supplements = listOf(supp))
+    val local = RegimenBackupBundle(supplements = listOf(supp.copy(notes = "with breakfast", updatedAtEpochMillis = 200)))
+    val result = BundleMerger.merge(base, local, base, localDeviceId = phone)
+    assertEquals("with breakfast", result.bundle.supplements.single().notes)
+    assertFalse(result.localChanged)
+    assertTrue(result.remoteChanged)
+  }
+
+  @Test
   fun softDeletedWindowStaysDeletedOnSync() {
     val window = TimeOfDayBucket(id = "lunch", name = "Lunch", hour = 12, updatedAtEpochMillis = 100)
     val base = bundle(buckets = listOf(window))

@@ -5,9 +5,9 @@ import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
-import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Provider
+import com.exaclast.regimen.model.RegimenItem
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.SiteMode
 import com.exaclast.regimen.model.Texts
@@ -98,7 +98,7 @@ data class PacingEvaluation(
 
 data class ScheduledDoseItem(
   val key: String,
-  val medication: Medication,
+  val medication: RegimenItem,
   val schedule: MedicationSchedule,
   val bucket: TimeOfDayBucket,
   val dateIso: String,
@@ -132,7 +132,7 @@ data class ScheduledDoseItem(
     } else {
       texts.get(R.string.dose_amount, amt, unit)
     }
-    val route = medication.injectableDetails?.takeIf { medication.form.isInjectable }?.route?.code
+    val route = medication.injectableOrNull?.takeIf { medication.form.isInjectable }?.route?.code
     return if (route == null) dose else texts.get(R.string.dose_with_route, dose, route)
   }
 }
@@ -149,7 +149,7 @@ data class BucketDoseGroup(
 }
 
 data class PrnDoseItem(
-  val medication: Medication,
+  val medication: RegimenItem,
   val schedule: MedicationSchedule?,
   val suggestedSite: String?,
   val pacing: PacingEvaluation,
@@ -178,13 +178,13 @@ object DoseEngine {
    * site actually used last; recording suggests that same site again. A last site that's no longer in the
    * list falls back to the first.
    */
-  fun suggestSite(medication: Medication, allLogs: List<DoseLog>): String? =
+  fun suggestSite(medication: RegimenItem, allLogs: List<DoseLog>): String? =
     suggestSiteFromMedLogs(
       medication = medication,
       medLiveLogs = allLogs.filter { it.medicationId == medication.id && it.deletedAtEpochMillis == null },
     )
 
-  private fun suggestSiteFromMedLogs(medication: Medication, medLiveLogs: List<DoseLog>): String? {
+  private fun suggestSiteFromMedLogs(medication: RegimenItem, medLiveLogs: List<DoseLog>): String? {
     val sites = medication.activeSites
     if (sites.isEmpty()) return null
     val last = getLastSiteUsedFromMedLogs(medLiveLogs) ?: return sites.first()
@@ -223,7 +223,7 @@ object DoseEngine {
    * toward the minimum interval; a later dose would otherwise read as "too soon".
    */
   fun evaluatePacing(
-    medication: Medication,
+    medication: RegimenItem,
     allLogs: List<DoseLog>,
     nowMillis: Long = System.currentTimeMillis(),
     todayIso: String = LocalDate.now().toString(),
@@ -241,7 +241,7 @@ object DoseEngine {
   )
 
   private fun evaluatePacingFromMedLogs(
-    medication: Medication,
+    medication: RegimenItem,
     medLiveLogs: List<DoseLog>,
     nowMillis: Long,
     todayIso: String,
@@ -312,11 +312,11 @@ object DoseEngine {
 
   /** Medications with a current schedule that can't produce doses, because its windows are gone. */
   fun medicationsWithoutWindow(
-    medications: List<Medication>,
+    medications: List<RegimenItem>,
     schedules: List<MedicationSchedule>,
     buckets: List<TimeOfDayBucket>,
     today: LocalDate,
-  ): List<Medication> {
+  ): List<RegimenItem> {
     val ids = schedules
       .filter { it.deletedAtEpochMillis == null && it.enabled && !it.hasEndedBefore(today) && it.hasNoValidWindow(buckets) }
       .mapTo(HashSet()) { it.medicationId }
@@ -414,7 +414,7 @@ object DoseEngine {
   }
 
   private data class MedDayContext(
-    val med: Medication,
+    val med: RegimenItem,
     val suggestedSite: String?,
     val lastSite: String?,
     val pacing: PacingEvaluation,
@@ -425,7 +425,7 @@ object DoseEngine {
    */
   fun buildDailyBoard(
     dateIso: String,
-    medications: List<Medication>,
+    medications: List<RegimenItem>,
     schedules: List<MedicationSchedule>,
     buckets: List<TimeOfDayBucket>,
     logs: List<DoseLog>,
@@ -471,7 +471,7 @@ object DoseEngine {
     }
 
     val medContexts = HashMap<String, MedDayContext>()
-    fun medContext(stored: Medication): MedDayContext = medContexts.getOrPut(stored.id) {
+    fun medContext(stored: RegimenItem): MedDayContext = medContexts.getOrPut(stored.id) {
       val med = Adjustments.asOf(stored, targetDate)
       val medLogs = liveLogsByMed[stored.id].orEmpty()
       MedDayContext(

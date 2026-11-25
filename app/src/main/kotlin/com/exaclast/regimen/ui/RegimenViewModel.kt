@@ -24,11 +24,11 @@ import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
-import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationAdjustment
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.RegimenBackupBundle
+import com.exaclast.regimen.model.RegimenItem
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.formatNum
 import com.exaclast.regimen.model.texts
@@ -69,7 +69,7 @@ data class RegimenUiState(
   val yesterdayIso: String,
   val yesterdayMissedCount: Int,
   /** Medications whose schedule can't produce doses because its windows no longer exist. */
-  val medicationsWithoutWindow: List<Medication>,
+  val medicationsWithoutWindow: List<RegimenItem>,
 ) {
   val isToday: Boolean
     get() = selectedDateIso == todayIso
@@ -87,8 +87,8 @@ sealed interface UndoAction {
 
   data class RestoreSchedule(val schedule: MedicationSchedule) : UndoAction
 
-  /** Puts a medication back as it was, e.g. after deleting one of its changes. */
-  data class RestoreMedication(val medication: Medication) : UndoAction
+  /** Puts a medication or supplement back as it was, e.g. after deleting one of its changes. */
+  data class RestoreMedication(val medication: RegimenItem) : UndoAction
 
   /** Puts back everything that was on the device before a backup restore. */
   data class RestoreBackup(val previous: RegimenBackupBundle) : UndoAction
@@ -313,7 +313,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
    * logged at that time instead, on that time's own day.
    */
   fun logPrnOrCustomDose(
-    medication: Medication,
+    medication: RegimenItem,
     amount: Double = medication.defaultDoseAmount,
     unit: DoseUnit = medication.defaultDoseUnit,
     siteUsed: String? = null,
@@ -428,7 +428,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
 
   // region Records
 
-  fun saveMedication(medication: Medication) = repository.saveMedication(medication)
+  fun saveMedication(medication: RegimenItem) = repository.saveMedication(medication)
 
   fun deleteMedication(medicationId: String) = repository.deleteMedication(medicationId)
 
@@ -446,7 +446,7 @@ class RegimenViewModel(application: Application) : AndroidViewModel(application)
 
   fun saveSchedule(schedule: MedicationSchedule) = repository.saveSchedule(schedule)
 
-  fun saveScheduleEdit(medication: Medication?, schedules: List<MedicationSchedule>) =
+  fun saveScheduleEdit(medication: RegimenItem?, schedules: List<MedicationSchedule>) =
     repository.saveScheduleEdit(medication, schedules)
 
   fun deleteSchedule(schedule: MedicationSchedule) {

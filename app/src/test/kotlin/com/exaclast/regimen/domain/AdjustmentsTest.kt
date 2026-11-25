@@ -103,8 +103,8 @@ class AdjustmentsTest {
     )
     val saved = Adjustments.applyMedicationEdit(vial, edited, EditMode.Change("2026-11-20"), today)
     assertEquals("Switched to SC", saved.notes) // untracked fields apply directly
-    assertEquals(InjectionRoute.IM, Adjustments.asOf(saved, today).injectableDetails!!.route)
-    assertEquals(InjectionRoute.SC, Adjustments.asOf(saved, LocalDate.parse("2026-11-20")).injectableDetails!!.route)
+    assertEquals(InjectionRoute.IM, Adjustments.asOf(saved, today).injectableOrNull!!.route)
+    assertEquals(InjectionRoute.SC, Adjustments.asOf(saved, LocalDate.parse("2026-11-20")).injectableOrNull!!.route)
     assertEquals(setOf(Adjustments.Part.EQUIPMENT), saved.adjustments.single().let { a ->
       setOfNotNull(Adjustments.Part.EQUIPMENT.takeIf { a.injectableDetails != null }, Adjustments.Part.STRENGTH.takeIf { a.strength != null })
     })
@@ -140,10 +140,10 @@ class AdjustmentsTest {
   fun newStrengthFromADateClearsTheNdc() {
     val saved = Adjustments.applyMedicationEdit(withNdc, withNdc.copy(strength = "250 mg/mL"), EditMode.Change("2026-12-01"), today)
     assertEquals("", saved.adjustments.single().ndc11)
-    assertEquals("00517-0031-25", Adjustments.asOf(saved, today).ndc11)
-    assertNull(Adjustments.asOf(saved, newDay).ndc11)
+    assertEquals("00517-0031-25", Adjustments.asOf(saved, today).ndc11OrNull)
+    assertNull(Adjustments.asOf(saved, newDay).ndc11OrNull)
     assertEquals("250 mg/mL", Adjustments.asOf(saved, newDay).strength)
-    assertEquals("00517-0031-25", saved.ndc11) // the starting value is untouched
+    assertEquals("00517-0031-25", saved.ndc11OrNull) // the starting value is untouched
   }
 
   @Test
@@ -154,7 +154,7 @@ class AdjustmentsTest {
     assertEquals("", bigger.adjustments.single().ndc11)
     val needle = Adjustments.applyMedicationEdit(withNdc, edited { it.copy(injectNeedleGauge = 25) }, EditMode.Change("2026-12-01"), today)
     assertNull(needle.adjustments.single().ndc11)
-    assertEquals("00517-0031-25", Adjustments.asOf(needle, newDay).ndc11)
+    assertEquals("00517-0031-25", Adjustments.asOf(needle, newDay).ndc11OrNull)
   }
 
   @Test
@@ -162,14 +162,14 @@ class AdjustmentsTest {
     val edited = withNdc.copy(strength = "250 mg/mL", ndc11 = "00517-0099-25")
     val saved = Adjustments.applyMedicationEdit(withNdc, edited, EditMode.Change("2026-12-01"), today)
     assertEquals("00517-0099-25", saved.adjustments.single().ndc11)
-    assertEquals("00517-0099-25", Adjustments.asOf(saved, newDay).ndc11)
+    assertEquals("00517-0099-25", Adjustments.asOf(saved, newDay).ndc11OrNull)
   }
 
   @Test
   fun aCorrectionKeepsTheNdc() {
     val saved = Adjustments.applyMedicationEdit(withNdc, withNdc.copy(strength = "250 mg/mL"), EditMode.Fix, today)
     assertEquals("250 mg/mL", saved.strength)
-    assertEquals("00517-0031-25", saved.ndc11)
+    assertEquals("00517-0031-25", saved.ndc11OrNull)
     assertTrue(saved.adjustments.isEmpty())
   }
 
@@ -185,14 +185,14 @@ class AdjustmentsTest {
     val log = DoseLog(medicationId = "t", scheduledDateIso = "2026-11-10", status = DoseStatus.TAKEN, amountTaken = 100.0, amountUnit = DoseUnit.MG)
     val cleared = Adjustments.applyMedicationEdit(withNdc, withNdc.copy(strength = "250 mg/mL"), EditMode.Change("2026-11-01"), today)
     // Today the new strength is in effect with no NDC; the lookup supplies one.
-    val current = Adjustments.asOf(cleared, today)
+    val current = Adjustments.asOf(cleared, today) as Medication
     assertNull(current.ndc11)
     val looked = current.copy(ndc11 = "00517-0099-25")
     assertEquals(emptySet<Adjustments.Part>(), Adjustments.askParts(current, looked))
     assertFalse(Adjustments.shouldAskForMedication(cleared, looked, listOf(log), today))
     val saved = Adjustments.applyMedicationEdit(cleared, looked, EditMode.Fix, today)
-    assertEquals("00517-0099-25", Adjustments.asOf(saved, today).ndc11)
-    assertEquals("00517-0031-25", Adjustments.asOf(saved, LocalDate.parse("2026-10-31")).ndc11)
+    assertEquals("00517-0099-25", Adjustments.asOf(saved, today).ndc11OrNull)
+    assertEquals("00517-0031-25", Adjustments.asOf(saved, LocalDate.parse("2026-10-31")).ndc11OrNull)
   }
 
   @Test

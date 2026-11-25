@@ -5,9 +5,9 @@ import com.exaclast.regimen.domain.Adjustments.EditMode
 import com.exaclast.regimen.model.DoseAmount
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.Labeled
-import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationAdjustment
 import com.exaclast.regimen.model.MedicationSchedule
+import com.exaclast.regimen.model.RegimenItem
 import com.exaclast.regimen.model.ScheduleDose
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.TimeOfDayBucket
@@ -38,7 +38,7 @@ object ScheduleVersioning {
   }
 
   data class Result(
-    val updatedMedication: Medication?,
+    val updatedMedication: RegimenItem?,
     val schedulesToSave: List<MedicationSchedule>,
   )
 
@@ -50,7 +50,7 @@ object ScheduleVersioning {
 
   /** Meaningfully changed parts between [original] (at [today]) and [edited]. */
   fun changedParts(
-    medication: Medication,
+    medication: RegimenItem,
     original: MedicationSchedule,
     edited: MedicationSchedule,
     today: LocalDate,
@@ -103,7 +103,7 @@ object ScheduleVersioning {
    * directly without asking.
    */
   fun shouldAsk(
-    medication: Medication,
+    medication: RegimenItem,
     original: MedicationSchedule?,
     edited: MedicationSchedule,
     logs: List<DoseLog>,
@@ -125,7 +125,7 @@ object ScheduleVersioning {
   }
 
   fun apply(
-    medication: Medication,
+    medication: RegimenItem,
     original: MedicationSchedule,
     edited: MedicationSchedule,
     mode: EditMode,
@@ -301,14 +301,14 @@ object ScheduleVersioning {
   }
 
   private fun migrateAdjustments(
-    medication: Medication,
+    medication: RegimenItem,
     oldScheduleId: String,
     newScheduleId: String,
     effectiveDate: LocalDate,
     newDose: DoseAmount,
     note: String?,
     doseChanged: Boolean,
-  ): Medication {
+  ): RegimenItem {
     var result = medication
     medication.adjustments.forEach { adjustment ->
       val adjDate = adjustment.effectiveDateOrNull() ?: return@forEach

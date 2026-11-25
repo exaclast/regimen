@@ -4,9 +4,9 @@ import com.exaclast.regimen.model.AllergenType
 import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.IndicationKind
 import com.exaclast.regimen.model.IndicationStatus
-import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Provider
+import com.exaclast.regimen.model.RegimenItem
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import java.time.LocalDate
 
@@ -25,7 +25,7 @@ object IndicationTimeline {
 
   fun end(
     indication: Indication,
-    medications: List<Medication>,
+    medications: List<RegimenItem>,
     schedules: List<MedicationSchedule>,
   ): End? {
     parse(indication.endDateIso)?.let { return End(it, fromCourse = false) }
@@ -36,7 +36,7 @@ object IndicationTimeline {
   /** The last scheduled day across the indication's linked medications, if every course ends. */
   fun courseEnd(
     indication: Indication,
-    medications: List<Medication>,
+    medications: List<RegimenItem>,
     schedules: List<MedicationSchedule>,
   ): LocalDate? {
     val medIds = medications
@@ -56,7 +56,7 @@ object IndicationTimeline {
   fun isArchived(
     indication: Indication,
     today: LocalDate,
-    medications: List<Medication>,
+    medications: List<RegimenItem>,
     schedules: List<MedicationSchedule>,
   ): Boolean =
     indication.status == IndicationStatus.RESOLVED ||

@@ -9,6 +9,7 @@ import com.exaclast.regimen.model.PrimaryClaim
 import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.RegimenBackupBundle
 import com.exaclast.regimen.model.SharedSettings
+import com.exaclast.regimen.model.Supplement
 import com.exaclast.regimen.model.SyncDevice
 import com.exaclast.regimen.model.TimeOfDayBucket
 import java.security.MessageDigest
@@ -135,6 +136,10 @@ object BundleMerger {
       "Medication", Medication.serializer(), base?.medications, local.medications, remote.medications,
       { it.id }, { it.updatedAtEpochMillis },
     )
+    val supplements = mergeRecords(
+      "Supplement", Supplement.serializer(), base?.supplements, local.supplements, remote.supplements,
+      { it.id }, { it.updatedAtEpochMillis },
+    )
     val providers = mergeRecords(
       "Provider", Provider.serializer(), base?.providers, local.providers, remote.providers,
       { it.id }, { it.updatedAtEpochMillis },
@@ -166,7 +171,7 @@ object BundleMerger {
         else -> null
       },
       nowMillis = nowMillis,
-      medicationName = { id -> medications.firstOrNull { it.id == id }?.primaryName ?: "A dose" },
+      medicationName = { id -> (medications + supplements).firstOrNull { it.id == id }?.primaryName ?: "A dose" },
       conflicts = conflicts,
       keptLocal = { it in localLogIds },
     )
@@ -189,6 +194,7 @@ object BundleMerger {
       devices = mergeDevices(local.devices + remote.devices),
       primary = primary,
       medications = medications,
+      supplements = supplements,
       providers = providers,
       indications = indications,
       buckets = buckets,
@@ -273,6 +279,7 @@ object BundleMerger {
       a.primary == b.primary &&
       a.devices.toSet() == b.devices.toSet() &&
       a.medications.toSet() == b.medications.toSet() &&
+      a.supplements.toSet() == b.supplements.toSet() &&
       a.providers.toSet() == b.providers.toSet() &&
       a.indications.toSet() == b.indications.toSet() &&
       a.buckets.toSet() == b.buckets.toSet() &&

@@ -4,12 +4,15 @@ import com.exaclast.regimen.TestTexts
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseUnit
+import com.exaclast.regimen.model.KeyIngredient
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.Indication
+import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.PrimaryClaim
 import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.RegimenBackupBundle
+import com.exaclast.regimen.model.Supplement
 import com.exaclast.regimen.model.SyncDevice
 import com.exaclast.regimen.model.TimeOfDayBucket
 import org.junit.Assert.assertEquals
@@ -257,5 +260,21 @@ class BackupFilesTest {
     val windows = preview.kinds.single { TestTexts.get(it.labelRes) == "Dose windows" }
     assertEquals(1, windows.inFile)
     assertEquals(0, windows.new)
+  }
+
+  @Test
+  fun supplementScheduleAndIngredientsRoundTripThroughBackup() {
+    val supp = Supplement(
+      id = "s_vitc",
+      name = "Vitamin C",
+      form = MedicationForm.TABLET,
+      ingredients = listOf(KeyIngredient("Ascorbic Acid", "1000 mg")),
+    )
+    val bundle = RegimenBackupBundle(
+      supplements = listOf(supp),
+      schedules = listOf(MedicationSchedule(id = "sched_c", medicationId = supp.id, bucketIds = listOf(TimeOfDayBucket.BUCKET_MORNING))),
+    )
+    val decoded = BackupFiles.decodeBundle(BackupFiles.encode(bundle))
+    assertEquals(bundle, decoded)
   }
 }

@@ -10,6 +10,9 @@ import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.Provider
+import com.exaclast.regimen.model.RegimenItem
+import com.exaclast.regimen.model.RegimenItemSerializer
+import com.exaclast.regimen.model.Supplement
 import com.exaclast.regimen.model.SyringeType
 import com.exaclast.regimen.model.TimeOfDayBucket
 import kotlinx.serialization.encodeToString
@@ -147,8 +150,8 @@ class RegimenDatabase(context: Context) :
   /** Soft-deleted rows are tombstones: hidden from the app, but kept so deletions can sync. */
   private fun liveOnly(includeDeleted: Boolean) = if (includeDeleted) "" else "WHERE deleted_at IS NULL"
 
-  fun getAllMedications(includeDeleted: Boolean = false): List<Medication> {
-    val result = mutableListOf<Medication>()
+  fun getAllMedications(includeDeleted: Boolean = false): List<RegimenItem> {
+    val result = mutableListOf<RegimenItem>()
     readableDatabase.rawQuery(
       "SELECT id, payload_json FROM medications ${liveOnly(includeDeleted)} ORDER BY formula_name COLLATE NOCASE ASC",
       null
@@ -157,7 +160,7 @@ class RegimenDatabase(context: Context) :
         val id = cursor.getString(0)
         val payload = cursor.getString(1)
         try {
-          result.add(json.decodeFromString<Medication>(payload))
+          result.add(json.decodeFromString(RegimenItemSerializer, payload))
         } catch (e: Exception) {
           Log.e(TAG, "Undecodable medication row (id=$id): ${e.message}", e)
         }
@@ -166,14 +169,18 @@ class RegimenDatabase(context: Context) :
     return result
   }
 
-  fun upsertMedication(medication: Medication) {
+  fun upsertMedication(item: RegimenItem) {
+    val payload = when (item) {
+      is Medication -> json.encodeToString(Medication.serializer(), item)
+      is Supplement -> json.encodeToString(Supplement.serializer(), item)
+    }
     val values = ContentValues().apply {
-      put("id", medication.id)
-      put("formula_name", medication.formulaName)
-      put("ndc11", medication.ndc11)
-      put("updated_at", medication.updatedAtEpochMillis)
-      put("deleted_at", medication.deletedAtEpochMillis)
-      put("payload_json", json.encodeToString(medication))
+      put("id", item.id)
+      put("formula_name", if (item is Medication) item.formulaName else item.primaryName)
+      put("ndc11", item.ndc11OrNull)
+      put("updated_at", item.updatedAtEpochMillis)
+      put("deleted_at", item.deletedAtEpochMillis)
+      put("payload_json", payload)
     }
     writableDatabase.insertWithOnConflict("medications", null, values, SQLiteDatabase.CONFLICT_REPLACE)
   }
@@ -342,7 +349,7 @@ class RegimenDatabase(context: Context) :
         }
       }
     }
-    countTable("medications") { json.decodeFromString<Medication>(it) }
+    countTable("medications") { json.decodeFromString(RegimenItemSerializer, it) }
     countTable("providers") { json.decodeFromString<Provider>(it) }
     countTable("indications") { json.decodeFromString<Indication>(it) }
     countTable("time_buckets") { json.decodeFromString<TimeOfDayBucket>(it) }

@@ -24,6 +24,7 @@ import com.exaclast.regimen.model.DoseAmount
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationAdjustment
 import com.exaclast.regimen.model.MedicationSchedule
+import com.exaclast.regimen.model.RegimenItem
 import com.exaclast.regimen.model.ScheduleDose
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.formatExact
@@ -46,7 +47,7 @@ import java.time.LocalDate
  */
 @Composable
 fun AdjustmentEditorScreen(
-  medication: Medication,
+  medication: RegimenItem,
   schedules: List<MedicationSchedule>,
   buckets: List<TimeOfDayBucket>,
   initial: MedicationAdjustment?,
@@ -77,7 +78,7 @@ fun AdjustmentEditorScreen(
   val defaultDoseCheck = checkOptionalPositiveDecimal(defaultDoseText)
 
   // A different strength has a different NDC, so it's blank from this date unless one is entered.
-  val clearsNdc = strength.isNotBlank() && !before.ndc11.isNullOrBlank() && ndcText.isBlank() &&
+  val clearsNdc = medication is Medication && strength.isNotBlank() && !before.ndc11OrNull.isNullOrBlank() && ndcText.isBlank() &&
     strength.trim() != before.strength.trim()
 
   fun build(): MedicationAdjustment {
@@ -154,26 +155,28 @@ fun AdjustmentEditorScreen(
       singleLine = true,
       modifier = Modifier.fillMaxWidth(),
     )
-    OutlinedTextField(
-      value = ndcText,
-      onValueChange = { ndcText = NumberInput.filterNdc(it) },
-      keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-      label = { Text(stringResource(R.string.adjust_ndc_label)) },
-      placeholder = {
-        Text(if (clearsNdc) stringResource(R.string.adjust_ndc_blank) else before.ndc11.orEmpty().ifEmpty { stringResource(R.string.value_none) })
-      },
-      supportingText = {
-        Text(
-          if (clearsNdc) {
-            stringResource(R.string.adjust_ndc_help_cleared)
-          } else {
-            stringResource(R.string.adjust_ndc_help)
-          },
-        )
-      },
-      singleLine = true,
-      modifier = Modifier.fillMaxWidth(),
-    )
+    if (medication is Medication) {
+      OutlinedTextField(
+        value = ndcText,
+        onValueChange = { ndcText = NumberInput.filterNdc(it) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        label = { Text(stringResource(R.string.adjust_ndc_label)) },
+        placeholder = {
+          Text(if (clearsNdc) stringResource(R.string.adjust_ndc_blank) else before.ndc11OrNull.orEmpty().ifEmpty { stringResource(R.string.value_none) })
+        },
+        supportingText = {
+          Text(
+            if (clearsNdc) {
+              stringResource(R.string.adjust_ndc_help_cleared)
+            } else {
+              stringResource(R.string.adjust_ndc_help)
+            },
+          )
+        },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+      )
+    }
 
     initial?.injectableDetails?.let { details ->
       SwitchRow(

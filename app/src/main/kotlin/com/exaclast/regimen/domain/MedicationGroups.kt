@@ -2,13 +2,13 @@ package com.exaclast.regimen.domain
 
 import com.exaclast.regimen.model.Indication
 import com.exaclast.regimen.model.IndicationKind
-import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationGrouping
 import androidx.annotation.StringRes
 import com.exaclast.regimen.R
 import com.exaclast.regimen.model.Labeled
 import com.exaclast.regimen.model.MedicationSchedule
+import com.exaclast.regimen.model.RegimenItem
 import com.exaclast.regimen.model.Texts
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import java.time.LocalDate
@@ -27,16 +27,16 @@ enum class MedicationCourse(override val labelRes: Int) : Labeled {
  */
 data class MedicationSection(
   val key: String,
-  val medications: List<Medication>,
+  val medications: List<RegimenItem>,
   val title: String = "",
   @param:StringRes val titleRes: Int? = null,
 ) {
   fun label(texts: Texts): String = titleRes?.let { texts.get(it, title) } ?: title
 }
 
-data class GroupedMedications(val sections: List<MedicationSection>, val finished: List<Medication>) {
+data class GroupedMedications(val sections: List<MedicationSection>, val finished: List<RegimenItem>) {
   /** Narrows an already grouped list, so a search can't change which section anything is in. */
-  fun filter(predicate: (Medication) -> Boolean): GroupedMedications = GroupedMedications(
+  fun filter(predicate: (RegimenItem) -> Boolean): GroupedMedications = GroupedMedications(
     sections = sections.mapNotNull { section ->
       section.copy(medications = section.medications.filter(predicate)).takeIf { it.medications.isNotEmpty() }
     },
@@ -52,7 +52,7 @@ data class GroupedMedications(val sections: List<MedicationSection>, val finishe
 object MedicationGroups {
 
   fun courseOf(
-    medication: Medication,
+    medication: RegimenItem,
     schedules: List<MedicationSchedule>,
     indications: List<Indication>,
     today: LocalDate,
@@ -82,12 +82,12 @@ object MedicationGroups {
    */
   fun group(
     grouping: MedicationGrouping,
-    medications: List<Medication>,
+    medications: List<RegimenItem>,
     schedules: List<MedicationSchedule>,
     indications: List<Indication>,
     today: LocalDate,
   ): GroupedMedications {
-    fun course(medication: Medication) = courseOf(medication, schedules, indications, today)
+    fun course(medication: RegimenItem) = courseOf(medication, schedules, indications, today)
     val (finished, current) = medications
       .sortedBy { it.primaryName.lowercase() }
       .partition { course(it) == MedicationCourse.FINISHED }
@@ -105,8 +105,8 @@ object MedicationGroups {
   }
 
   private fun byIndication(
-    current: List<Medication>,
-    medications: List<Medication>,
+    current: List<RegimenItem>,
+    medications: List<RegimenItem>,
     schedules: List<MedicationSchedule>,
     indications: List<Indication>,
     today: LocalDate,
@@ -126,7 +126,7 @@ object MedicationGroups {
 
   private fun section(
     key: String,
-    medications: List<Medication>,
+    medications: List<RegimenItem>,
     title: String = "",
     titleRes: Int? = null,
   ): MedicationSection? =

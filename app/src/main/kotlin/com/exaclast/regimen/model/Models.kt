@@ -9,9 +9,13 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.UUID
+import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonContentPolymorphicSerializer
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNames
+import kotlinx.serialization.json.jsonObject
 
 /**
  * Process-wide clock preference. Updated from the device setting by the activity and the notification
@@ -42,11 +46,32 @@ enum class SiteMode(override val labelRes: Int, @param:StringRes val description
   ROTATE(R.string.enum_site_mode_rotate, R.string.enum_site_mode_rotate_help),
 }
 
+/** Whether a medication or supplement is prescribed or bought over the counter. */
+@Serializable
+enum class ItemSource(override val labelRes: Int) : Labeled {
+  PRESCRIBED(R.string.enum_source_prescribed),
+  OTC(R.string.enum_source_otc),
+}
+
+/** One active or key ingredient inside a supplement (e.g. "Caffeine", "200 mg"). */
+@Serializable
+data class KeyIngredient(
+  val name: String,
+  val amount: String? = null,
+) {
+  fun formatted(): String =
+    amount?.trim()?.takeIf { it.isNotEmpty() }?.let { "${name.trim()} — $it" } ?: name.trim()
+}
+
 /** [hasSites]: a dose goes somewhere on the body worth recording. Oral forms don't. */
 @Serializable
 enum class MedicationForm(override val labelRes: Int, val hasSites: Boolean) : Labeled {
   TABLET(R.string.enum_form_tablet, false),
   CAPSULE(R.string.enum_form_capsule, false),
+  SOFTGEL(R.string.enum_form_softgel, false),
+  GUMMY(R.string.enum_form_gummy, false),
+  CHEWABLE(R.string.enum_form_chewable, false),
+  POWDER(R.string.enum_form_powder, false),
   INJECTABLE_VIAL(R.string.enum_form_vial, true),
   INJECTABLE_PEN(R.string.enum_form_pen, true),
   TOPICAL(R.string.enum_form_topical, true),
@@ -65,6 +90,10 @@ enum class MedicationForm(override val labelRes: Int, val hasSites: Boolean) : L
   /** Prefilled devices (pens, auto-injectors, prefilled syringes) have nothing to draw up. */
   val isPrefilledInjector: Boolean
     get() = this == INJECTABLE_PEN
+
+  companion object {
+    val SUPPLEMENT_FORMS: List<MedicationForm> = entries.filter { !it.isInjectable }
+  }
 }
 
 @Serializable
@@ -79,11 +108,18 @@ enum class InjectionRoute(val code: String, override val labelRes: Int) : Labele
 enum class DoseUnit(val symbol: String, override val labelRes: Int) : Labeled {
   MG("mg", R.string.enum_unit_mg),
   MCG("mcg", R.string.enum_unit_mcg),
+  G("g", R.string.enum_unit_g),
   ML("mL", R.string.enum_unit_ml),
   UNITS("units", R.string.enum_unit_units),
   IU("IU", R.string.enum_unit_iu),
   TABLET("tab", R.string.enum_unit_tablet),
   CAPSULE("cap", R.string.enum_unit_capsule),
+  SOFTGEL("softgel", R.string.enum_unit_softgel),
+  GUMMY("gummy", R.string.enum_unit_gummy),
+  SCOOP("scoop", R.string.enum_unit_scoop),
+  PACKET("packet", R.string.enum_unit_packet),
+  TSP("tsp", R.string.enum_unit_tsp),
+  TBSP("tbsp", R.string.enum_unit_tbsp),
   APPLICATION("app", R.string.enum_unit_application),
   PUFF("puff", R.string.enum_unit_puff),
   DROP("drop", R.string.enum_unit_drop),
@@ -132,41 +168,48 @@ data class InjectableDetails(
   }
 }
 
-@Serializable
-data class Medication(
-  val id: String = UUID.randomUUID().toString(),
-  val formulaName: String,
-  val strength: String,
-  val form: MedicationForm = MedicationForm.TABLET,
-  val defaultDoseAmount: Double = 1.0,
-  val defaultDoseUnit: DoseUnit = DoseUnit.TABLET,
-  val injectableDetails: InjectableDetails? = null,
-  val siteMode: SiteMode = SiteMode.OFF,
-  /** In rotation order when [siteMode] is [SiteMode.ROTATE]. Kept while sites are off, so turning them back on restores it. */
-  val sites: List<String> = emptyList(),
-  // Pacing and safety constraints on the Medication object
-  val minIntervalMinutes: Int? = null,
-  val maxDailyDoses: Double? = null,
-  val maxDailyAmount: Double? = null,
-  // Indications: the indications this treats. Many-to-many with indications, edited from either side.
-  val indicationIds: List<String> = emptyList(),
-  val indicationText: String = "",
-  // Optional metadata
-  val prescriberId: String? = null,
-  val prescribedDateIso: String? = null,
-  val ndc11: String? = null,
-  val brandName: String? = null,
-  val manufacturer: String? = null,
-  val notes: String? = null,
-  /** Dated changes to dose, strength or equipment (titration, tapers). See `domain/Adjustments.kt`. */
-  val adjustments: List<MedicationAdjustment> = emptyList(),
-  // Sync-ready metadata
-  val createdAtEpochMillis: Long = System.currentTimeMillis(),
-  val updatedAtEpochMillis: Long = System.currentTimeMillis(),
-  val deletedAtEpochMillis: Long? = null,
-) {
+/**
+ * Shared parent for anything a user schedules, logs, and paces: standard [Medication]s (including
+ * injectables and NDC-backed drugs) and [Supplement]s (vitamins, fiber, pre-workout, etc.).
+ */
+@Serializable(with = RegimenItemSerializer::class)
+sealed interface RegimenItem {
+  val id: String
+  val primaryName: String
+  val secondaryName: String?
   val displayTitle: String
-    get() = if (!brandName.isNullOrBlank()) "$formulaName ($brandName)" else formulaName
+  val strength: String
+  val form: MedicationForm
+  val source: ItemSource
+  val defaultDoseAmount: Double
+  val defaultDoseUnit: DoseUnit
+  val siteMode: SiteMode
+  val sites: List<String>
+  val minIntervalMinutes: Int?
+  val maxDailyDoses: Double?
+  val maxDailyAmount: Double?
+  val indicationIds: List<String>
+  val indicationText: String
+  val prescriberId: String?
+  val startedDateIso: String?
+  val manufacturer: String?
+  val notes: String?
+  val adjustments: List<MedicationAdjustment>
+  val createdAtEpochMillis: Long
+  val updatedAtEpochMillis: Long
+  val deletedAtEpochMillis: Long?
+
+  val isSupplement: Boolean
+    get() = this is Supplement
+
+  val injectableOrNull: InjectableDetails?
+    get() = (this as? Medication)?.injectableDetails
+
+  val ndc11OrNull: String?
+    get() = (this as? Medication)?.ndc11
+
+  val ingredientsOrEmpty: List<KeyIngredient>
+    get() = (this as? Supplement)?.ingredients.orEmpty()
 
   /** Doses record a site: the form has sites, they're on, and at least one is set up. */
   val tracksSites: Boolean
@@ -178,14 +221,6 @@ data class Medication(
   /** The sites in use, or none when doses don't record a site. */
   val activeSites: List<String>
     get() = if (tracksSites) sites else emptyList()
-
-  /** The name most people recognize: brand when known, otherwise the generic name. */
-  val primaryName: String
-    get() = brandName?.takeIf { it.isNotBlank() } ?: formulaName
-
-  /** The generic name when [primaryName] is a brand; null otherwise. */
-  val secondaryName: String?
-    get() = formulaName.takeIf { !brandName.isNullOrBlank() }
 
   /** Amount per mL, worked out from [strength]; null when it isn't written per mL or is a combination. */
   val concentration: Concentration?
@@ -210,13 +245,114 @@ data class Medication(
     val base = "${formatNum(defaultDoseAmount)} ${defaultDoseUnit.symbol}"
     val volMl = doseVolumeMl(defaultDoseAmount, defaultDoseUnit)
     // An insulin syringe is marked in units, so say where to draw to on it.
-    val marks = injectableDetails?.syringeType?.unitsPerMl
+    val marks = injectableOrNull?.syringeType?.unitsPerMl
     return when {
       volMl == null || defaultDoseUnit == DoseUnit.ML -> base
       marks != null -> "$base (${formatNum(volMl)} mL / ${formatNum(volMl * marks)} U)"
       else -> "$base (${formatNum(volMl)} mL)"
     }
   }
+
+  fun withUpdatedAt(now: Long): RegimenItem = when (this) {
+    is Medication -> copy(updatedAtEpochMillis = now)
+    is Supplement -> copy(updatedAtEpochMillis = now)
+  }
+
+  fun withDeletedAt(now: Long): RegimenItem = when (this) {
+    is Medication -> copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now)
+    is Supplement -> copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now)
+  }
+
+  fun withCreatedAt(createdAt: Long): RegimenItem = when (this) {
+    is Medication -> copy(createdAtEpochMillis = createdAt)
+    is Supplement -> copy(createdAtEpochMillis = createdAt)
+  }
+
+  fun withIndicationIds(ids: List<String>, now: Long): RegimenItem = when (this) {
+    is Medication -> copy(indicationIds = ids, updatedAtEpochMillis = now)
+    is Supplement -> copy(indicationIds = ids, updatedAtEpochMillis = now)
+  }
+
+  fun withPrescriberId(id: String?, now: Long): RegimenItem = when (this) {
+    is Medication -> copy(prescriberId = id, updatedAtEpochMillis = now)
+    is Supplement -> copy(prescriberId = id, updatedAtEpochMillis = now)
+  }
+
+  fun withAdjustments(adjustments: List<MedicationAdjustment>): RegimenItem = when (this) {
+    is Medication -> copy(adjustments = adjustments)
+    is Supplement -> copy(adjustments = adjustments)
+  }
+
+  fun withStrength(strength: String): RegimenItem = when (this) {
+    is Medication -> copy(strength = strength)
+    is Supplement -> copy(strength = strength)
+  }
+
+  fun withDefaultDose(amount: Double, unit: DoseUnit): RegimenItem = when (this) {
+    is Medication -> copy(defaultDoseAmount = amount, defaultDoseUnit = unit)
+    is Supplement -> copy(defaultDoseAmount = amount, defaultDoseUnit = unit)
+  }
+}
+
+/** Legacy rows in SQLite lack a type discriminator and always have `formulaName`, so decode those as [Medication]. */
+object RegimenItemSerializer : JsonContentPolymorphicSerializer<RegimenItem>(RegimenItem::class) {
+  override fun selectDeserializer(element: JsonElement): DeserializationStrategy<RegimenItem> {
+    val obj = element.jsonObject
+    return if ("formulaName" !in obj && ("name" in obj || "ingredients" in obj)) {
+      Supplement.serializer()
+    } else {
+      Medication.serializer()
+    }
+  }
+}
+
+@Serializable
+data class Medication(
+  override val id: String = UUID.randomUUID().toString(),
+  val formulaName: String,
+  override val strength: String,
+  override val form: MedicationForm = MedicationForm.TABLET,
+  override val source: ItemSource = ItemSource.PRESCRIBED,
+  override val defaultDoseAmount: Double = 1.0,
+  override val defaultDoseUnit: DoseUnit = DoseUnit.TABLET,
+  val injectableDetails: InjectableDetails? = null,
+  override val siteMode: SiteMode = SiteMode.OFF,
+  /** In rotation order when [siteMode] is [SiteMode.ROTATE]. Kept while sites are off, so turning them back on restores it. */
+  override val sites: List<String> = emptyList(),
+  // Pacing and safety constraints on the Medication object
+  override val minIntervalMinutes: Int? = null,
+  override val maxDailyDoses: Double? = null,
+  override val maxDailyAmount: Double? = null,
+  // Indications: the indications this treats. Many-to-many with indications, edited from either side.
+  override val indicationIds: List<String> = emptyList(),
+  override val indicationText: String = "",
+  // Optional metadata
+  override val prescriberId: String? = null,
+  val prescribedDateIso: String? = null,
+  val ndc11: String? = null,
+  val brandName: String? = null,
+  override val manufacturer: String? = null,
+  override val notes: String? = null,
+  /** Dated changes to dose, strength or equipment (titration, tapers). See `domain/Adjustments.kt`. */
+  override val adjustments: List<MedicationAdjustment> = emptyList(),
+  // Sync-ready metadata
+  override val createdAtEpochMillis: Long = System.currentTimeMillis(),
+  override val updatedAtEpochMillis: Long = System.currentTimeMillis(),
+  override val deletedAtEpochMillis: Long? = null,
+) : RegimenItem {
+  override val displayTitle: String
+    get() = if (!brandName.isNullOrBlank()) "$formulaName ($brandName)" else formulaName
+
+  /** The name most people recognize: brand when known, otherwise the generic name. */
+  override val primaryName: String
+    get() = brandName?.takeIf { it.isNotBlank() } ?: formulaName
+
+  /** The generic name when [primaryName] is a brand; null otherwise. */
+  override val secondaryName: String?
+    get() = formulaName.takeIf { !brandName.isNullOrBlank() }
+
+  override val startedDateIso: String?
+    get() = prescribedDateIso
 
   companion object {
     val PRESET_IM_GLUTE_SITES = listOf("Left Ventrogluteal", "Right Ventrogluteal")
@@ -286,13 +422,50 @@ data class Medication(
     fun normalizeNdc11(raw: String?): String? {
       if (raw.isNullOrBlank()) return null
       val digits = raw.filter { it.isDigit() }
-      return if (digits.length == 11) {
-        "${digits.substring(0, 5)}-${digits.substring(5, 9)}-${digits.substring(9, 11)}"
-      } else {
-        raw.trim()
+      return when (digits.length) {
+        11 -> "${digits.substring(0, 5)}-${digits.substring(5, 9)}-${digits.substring(9, 11)}"
+        9 -> "${digits.substring(0, 5)}-${digits.substring(5, 9)}"
+        else -> raw.trim()
       }
     }
   }
+}
+
+/** A vitamin, mineral, fiber, pre-workout, or other dietary supplement. */
+@Serializable
+data class Supplement(
+  override val id: String = UUID.randomUUID().toString(),
+  val name: String,
+  override val strength: String = "",
+  override val form: MedicationForm = MedicationForm.CAPSULE,
+  override val source: ItemSource = ItemSource.OTC,
+  override val defaultDoseAmount: Double = 1.0,
+  override val defaultDoseUnit: DoseUnit = DoseUnit.CAPSULE,
+  val ingredients: List<KeyIngredient> = emptyList(),
+  override val siteMode: SiteMode = SiteMode.OFF,
+  override val sites: List<String> = emptyList(),
+  override val minIntervalMinutes: Int? = null,
+  override val maxDailyDoses: Double? = null,
+  override val maxDailyAmount: Double? = null,
+  override val indicationIds: List<String> = emptyList(),
+  override val indicationText: String = "",
+  override val prescriberId: String? = null,
+  override val startedDateIso: String? = null,
+  override val manufacturer: String? = null,
+  override val notes: String? = null,
+  override val adjustments: List<MedicationAdjustment> = emptyList(),
+  override val createdAtEpochMillis: Long = System.currentTimeMillis(),
+  override val updatedAtEpochMillis: Long = System.currentTimeMillis(),
+  override val deletedAtEpochMillis: Long? = null,
+) : RegimenItem {
+  override val primaryName: String
+    get() = name
+
+  override val secondaryName: String?
+    get() = null
+
+  override val displayTitle: String
+    get() = name
 }
 
 @Serializable
@@ -363,6 +536,10 @@ enum class IndicationKind(override val labelRes: Int) : Labeled {
   val canBeSecondary: Boolean
     get() = this == ACUTE || this == CHRONIC
 
+  /** Allergies and intolerances are recorded as triggers/reactions rather than ICD-10 diagnoses. */
+  val hasIcd10: Boolean
+    get() = !isReaction
+
   /** Statuses that make sense for this kind: acute, preventive and reactions are either active or over. */
   val statuses: List<IndicationStatus>
     get() = when (this) {
@@ -410,6 +587,8 @@ enum class Severity(override val labelRes: Int) : Labeled {
 data class Indication(
   val id: String = UUID.randomUUID().toString(),
   val name: String,
+  /** Optional ICD-10 / ICD-10-CM code (e.g. "E11.9"); omitted for allergies and intolerances. */
+  val icd10: String? = null,
   val details: String? = null,
   val kind: IndicationKind = IndicationKind.CHRONIC,
   val status: IndicationStatus = IndicationStatus.ACTIVE,
@@ -780,12 +959,16 @@ data class RegimenBackupBundle(
   val devices: List<SyncDevice> = emptyList(),
   val primary: PrimaryClaim? = null,
   val medications: List<Medication> = emptyList(),
+  val supplements: List<Supplement> = emptyList(),
   val providers: List<Provider> = emptyList(),
   val indications: List<Indication> = emptyList(),
   val buckets: List<TimeOfDayBucket> = emptyList(),
   val schedules: List<MedicationSchedule> = emptyList(),
   val doseLogs: List<DoseLog> = emptyList(),
 ) {
+  val allItems: List<RegimenItem>
+    get() = medications + supplements
+
   companion object {
     const val FORMAT = "regimen_backup"
     const val CURRENT_VERSION = 1

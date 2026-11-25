@@ -130,7 +130,7 @@ object BackupFiles {
       }
     }
 
-    // Medications
+    // Medications & Supplements
     val medicationIds = mutableSetOf<String>()
     for (med in bundle.medications) {
       if (med.id.isBlank()) throw InvalidBackupException("Medication ID cannot be blank")
@@ -158,6 +158,36 @@ object BackupFiles {
         for (schedDose in adj.scheduleDoses) {
           if (!schedDose.amount.isFinite() || schedDose.amount <= 0.0) {
             throw InvalidBackupException("Adjustment on medication ${med.id} has invalid schedule dose: ${schedDose.amount}")
+          }
+        }
+      }
+    }
+    for (supp in bundle.supplements) {
+      if (supp.id.isBlank()) throw InvalidBackupException("Supplement ID cannot be blank")
+      if (!medicationIds.add(supp.id)) throw InvalidBackupException("Duplicate supplement ID: ${supp.id}")
+      if (supp.name.isBlank()) throw InvalidBackupException("Supplement name cannot be blank: ${supp.id}")
+      if (!supp.defaultDoseAmount.isFinite() || supp.defaultDoseAmount <= 0.0) {
+        throw InvalidBackupException("Supplement ${supp.id} has invalid default dose amount: ${supp.defaultDoseAmount}")
+      }
+      if (supp.prescriberId != null && supp.prescriberId !in providerIds) {
+        throw InvalidBackupException("Supplement ${supp.id} references missing prescriber ${supp.prescriberId}")
+      }
+      for (indId in supp.indicationIds) {
+        if (indId !in indicationIds) {
+          throw InvalidBackupException("Supplement ${supp.id} references missing indication $indId")
+        }
+      }
+      supp.startedDateIso?.let { checkIsoDate("Supplement ${supp.id} startedDateIso", it) }
+      for (adj in supp.adjustments) {
+        checkIsoDate("Adjustment on supplement ${supp.id} effectiveDateIso", adj.effectiveDateIso)
+        adj.defaultDose?.let { dose ->
+          if (!dose.amount.isFinite() || dose.amount <= 0.0) {
+            throw InvalidBackupException("Adjustment on supplement ${supp.id} has invalid default dose amount: ${dose.amount}")
+          }
+        }
+        for (schedDose in adj.scheduleDoses) {
+          if (!schedDose.amount.isFinite() || schedDose.amount <= 0.0) {
+            throw InvalidBackupException("Adjustment on supplement ${supp.id} has invalid schedule dose: ${schedDose.amount}")
           }
         }
       }
@@ -295,6 +325,7 @@ object BackupFiles {
       version = imported.version,
       kinds = listOf(
         diff(R.string.backup_kind_medications, current.medications, imported.medications, { it.id }, { it.deletedAtEpochMillis == null }),
+        diff(R.string.backup_kind_supplements, current.supplements, imported.supplements, { it.id }, { it.deletedAtEpochMillis == null }),
         diff(R.string.backup_kind_schedules, current.schedules, imported.schedules, { it.id }, { it.deletedAtEpochMillis == null }),
         diff(R.string.backup_kind_dose_history, current.doseLogs, imported.doseLogs, { it.id }, { it.deletedAtEpochMillis == null }),
         diff(R.string.backup_kind_dose_windows, current.buckets, imported.buckets, { it.id }, { it.deletedAtEpochMillis == null }),

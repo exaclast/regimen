@@ -591,4 +591,106 @@ class FdaNdcLookupServiceTest {
     assertEquals("4 × 2.5 mg", FdaNdcLookupService.displayStrength("2.5 mg / 2.5 mg / 2.5 mg / 2.5 mg"))
     assertEquals("875 mg / 125 mg", FdaNdcLookupService.displayStrength("875 mg / 125 mg"))
   }
+
+  @Test
+  fun candidateNdc9s_and_queryBuilding_handleHyphenatedAndUnhyphenatedProductNdcs() {
+    assertEquals(listOf("00517-0031"), FdaNdcLookupService.candidateNdc9s("00517-0031"))
+    assertEquals(listOf("00517-0031"), FdaNdcLookupService.candidateNdc9s("0517-0031"))
+    assertEquals(listOf("45802-0112"), FdaNdcLookupService.candidateNdc9s("45802-112"))
+    assertEquals(listOf("00517-0031"), FdaNdcLookupService.candidateNdc9s("005170031"))
+    assertEquals(listOf("04580-2112", "45802-0112"), FdaNdcLookupService.candidateNdc9s("45802112"))
+
+    assertEquals(emptyList<String>(), FdaNdcLookupService.candidateNdc9s("1234-567"))
+    assertEquals(emptyList<String>(), FdaNdcLookupService.candidateNdc9s("00517-0031-25"))
+    assertEquals(emptyList<String>(), FdaNdcLookupService.candidateNdc9s("4580211222"))
+
+    assertEquals("00517-0031", FdaNdcLookupService.normalizeIfUnambiguousNdc("0517-0031"))
+    assertEquals("45802-0112", FdaNdcLookupService.normalizeIfUnambiguousNdc("45802-112"))
+    assertEquals("45802112", FdaNdcLookupService.normalizeIfUnambiguousNdc("45802112"))
+
+    val query0517 = FdaNdcLookupService.buildOpenFdaSearchQuery("00517-0031")
+    assertTrue(query0517.contains("product_ndc:\"00517-0031\""))
+    assertTrue(query0517.contains("product_ndc:\"0517-0031\""))
+    assertTrue(!query0517.contains("packaging.package_ndc"))
+
+    val query45802 = FdaNdcLookupService.buildOpenFdaSearchQuery("45802-0112")
+    assertTrue(query45802.contains("product_ndc:\"45802-112\""))
+    assertTrue(query45802.contains("product_ndc:\"45802-0112\""))
+  }
+
+  @Test
+  fun lookupAndCrossReference_supportProductNdc9Inputs() = kotlinx.coroutines.runBlocking {
+    val sampleSingleVialJson = """
+      {
+        "results": [
+          {
+            "product_ndc": "0517-0031",
+            "generic_name": "CYANOCOBALAMIN",
+            "brand_name": "CYANOCOBALAMIN",
+            "labeler_name": "American Regent, Inc.",
+            "dosage_form": "INJECTION, SOLUTION",
+            "route": ["INTRAMUSCULAR"],
+            "active_ingredients": [{ "name": "CYANOCOBALAMIN", "strength": "1 mg/mL" }],
+            "packaging": [{ "package_ndc": "0517-0031-25", "description": "30 mL in 1 VIAL, MULTI-DOSE" }]
+          }
+        ]
+      }
+    """.trimIndent()
+
+    // Multi-package product lookup via NDC-9 resolves drug info and preserves canonical NDC-9.
+    for (input in listOf("45802-112", "45802-0112", "458020112")) {
+      val result = FdaNdcLookupService.lookupByNdcWithFetcher(input) { multiPackageResponse }.getOrNull()
+      assertNotNull(input, result)
+      assertEquals(input, "45802-0112", result!!.ndc11)
+      assertEquals(input, "Exampledrug", result.formulaName)
+      assertEquals(input, "10 mg", result.strength)
+    }
+
+    // Single-package injectable vial via NDC-9 still gets route & vial volume.
+    val vial = FdaNdcLookupService.lookupByNdcWithFetcher("00517-0031") { sampleSingleVialJson }.getOrNull()
+    assertNotNull(vial)
+    assertEquals("00517-0031", vial!!.ndc11)
+    assertEquals(MedicationForm.INJECTABLE_VIAL, vial.form)
+    assertEquals(InjectionRoute.IM, vial.route)
+    assertEquals(30.0, vial.vialVolumeMl!!, 0.001)
+
+    // Ambiguous bare 8-digit code colliding across two products does not guess.
+    val ambiguous = FdaNdcLookupService.lookupByNdcWithFetcher("45802112") { multiPackageResponse }
+    assertTrue(ambiguous.isFailure)
+
+    // Cross-reference concludes when name matches, and asks when name differs.
+    val match = FdaNdcLookupService.searchAndCrossReferenceWithFetcher(
+      DrugCrossReferenceCriteria(ndc = "00517-0031", formulaName = "Cyanocobalamin"),
+    ) { sampleSingleVialJson }
+    assertTrue(match is CrossReferenceOutcome.UnambiguousMatch)
+    assertEquals("00517-0031", (match as CrossReferenceOutcome.UnambiguousMatch).candidate.result.ndc11)
+
+    val mismatch = FdaNdcLookupService.searchAndCrossReferenceWithFetcher(
+      DrugCrossReferenceCriteria(ndc = "00517-0031", formulaName = "Hydroxocobalamin"),
+    ) { sampleSingleVialJson }
+    assertTrue(mismatch !is CrossReferenceOutcome.UnambiguousMatch)
+  }
+
+  @Test
+  fun drugLabelParser_preservesScannedProductNdc9() {
+    val parsed = DrugLabelParser.parseGeminiJsonResponse(
+      """
+      {
+        "ndc": "0517-0031",
+        "formulaName": "Cyanocobalamin",
+        "brandName": null,
+        "strength": "1 mg/mL",
+        "form": "INJECTABLE_VIAL",
+        "defaultDoseAmount": null,
+        "manufacturer": "American Regent",
+        "prescriberName": null,
+        "lotNumber": null,
+        "expirationDateIso": null,
+        "instructions": null,
+        "isCompound": false
+      }
+      """.trimIndent()
+    )
+    assertEquals("00517-0031", parsed.extractedNdc)
+  }
 }

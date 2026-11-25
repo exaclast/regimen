@@ -71,9 +71,12 @@ import com.exaclast.regimen.model.DoseAmount
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.NeedleHub
 import com.exaclast.regimen.model.DoseStatus
+import com.exaclast.regimen.model.ItemSource
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationSchedule
+import com.exaclast.regimen.model.RegimenItem
 import com.exaclast.regimen.model.ScheduleFrequencyType
+import com.exaclast.regimen.model.Supplement
 import com.exaclast.regimen.model.chronological
 import com.exaclast.regimen.model.formatNum
 import com.exaclast.regimen.notifications.DoseAlarmTiming
@@ -115,7 +118,7 @@ fun MedicationDetailScreen(
   onAddSchedule: () -> Unit,
   onEditSchedule: (MedicationSchedule) -> Unit,
   onDeleteSchedule: (MedicationSchedule) -> Unit,
-  onLogDose: (medication: Medication, site: String?, takenAtMillis: Long?, note: String?) -> Unit,
+  onLogDose: (medication: RegimenItem, site: String?, takenAtMillis: Long?, note: String?) -> Unit,
   onEditLog: (DoseLog) -> Unit,
   onOpenProvider: (String) -> Unit,
   onOpenIndication: (String) -> Unit,
@@ -193,7 +196,8 @@ fun MedicationDetailScreen(
     topBar = {
       AdaptiveMediumTopAppBar(
         title = { Text(medication.primaryName, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-        subtitle = medication.secondaryName?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
+        subtitle = (medication.secondaryName ?: medication.manufacturer?.takeIf { medication.isSupplement && it.isNotBlank() })
+          ?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
         navigationIcon = {
           IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
         },
@@ -232,10 +236,13 @@ fun MedicationDetailScreen(
           modifier = Modifier.fillMaxWidth(),
         ) {
           Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(medication.strength, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-            val route = medication.injectableDetails?.route?.label()
+            if (medication.strength.isNotBlank()) {
+              Text(medication.strength, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            }
+            val route = medication.injectableOrNull?.route?.label()
+            val sourceTag = medication.source.label().takeIf { medication.isSupplement || medication.source == ItemSource.OTC }
             Text(
-              listOfNotNull(medication.form.label(), route).joinToString(" · "),
+              listOfNotNull(medication.form.label(), route, sourceTag).joinToString(" · "),
               style = MaterialTheme.typography.bodyMedium,
             )
             Text(stringResource(R.string.med_default_dose, medication.formattedDefaultDose()), style = MaterialTheme.typography.bodyMedium)
@@ -365,6 +372,30 @@ fun MedicationDetailScreen(
         }
       }
 
+      if (medication is Supplement && medication.ingredients.isNotEmpty()) {
+        item(key = "ingredients") {
+          SectionHeader(stringResource(R.string.med_key_ingredients))
+          GroupedColumn {
+            medication.ingredients.forEachIndexed { i, ing ->
+              GroupItem(index = i, count = medication.ingredients.size) {
+                ListItem(
+                  trailingContent = ing.amount?.takeIf { it.isNotBlank() }?.let { amt ->
+                    {
+                      Text(
+                        amt,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                      )
+                    }
+                  },
+                  colors = groupListItemColors(),
+                ) { Text(ing.name) }
+              }
+            }
+          }
+        }
+      }
+
       item(key = "changes") {
         SectionHeader(stringResource(R.string.med_changes)) {
           TextButton(onClick = onPlanChange) {
@@ -403,7 +434,7 @@ fun MedicationDetailScreen(
         }
       }
 
-      medication.injectableDetails?.let { inj ->
+      medication.injectableOrNull?.let { inj ->
         item(key = "injection") {
           SectionHeader(stringResource(R.string.med_injection))
           val pen = medication.form.isPrefilledInjector
@@ -508,17 +539,19 @@ fun MedicationDetailScreen(
             }
           }
           if (medication.indicationText.isNotBlank()) add(Triple(stringResource(R.string.med_indication_notes), medication.indicationText, null))
-          if (snapshot.tracksProviders) {
+          if (snapshot.tracksProviders && (!medication.isSupplement || prescriber != null)) {
             add(
               Triple(
-                stringResource(R.string.med_prescriber),
+                stringResource(if (medication.isSupplement) R.string.editor_recommended_by else R.string.med_prescriber),
                 prescriber?.let { if (it.isPcp) stringResource(R.string.med_name_pcp, it.name) else it.name } ?: stringResource(R.string.value_not_set),
                 prescriber?.let { p -> { onOpenProvider(p.id) } },
               )
             )
           }
-          UiFormat.dateIso(medication.prescribedDateIso)?.let { add(Triple(stringResource(R.string.med_prescribed), it, null)) }
-          medication.ndc11?.takeIf { it.isNotBlank() }?.let { add(Triple(stringResource(R.string.med_ndc), it, null)) }
+          add(Triple(stringResource(R.string.med_source), medication.source.label(), null))
+          val dateLabel = if (medication.isSupplement || medication.source == ItemSource.OTC) R.string.med_started else R.string.med_prescribed
+          UiFormat.dateIso(medication.startedDateIso)?.let { add(Triple(stringResource(dateLabel), it, null)) }
+          medication.ndc11OrNull?.takeIf { it.isNotBlank() }?.let { add(Triple(stringResource(R.string.med_ndc), it, null)) }
           medication.manufacturer?.takeIf { it.isNotBlank() }?.let { add(Triple(stringResource(R.string.med_manufacturer), it, null)) }
           medication.notes?.takeIf { it.isNotBlank() }?.let { add(Triple(stringResource(R.string.field_notes), it, null)) }
         }

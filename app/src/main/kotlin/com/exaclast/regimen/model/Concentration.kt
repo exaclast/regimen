@@ -25,6 +25,7 @@ data class Concentration(val amountPerMl: Double, val unit: AmountUnit) {
       DoseUnit.ML -> dose
       DoseUnit.MG -> massMg(dose, fromMcg = false)
       DoseUnit.MCG -> massMg(dose, fromMcg = true)
+      DoseUnit.G -> massMg(dose * 1000.0, fromMcg = false)
       DoseUnit.UNITS, DoseUnit.IU -> if (unit == AmountUnit.UNITS) dose / amountPerMl else null
       else -> null
     }

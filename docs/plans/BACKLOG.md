@@ -14,7 +14,7 @@ The one list of everything still to do. Last reconciled 2026-11-15 against `"Com
 
 ## How to use this file
 
-**Adding something.** Add one row in the matching area, using the next free number (next: **T-129**). IDs never change
+**Adding something.** Add one row in the matching area, using the next free number (next: **T-130**). IDs never change
 or get reused. One sentence is enough; anything longer goes in `designs/`. An audit or device pass adds rows here, and its
 raw report goes in `archive/`.
 
@@ -57,13 +57,13 @@ is not part of the v1.0 promise.
 | **M4** | **Everyday features** | 1.x | The features that make it worth using daily; app lock and the widget are the first candidates | T-017, T-018, T-021, T-030, T-094–097, T-100 |
 | **M6** | **Sync** | 1.x | Google Drive sync | T-065, T-102 |
 | **M7** | **Wear OS** | 1.x | Doses from the wrist. Later, and D-9 (how the watch gets its data) has to be settled first | T-106–110 |
-| **M8** | **FHIR & Interoperability** | 1.x | HL7 FHIR R4 Bundle export/import building on `T-124` (`rxcui`), `T-126` (`npi`/`taxonomyCode`), and `T-127` (kind & Rx/OTC source) | T-125 |
+| **M8** | **FHIR & Interoperability** | 1.x | HL7 FHIR R4 Bundle export/import building on `T-124` (`rxcui`) and `T-126` (`npi`/`taxonomyCode`) | T-125 |
 
 ### Up next
 
-v1.0 (M5) is in beta (`v1.0.0-beta1`); next priorities:
+v1.0 (M5) is in beta (`v1.0.0-beta2`); next priorities:
 
-1. **RxCUI, Supplements/Rx-OTC, & NPI lookup (`T-124`, `T-126`, `T-127`, `T-128`):** Exact/probable OpenFDA NDC + manufacturer match falling back to RxNorm (`rxcui` SCD/SBD); CMS NPPES provider lookup (`npi`, NUCC `taxonomyCode`, `practiceNpi`); separate `Medication` kind (medication vs vitamin/mineral/supplement) and Rx/OTC source with supplement forms/units, Care Summary/list grouping, OpenFDA Rx/OTC detection, and NIH DSLD lookup
+1. **RxCUI, NPI, ICD-10, & DSLD lookup (`T-124`, `T-126`, `T-129`, `T-128`):** Exact/probable OpenFDA NDC + manufacturer match falling back to RxNorm (`rxcui` SCD/SBD); CMS NPPES provider lookup (NUCC `taxonomyCode`, `credential`, `practiceNpi`; optional `npi` shipped); opt-in ICD-10-CM lookup (`Indication.icd10` shipped); OpenFDA Rx/OTC auto-detection and NIH DSLD dietary supplement lookup
 2. **M4 (Everyday features):** App lock (**T-097**), home-screen widget (**T-100**), refill and supply tracking (**T-095**), combined daily limits (**T-096**)
 3. **M2 (Adaptive):** List-detail two-pane scenes (**T-069**), desktop/wide Today grid (**T-070**), two-column editors (**T-071**), keyboard shortcuts and tooltips (**T-073**, **T-074**)
 4. **M6 (Sync):** Google Drive sync (**T-102**) and clock skew handling (**T-065**)
@@ -103,8 +103,8 @@ v1.0 (M5) is in beta (`v1.0.0-beta1`); next priorities:
 | T-036 | Scan buttons on desktop: untried. Decide what camera and AICore should do there; a file picker suits a label photo | P2 | S | M2 | form factors |
 | T-037 | OCR quality on wrapped labels: words split across photos still produce wrong names. Collect more cases before changing anything; no hard-coded parsing | P3 | M | — | new |
 | T-124 | Store optional RxNorm `rxcui` on medications (plus dated adjustments when product/strength changes) and update lookup: use exact/probable OpenFDA NDC + manufacturer match when present, otherwise fall back to RxCUI (SCD/SBD) without guessing NDC or manufacturer | P1 | M | Up next | — |
-| T-126 | Align `Provider` schema (optional `npi`, NUCC `taxonomyCode`, `credential`, `practiceNpi`, alongside `specialty`, `practice`, `phone`, `email`; no separate Organization/Specialty entities) and add opt-in CMS NPPES API v2.1 lookup without guessing ambiguous NPIs. Notes from API check: `NPI-1` lacks employer/practice names, so cross-match optional `NPI-2` org results by practice/address/phone for disambiguation and `practiceNpi`; fall back to wildcard (`*`) prefix search on 0 hits for typo tolerance; check `addresses[]` + `practiceLocations[]` rather than assuming `taxonomies[primary]` license state is the clinic location; `NPI-1` may omit `credential` and public NPPES has no email | P1 | M | Up next | — |
-| T-127 | Add two separate fields on `Medication` (`kind`: Medication vs Vitamin / Mineral / Supplement; `source`: Prescribed vs OTC, with DB/backup migration), add supplement-friendly forms/units (softgel, gummy, powder/scoop, grams), adjust editor/detail wording ("Started" rather than "Prescribed" for OTC/supplements), and badge/group Rx, OTC, and Supplements across the Medications list and `CareSummary` | P1 | M | Up next | — |
+| T-126 | (partial) Optional `Provider.npi` shipped (`96b3eca`); remaining: align `Provider` schema (NUCC `taxonomyCode`, `credential`, `practiceNpi`, alongside `specialty`, `practice`, `phone`, `email`; no separate Organization/Specialty entities) and add opt-in CMS NPPES API v2.1 lookup without guessing ambiguous NPIs. Notes from API check: `NPI-1` lacks employer/practice names, so cross-match optional `NPI-2` org results by practice/address/phone for disambiguation and `practiceNpi`; fall back to wildcard (`*`) prefix search on 0 hits for typo tolerance; check `addresses[]` + `practiceLocations[]` rather than assuming `taxonomies[primary]` license state is the clinic location; `NPI-1` may omit `credential` and public NPPES has no email | P1 | M | Up next | — |
+| T-129 | Add opt-in ICD-10-CM code lookup (e.g. NIH NLM Clinical Tables API) building on optional `Indication.icd10` for non-reaction indications (`ACUTE`, `CHRONIC`, `PREVENTIVE`) so users can search by condition name or code without guessing ambiguous codes | P2 | S | Up next | — |
 | T-128 | Auto-detect Prescribed vs OTC during OpenFDA lookup when product classification is unambiguous, and add NIH DSLD (`v9`) dietary supplement lookup plus Supplement Facts extraction in label parsing for vitamins, minerals, and supplements that lack NDCs | P1 | M | Up next | — |
 
 ### Editors and forms
@@ -170,7 +170,7 @@ Designs are in `designs/features.md` and `designs/sync-and-backup.md`.
 | T-103 | Second sync destination (WebDAV / self-hosted) | P3 | M | — | T-102 | phase 5 |
 | T-104 | Plain-language schedule creation with Gemini Nano | P3 | L | — | T-014, T-015, T-030, T-057 | O11 |
 | T-105 | Share Gemini Nano scaffolding between label and schedule parsing, if T-104 duplicates it | P3 | M | — | T-104 | O11 |
-| T-125 | HL7 FHIR R4 export and import (`Bundle` mapper over `RegimenSnapshot` for `Patient`, `Practitioner`/`PractitionerRole`, `Condition`, `AllergyIntolerance`, `Medication`, prescribed `MedicationRequest` vs OTC/supplement `MedicationStatement`, and `MedicationAdministration` with UCUM/SNOMED/`rxcui` mappings) | P2 | L | M8 | T-124, T-126, T-127 | — |
+| T-125 | HL7 FHIR R4 export and import (`Bundle` mapper over `RegimenSnapshot` for `Patient`, `Practitioner`/`PractitionerRole`, `Condition`, `AllergyIntolerance`, `Medication`, prescribed `MedicationRequest` vs OTC/supplement `MedicationStatement`, and `MedicationAdministration` with UCUM/SNOMED/`rxcui` mappings) | P2 | L | M8 | T-124, T-126 | — |
 
 ### Wear OS
 

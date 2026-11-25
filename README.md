@@ -13,16 +13,19 @@
 
 ## Key Features
 
-### 1. Medication Tracking
-- **Core details**: formula/generic name, brand, strength, dosage form (`Tablet`, `Capsule`, `Injectable (Vial)`, `Injectable (Pen)`, `Topical`, `Oral Liquid`, `Inhaler`, `Drops`, `Other`), and default dose amount/unit.
+### 1. Medication & Supplement Tracking
+- **Medications & supplements (`RegimenItem`)**: separate **Medications** and **Supplements** tabs with tailored full-screen editors (`MedicationEditorScreen` and `SupplementEditorScreen`). Both track a **Prescribed** vs **OTC** source (defaulting to Prescribed for medications and OTC for supplements) and share scheduling, logging, adjustments, pacing, and optional provider/indication links.
+- **Core details**:
+  - **Medications**: formula/generic name, brand, strength, dosage form (`Tablet`, `Capsule`, `Softgel`, `Gummy`, `Chewable`, `Powder`, `Injectable (Vial)`, `Injectable (Pen)`, `Topical`, `Oral Liquid`, `Inhaler`, `Drops`, `Other`), and default dose amount/unit.
+  - **Supplements**: vitamin/fiber/pre-workout name, optional strength, supplement-friendly forms (`SUPPLEMENT_FORMS`, excluding injectables) and units (`g`, `softgel`, `gummy`, `scoop`, `packet`, `tsp`, `tbsp`, plus standard units), optional brand/manufacturer and start date, and an editable list of **Key ingredients** (`KeyIngredient` name + amount).
 - **Injectable & vial support**:
   - Administration route (`IM`, `SC`, `ID`, `IV`).
   - Vial volume (`mL`) with an automatic draw volume worked out from the strength (e.g. `200 mg/10 mL`, `200 units/mL`); there is no separate concentration field. Prefilled devices are dialed, so they show no volume.
   - Syringes are picked by type (U-100 or U-500 insulin, tuberculin, Luer-lock, Luer-slip, other) and a usual size. Only insulin syringes show unit markings. Separate draw and injection needle specs (`Gauge × Length`) show the standard ISO hub color for the gauge.
-- **Dated changes (titration)**: record a dose, strength or equipment change from a date, such as an isotretinoin step-up or a new vial size, instead of overwriting history. Plan ahead from the medication page, or choose "From a date" or "Correction" when editing. Today, reminders and the alarm screen show each day's dose, and the first dose at a new amount is flagged. A change of strength or package clears the NDC until the FDA lookup supplies the new one.
-- **On-device label scanner (Gemini Nano / AICore)**: ML Kit text recognition reads one or more bottle/vial photos (a label that wraps around a small bottle can take a few), then the ML Kit GenAI Prompt API turns that text, or pasted text, into structured fields on-device. Only text reaches the model, because AICore's safety check refuses many label photos. The result includes fields (NDC, names, strength, form, manufacturer, lot, expiry, instructions). Decoy schema fields and token sanitization keep patient, pharmacy and prescriber names from being read as drug names. Scan buttons are disabled on devices without AICore; manual lookup works everywhere.
-- **OpenFDA cross-reference**: an NDC takes first priority in the [OpenFDA NDC API](https://open.fda.gov/apis/drug/ndc/). Otherwise name, strength, form and manufacturer are combined. A name that is not an exact match is never applied without asking, and ambiguous matches open a disambiguation dialog.
-- **Organized list**: chips group medications by schedule (short-term, ongoing, as needed), indication or form, alphabetical within each section. Finished medications collapse out of the way.
+- **Dated changes (titration)**: record a dose, strength or equipment change from a date, such as an isotretinoin step-up or a new vial size, instead of overwriting history. Plan ahead from the detail page, or choose "From a date" or "Correction" when editing. Today, reminders and the alarm screen show each day's dose, and the first dose at a new amount is flagged. A change of strength or package clears the NDC until the FDA lookup supplies the new one.
+- **On-device label scanner (Gemini Nano / AICore)**: available on medications. ML Kit text recognition reads one or more bottle/vial photos (a label that wraps around a small bottle can take a few), then the ML Kit GenAI Prompt API turns that text, or pasted text, into structured fields on-device. Only text reaches the model, because AICore's safety check refuses many label photos. The result includes fields (NDC-9/10/11, names, strength, form, manufacturer, lot, expiry, instructions). Decoy schema fields and token sanitization keep patient, pharmacy and prescriber names from being read as drug names. Scan buttons are disabled on devices without AICore; manual lookup works everywhere.
+- **OpenFDA cross-reference**: a product **NDC-9** or package **NDC-11** (plus 10-digit/barcode formats) takes first priority in the [OpenFDA NDC API](https://open.fda.gov/apis/drug/ndc/). Otherwise name, strength, form and manufacturer are combined. A name that is not an exact match is never applied without asking, and ambiguous matches open a disambiguation dialog.
+- **Organized lists**: separate **Medications** and **Supplements** tabs with search and grouping chips (`Schedule`, `Indication` when items in that tab link to active indications, or `Form`), alphabetical within each section. Finished items collapse out of the way.
 - **Pacing guardrails**: minimum interval between doses, maximum daily dose count, and maximum daily amount (totaled in the default unit). Daily limits count a dose on the calendar day it was taken, with overnight-window exceptions. Warnings appear on Today, in notifications and on the alarm screen. Logging a dose over its limit happens in the app, which explains the limit first.
 
 ### 2. Anatomical Sites
@@ -35,7 +38,7 @@
 - **Deleting a window** lets you choose where its doses move; logs move with them so a taken dose isn't due again. "Restore default windows" keeps any custom window a schedule still uses.
 - **Schedule types**: every day, every *N* days, specific days of the week, specific dates, every *N* days relative to the last dose (no drift when a dose is taken late), and as needed (PRN).
 - **Course dates**: optional inclusive start and end dates, with a start/end window for partial first and last days. A dose that was actually logged always stays visible.
-- **Logging**: 1-tap Take/Skip, **Take all** per window, and a separate "Log an extra dose" for unscheduled doses. Reversible actions show a Snackbar with **Undo** rather than a confirmation.
+- **Logging**: 1-tap Take, Skip (with an optional skip-reason prompt), **Take all** per window, split **As-needed medications** / **As-needed supplements** sections on Today, and a "Log extra dose" picker (with Medications/Supplements tabs when both exist) for unscheduled doses. Completed dose logs can be edited or deleted from the dose log editor, and reversible actions show a Snackbar with **Undo**.
 
 ### 4. Notifications & Alarms
 - **One notification per window occurrence** ("Morning dose" / "Morning medications") listing the drugs and doses, with Take / Skip (single) or Take all (several).
@@ -46,10 +49,11 @@
 - **Discreet mode** hides medication names on the lock screen.
 - **Master switches** to pause all reminders or silence only the ringing alarm.
 
-### 5. Providers, Indications & Health Summary (optional)
-- **Providers**: name, specialty, practice, phone, email, primary-care status, care dates, and linked medications, listed as regular, as needed, or past. A medication's provider is labelled *Prescriber*.
-- **Indications**: why a medication is taken: `ACUTE`, `CHRONIC` or `PREVENTIVE` (such as PrEP or PEP), with dates, severity (`Mild` to `Life-threatening`, or `Unsure`), and notes, listed by kind. Providers and indications are many-to-many, and so are medications and indications; both links are editable from either side. An indication can also be marked **Secondary to** underlying conditions (showing both "Secondary to X" and reverse "Secondary conditions"). A condition or symptom that isn't formally diagnosed can be marked *Suspected* and sits in its own section. **Allergies** (an immune reaction to a drug, food or something in the environment) and **drug intolerances** (a side effect you can't tolerate, which isn't an allergy) are two separate kinds, kept to what a provider or first responder would need to know. They record the trigger, severity and reaction, list by what they're to (drug allergies and intolerances together), and can link to the medication that treats them (recording only, with no warnings). Past indications are archived, and "Had this again" starts a new episode of a past acute or preventive one.
-- **Health Summary**: a one-page overview for a provider or first responder (accessible from Today or the launcher's long-press shortcut), ordered with drug allergies and intolerances first, other allergies, current medications, recently taken finished or as-needed medications (within 90 days), indications, suspected conditions, recently ended indications, and active providers, shareable as plain text.
+### 5. Care: Providers, Indications & Health Summary (optional)
+- **Care tab**: combines **Indications** and **Providers** under a segmented switcher (falling back directly to whichever single screen is tracked, and hiding the tab when both are turned off).
+- **Providers**: name, specialty, practice, phone, email, optional **NPI** (up to 10 digits), primary-care status, care dates, and linked medications, listed as regular, as needed, or past. A medication's provider is labelled *Prescriber*.
+- **Indications**: why a medication or supplement is taken: `ACUTE`, `CHRONIC` or `PREVENTIVE` (such as PrEP or PEP), with optional **ICD-10** code (non-reaction kinds only), dates, severity (`Mild` to `Life-threatening`, or `Unsure`), and notes, listed by kind and searchable by name, ICD-10 code, or notes. Providers and indications are many-to-many, and so are medications and indications; both links are editable from either side. An indication can also be marked **Secondary to** underlying conditions (showing both "Secondary to X" and reverse "Secondary conditions"). A condition or symptom that isn't formally diagnosed can be marked *Suspected* and sits in its own section. **Allergies** (an immune reaction to a drug, food or something in the environment) and **drug intolerances** (a side effect you can't tolerate, which isn't an allergy) are two separate kinds, kept to what a provider or first responder would need to know. They record the trigger, severity and reaction, list by what they're to (drug allergies and intolerances together), and can link to the medication that treats them (recording only, with no warnings). Past indications are archived, and "Had this again" starts a new episode of a past acute or preventive one.
+- **Health Summary**: a one-page overview for a provider or first responder (accessible from Today, Care, or the launcher's long-press shortcut), ordered with drug allergies and intolerances first, other allergies, current medications, **Supplements** (with bulleted key ingredients), recently taken finished or as-needed medications (within 90 days), indications (with ICD-10 codes when set), suspected conditions, recently ended indications, and active providers, shareable as plain text.
 - Both Providers and Indications are optional: turn off either in Settings to hide its tab and fields. Hiding never deletes data.
 
 ### 6. Encrypted Backup & Sync Groundwork
@@ -83,8 +87,8 @@ app/src/main/kotlin/com/exaclast/regimen/
     ├── RegimenViewModel.kt              # uiState: StateFlow + user actions
     ├── navigation/Routes.kt             # Serializable Routes + Navigator
     ├── components/                      # Shared lists, switches, pickers, UiFormat
-    ├── screens/                         # Today, Medications (list/detail/editor), Providers, Indications,
-    │                                    #   CareSummary, Adjustments/DoseLog editors, Settings, Backup screens
+    ├── screens/                         # Today, Medications & Supplements (list/detail/editors), Care,
+    │                                    #   Providers, Indications, CareSummary, Adjustments/DoseLog editors, Settings, Backup screens
     └── theme/                           # Material 3 Expressive theme
 ```
 

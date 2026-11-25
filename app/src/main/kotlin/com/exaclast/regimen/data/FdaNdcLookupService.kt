@@ -130,13 +130,28 @@ object FdaNdcLookupService {
       .replace(Regex("^\\][A-Za-z][0-9]"), "")
       .trim()
 
-    // 0. Check if there is an explicit hyphenated NDC inside the string (e.g. "41167-4122-2")
+    // 0a. Check if there is an explicit 3-segment hyphenated NDC inside the string (e.g. "41167-4122-2")
     val hyphenatedNdcMatch = Regex("""\b(\d{4,5}-\d{3,4}-\d{1,2})\b""").find(cleaned)
     if (hyphenatedNdcMatch != null) {
       return ParsedDrugBarcode(
         rawBarcode = rawInput,
         extractedNdc = hyphenatedNdcMatch.groupValues[1],
       )
+    }
+
+    // 0b. Check for an explicit 2-segment hyphenated product NDC (NDC-9: 5-4, 4-4, or 5-3)
+    val productNdcMatch = Regex("""\b(\d{4,5}-\d{3,4})\b""").find(cleaned)
+    if (productNdcMatch != null) {
+      val token = productNdcMatch.groupValues[1]
+      val segs = token.split("-")
+      val s1 = segs[0].length
+      val s2 = segs[1].length
+      if ((s1 == 5 && s2 == 4) || (s1 == 4 && s2 == 4) || (s1 == 5 && s2 == 3)) {
+        return ParsedDrugBarcode(
+          rawBarcode = rawInput,
+          extractedNdc = token,
+        )
+      }
     }
 
     // 1. Check parenthesized GS1 human-readable / scanner format: e.g. (01)00300090085106(17)271231(10)LOT123
@@ -213,8 +228,8 @@ object FdaNdcLookupService {
         )
       }
 
-      // 6. Detect short packaging/artwork codes (e.g. 6-digit "824208" on OTC label corners)
-      if (digitsOnly.length in 1..9) {
+      // 6. Detect short packaging/artwork codes (e.g. 6-digit "824208" on OTC label corners; 8–9 digits may be a product NDC)
+      if (digitsOnly.length in 1..7) {
         return ParsedDrugBarcode(
           rawBarcode = rawInput,
           extractedNdc = cleaned,
@@ -261,6 +276,38 @@ object FdaNdcLookupService {
   }
 
   /**
+   * Returns all possible canonical 5-4 product NDCs (`XXXXX-XXXX`, i.e. NDC-9) when [rawInput] is a
+   * product-level NDC (hyphenated `5-4`, `4-4`, `5-3`, or bare 8- or 9-digit). Returns an empty list
+   * for package-level (10/11-digit) or invalid inputs.
+   */
+  fun candidateNdc9s(rawInput: String): List<String> {
+    val parsed = parseDrugBarcode(rawInput)
+    val target = parsed.extractedNdc.trim()
+    val parts = target.split("-").filter { it.isNotEmpty() }
+    if (parts.size == 2) {
+      val s1 = parts[0].filter { it.isDigit() }
+      val s2 = parts[1].filter { it.isDigit() }
+      return when {
+        s1.length == 5 && s2.length == 4 -> listOf("$s1-$s2")
+        s1.length == 4 && s2.length == 4 -> listOf("0$s1-$s2")
+        s1.length == 5 && s2.length == 3 -> listOf("$s1-0$s2")
+        else -> emptyList()
+      }
+    }
+    if (parts.size >= 3) return emptyList()
+    val digits = target.filter { it.isDigit() }
+    return when {
+      !target.contains("-") && digits.length == 9 ->
+        listOf("${digits.substring(0, 5)}-${digits.substring(5, 9)}")
+      !target.contains("-") && digits.length == 8 -> listOf(
+        "0${digits.substring(0, 4)}-${digits.substring(4, 8)}",
+        "${digits.substring(0, 5)}-0${digits.substring(5, 8)}",
+      ).distinct()
+      else -> emptyList()
+    }
+  }
+
+  /**
    * Returns all possible canonical 11-digit NDCs (`XXXXX-XXXX-XX`) for a given input.
    * For an unhyphenated 10-digit NDC (from a barcode), returns all 3 zero-padded possibilities
    * (`0XXXX-XXXX-XX`, `XXXXX-0XXX-XX`, `XXXXX-XXXX-0X`).
@@ -279,13 +326,18 @@ object FdaNdcLookupService {
   }
 
   /**
-   * Normalizes an NDC when its 5-4-2 segmentation is unambiguous (hyphenated 10-digit or 11-digit),
-   * while keeping bare unhyphenated 10-digit NDCs intact so [candidateNdc11s] can try all 3 layouts.
+   * Normalizes an NDC when its segmentation is unambiguous (hyphenated 9/10/11-digit, or bare 9/11-digit),
+   * while keeping bare unhyphenated 8-digit or 10-digit NDCs intact so [candidateNdc9s] / [candidateNdc11s]
+   * can try their possible zero-padded layouts.
    */
   fun normalizeIfUnambiguousNdc(raw: String): String {
     val parsed = parseDrugBarcode(raw)
     val trimmed = parsed.extractedNdc.trim()
     val digits = trimmed.filter { it.isDigit() }
+    val productCandidates = candidateNdc9s(raw)
+    if (productCandidates.isNotEmpty()) {
+      return if (productCandidates.size == 1) productCandidates.single() else digits
+    }
     if (!trimmed.contains("-") && digits.length == 10) {
       return digits
     }
@@ -322,13 +374,29 @@ object FdaNdcLookupService {
 
   /**
    * Generates candidate OpenFDA `package_ndc` and `product_ndc` search tokens from an NDC-11,
-   * hyphenated NDC, or scanned barcode (GS1 DataMatrix / UPC-A / 10-digit unhyphenated NDC).
+   * product NDC-9, hyphenated NDC, or scanned barcode (GS1 DataMatrix / UPC-A / unhyphenated NDC).
    */
   fun buildOpenFdaSearchQuery(rawNdc: String, includeProducts: Boolean = true): String {
     val parsed = parseDrugBarcode(rawNdc)
     val rawClean = parsed.extractedNdc.trim()
     val packageCandidates = linkedSetOf<String>()
     val productCandidates = linkedSetOf<String>()
+
+    val ndc9s = candidateNdc9s(rawNdc)
+    if (ndc9s.isNotEmpty()) {
+      if (!includeProducts) return ""
+      if (rawClean.contains("-")) {
+        val rawSegs = rawClean.split("-")
+        if (rawSegs.size == 2) productCandidates.add("${rawSegs[0]}-${rawSegs[1]}")
+      }
+      for (canonical9 in ndc9s) {
+        val (s1, s2) = canonical9.split("-")
+        productCandidates.add("$s1-$s2")
+        if (s1.startsWith("0")) productCandidates.add("${s1.substring(1)}-$s2")
+        if (s2.startsWith("0")) productCandidates.add("$s1-${s2.substring(1)}")
+      }
+      return productCandidates.joinToString("+OR+") { "product_ndc:\"$it\"" }
+    }
 
     if (rawClean.contains("-")) {
       packageCandidates.add(rawClean)
@@ -368,7 +436,7 @@ object FdaNdcLookupService {
   }
 
   /**
-   * Queries OpenFDA `/drug/ndc.json` for the given NDC-11, 10-digit NDC, or scanned barcode.
+   * Queries OpenFDA `/drug/ndc.json` for the given NDC-11, product NDC-9, 10-digit NDC, or scanned barcode.
    */
   suspend fun lookupByNdc(rawNdc: String): Result<FdaDrugLookupResult> =
     lookupByNdcWithFetcher(rawNdc, ::fetchHttpUrlOrNullIfNotFound)
@@ -379,6 +447,23 @@ object FdaNdcLookupService {
   ): Result<FdaDrugLookupResult> = withContext(Dispatchers.IO) {
     runCatching {
       val parsedBarcode = parseDrugBarcode(rawNdc)
+      val ndc9Candidates = candidateNdc9s(rawNdc)
+      if (ndc9Candidates.isNotEmpty()) {
+        val responseBody = try {
+          fetch(ndcSearchUrl(buildOpenFdaSearchQuery(rawNdc, includeProducts = true)))
+        } catch (e: MessageException) {
+          throw e
+        } catch (_: Exception) {
+          throw FdaNetworkException()
+        }
+        val parsed = responseBody?.let { parseOpenFdaJsonForProductNdc(it, ndc9Candidates) }
+          ?: throw MessageException(parsedBarcode.nonNdcHint ?: Message(R.string.fda_no_ndc_record, ndc9Candidates.first()))
+        return@runCatching parsed.copy(
+          expirationDateIso = parsedBarcode.expirationDateIso,
+          lotNumber = parsedBarcode.lotNumber,
+        )
+      }
+
       val candidates = candidateNdc11s(rawNdc)
       val primaryNdc11 = candidates.first()
       val digitsOnly = primaryNdc11.filter { it.isDigit() }
@@ -829,6 +914,23 @@ object FdaNdcLookupService {
   }
 
   /**
+   * Maps a product-NDC (NDC-9) OpenFDA response to [FdaDrugLookupResult], keeping the canonical
+   * `XXXXX-XXXX` product NDC rather than inventing a package suffix. Returns null if zero items match
+   * or an ambiguous unhyphenated 8-digit code collides across multiple distinct products.
+   */
+  internal fun parseOpenFdaJsonForProductNdc(rawJson: String, requestedNdc9s: List<String>): FdaDrugLookupResult? {
+    val response = runCatching { json.decodeFromString<OpenFdaNdcResponse>(rawJson) }.getOrNull()
+      ?: return null
+    val requestedSet = requestedNdc9s.toSet()
+    val matchingItems = response.results.filter { productPartOfItem(it) in requestedSet }
+    if (matchingItems.isEmpty()) return null
+    if (matchingItems.size > 1 && requestedNdc9s.size > 1) return null
+    val item = matchingItems.first()
+    val matchedNdc9 = productPartOfItem(item) ?: requestedNdc9s.first()
+    return mapOpenFdaItemToResult(item, matchedProductNdc9 = matchedNdc9)
+  }
+
+  /**
    * Maps an NDC search response to the entered package. [requestedNdc11s] are the canonical
    * NDC-11 readings of the input (one for an 11-digit/hyphenated NDC, up to three for a bare
    * 10-digit one). A product usually has several packages (bottle sizes); the result must be the
@@ -864,6 +966,7 @@ object FdaNdcLookupService {
     item: OpenFdaDrugItem,
     fallbackCanonicalNdc11: String? = null,
     requestedNdc11s: Set<String> = emptySet(),
+    matchedProductNdc9: String? = null,
   ): FdaDrugLookupResult? {
     val rawGeneric = item.genericName?.takeIf { it.isNotBlank() }
       ?: item.activeIngredients.mapNotNull { it.name }.joinToString(" / ").takeIf { it.isNotBlank() }
@@ -872,12 +975,19 @@ object FdaNdcLookupService {
 
     // 1. The entered package itself. 2. The product matched but this package isn't listed (e.g.
     // discontinued size): keep the entered NDC in the layout that matches the product.
-    // 3. No NDC was entered (name search): the first listed package.
+    // 3. For an NDC-9 lookup, keep the product NDC and only infer a package when a single one exists.
+    // 4. No NDC was entered (name search): the first listed package.
     val matchedPackage = item.packaging.firstOrNull { it.canonicalNdc11() in requestedNdc11s }
     val itemProduct = productPartOfItem(item)
     val enteredForProduct = requestedNdc11s.firstOrNull { productPartOf(it) == itemProduct }
-    val chosenPackage = matchedPackage ?: if (enteredForProduct == null) item.packaging.firstOrNull() else null
-    val resolvedNdc11 = matchedPackage?.canonicalNdc11()
+    val chosenPackage = when {
+      matchedProductNdc9 != null -> item.packaging.singleOrNull()
+      matchedPackage != null -> matchedPackage
+      enteredForProduct == null -> item.packaging.firstOrNull()
+      else -> null
+    }
+    val resolvedNdc11 = matchedProductNdc9
+      ?: matchedPackage?.canonicalNdc11()
       ?: enteredForProduct
       ?: chosenPackage?.canonicalNdc11()
       ?: fallbackCanonicalNdc11
@@ -894,14 +1004,22 @@ object FdaNdcLookupService {
       .ifBlank { "See package" }
 
     val packageDesc = chosenPackage?.description
-    val form = mapDosageForm(item.dosageForm, packageDesc, item.route)
+    val form = if (matchedProductNdc9 != null && chosenPackage == null) {
+      item.packaging.map { mapDosageForm(item.dosageForm, it.description, item.route) }.distinct().singleOrNull()
+        ?: mapDosageForm(item.dosageForm, null, item.route)
+    } else {
+      mapDosageForm(item.dosageForm, packageDesc, item.route)
+    }
     val route = mapRoute(item.route, form)
     val defaultUnit = when {
       // Insulin and other biologics are dosed in units.
       form.isInjectable && Concentration.parse(rawStrength)?.unit == Concentration.AmountUnit.UNITS -> DoseUnit.UNITS
       form.isInjectable -> DoseUnit.MG
-      form == MedicationForm.TABLET -> DoseUnit.TABLET
+      form == MedicationForm.TABLET || form == MedicationForm.CHEWABLE -> DoseUnit.TABLET
       form == MedicationForm.CAPSULE -> DoseUnit.CAPSULE
+      form == MedicationForm.SOFTGEL -> DoseUnit.SOFTGEL
+      form == MedicationForm.GUMMY -> DoseUnit.GUMMY
+      form == MedicationForm.POWDER -> DoseUnit.SCOOP
       form == MedicationForm.TOPICAL -> DoseUnit.APPLICATION
       form == MedicationForm.LIQUID -> DoseUnit.ML
       form == MedicationForm.INHALER -> DoseUnit.PUFF
@@ -909,7 +1027,11 @@ object FdaNdcLookupService {
       else -> DoseUnit.MG
     }
 
-    val vialVolumeMl = parseVialVolumeMl(packageDesc)
+    val vialVolumeMl = if (matchedProductNdc9 != null && chosenPackage == null) {
+      item.packaging.mapNotNull { parseVialVolumeMl(it.description) }.distinct().singleOrNull()
+    } else {
+      parseVialVolumeMl(packageDesc)
+    }
 
     return FdaDrugLookupResult(
       ndc11 = resolvedNdc11,

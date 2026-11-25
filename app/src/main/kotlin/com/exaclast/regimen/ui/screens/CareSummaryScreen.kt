@@ -3,6 +3,7 @@
 package com.exaclast.regimen.ui.screens
 
 import android.content.Intent
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -108,7 +109,16 @@ fun CareSummaryScreen(snapshot: RegimenSnapshot, onBack: () -> Unit) {
             GroupItem(index = index, count = section.lines.size) {
               ListItem(
                 colors = groupListItemColors(),
-                supportingContent = line.secondary?.let { { Text(it) } },
+                supportingContent = if (line.secondary != null || line.bullets.isNotEmpty()) {
+                  {
+                    Column {
+                      line.secondary?.let { Text(it) }
+                      line.bullets.forEach { bullet ->
+                        Text("• $bullet")
+                      }
+                    }
+                  }
+                } else null,
               ) { Text(line.primary) }
             }
           }

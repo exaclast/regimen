@@ -116,7 +116,10 @@ import com.exaclast.regimen.domain.WindowPhase
 import com.exaclast.regimen.model.AppSettings
 import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
+import com.exaclast.regimen.model.Labeled
 import com.exaclast.regimen.model.Medication
+import com.exaclast.regimen.model.RegimenItem
+import com.exaclast.regimen.model.Supplement
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.model.formatNum
 import androidx.lifecycle.Lifecycle
@@ -126,6 +129,7 @@ import com.exaclast.regimen.notifications.DoseAlarmTiming
 import com.exaclast.regimen.notifications.DoseNotificationManager
 import com.exaclast.regimen.ui.RegimenUiState
 import com.exaclast.regimen.ui.components.AdaptiveLargeTopAppBar
+import com.exaclast.regimen.ui.components.AdaptiveSingleChoiceRow
 import com.exaclast.regimen.ui.components.AppSnackbarHost
 import com.exaclast.regimen.ui.components.CenteredContentBox
 import com.exaclast.regimen.ui.components.ConfirmDialog
@@ -138,6 +142,7 @@ import com.exaclast.regimen.ui.components.UiFormat
 import com.exaclast.regimen.ui.components.addHorizontal
 import com.exaclast.regimen.ui.components.doseText
 import com.exaclast.regimen.ui.components.isLargeFontScale
+import com.exaclast.regimen.ui.components.label
 import com.exaclast.regimen.ui.components.tabContentInsets
 import com.exaclast.regimen.ui.components.warning
 import com.exaclast.regimen.ui.components.groupListItemColors
@@ -246,7 +251,7 @@ fun TodayScreen(
 
   // An extra dose of any medication, scheduled or not, takes the same pacing, site and time flow as an
   // as-needed one, and is logged on the day being viewed.
-  fun extraDoseItem(medication: Medication): PrnDoseItem {
+  fun extraDoseItem(medication: RegimenItem): PrnDoseItem {
     val snapshot = uiState.snapshot
     val adjusted = Adjustments.asOf(medication, LocalDate.parse(uiState.selectedDateIso))
     return PrnDoseItem(
@@ -453,24 +458,31 @@ fun TodayScreen(
         DoseWindow(group, uiState.selectedDateIso)
       }
 
-      if (board.prnItems.isNotEmpty()) {
-        item(key = "prn-header") { SectionHeader(stringResource(R.string.providers_as_needed)) }
-        items(board.prnItems, key = { "prn-${it.medication.id}" }) { prn ->
-          PrnCard(
-            item = prn,
-            isToday = uiState.isToday,
-            enabled = !uiState.isFuture,
-            onLog = {
-              if (uiState.isToday) {
-                requestTake(TakeRequest.Prn(prn))
-              } else {
-                timePromptKey = "prn|${prn.medication.id}|${prn.schedule?.id ?: ""}|true"
-              }
-            },
-            onLogAtOtherTime = { timePromptKey = "prn|${prn.medication.id}|${prn.schedule?.id ?: ""}|true" },
-            onOpenMedication = { onOpenMedication(prn.medication.id) },
-          )
-        }
+      val prnMeds = board.prnItems.filter { !it.medication.isSupplement }
+      val prnSupplements = board.prnItems.filter { it.medication.isSupplement }
+      val prnCard: @Composable (PrnDoseItem) -> Unit = { prn ->
+        PrnCard(
+          item = prn,
+          isToday = uiState.isToday,
+          enabled = !uiState.isFuture,
+          onLog = {
+            if (uiState.isToday) {
+              requestTake(TakeRequest.Prn(prn))
+            } else {
+              timePromptKey = "prn|${prn.medication.id}|${prn.schedule?.id ?: ""}|true"
+            }
+          },
+          onLogAtOtherTime = { timePromptKey = "prn|${prn.medication.id}|${prn.schedule?.id ?: ""}|true" },
+          onOpenMedication = { onOpenMedication(prn.medication.id) },
+        )
+      }
+      if (prnMeds.isNotEmpty()) {
+        item(key = "prn-meds-header") { SectionHeader(stringResource(R.string.today_as_needed_medications)) }
+        items(prnMeds, key = { "prn-${it.medication.id}" }) { prn -> prnCard(prn) }
+      }
+      if (prnSupplements.isNotEmpty()) {
+        item(key = "prn-supps-header") { SectionHeader(stringResource(R.string.today_as_needed_supplements)) }
+        items(prnSupplements, key = { "prn-${it.medication.id}" }) { prn -> prnCard(prn) }
       }
 
       val dayLogs = uiState.snapshot.doseLogs
@@ -695,19 +707,40 @@ private fun SkipReasonDialog(
   )
 }
 
-/** Pick any medication to log an extra dose of; searchable, since the list can be long. */
+private enum class ExtraDoseTab(override val labelRes: Int) : Labeled {
+  MEDICATIONS(R.string.medications_title),
+  SUPPLEMENTS(R.string.supplements_title),
+}
+
+/** Pick any medication or supplement to log an extra dose of; splits tabs when both exist. */
 @Composable
 private fun ExtraDosePickerDialog(
-  medications: List<Medication>,
+  medications: List<RegimenItem>,
   onDismiss: () -> Unit,
-  onPick: (Medication) -> Unit,
+  onPick: (RegimenItem) -> Unit,
 ) {
+  val meds = remember(medications) { medications.filterIsInstance<Medication>() }
+  val supplements = remember(medications) { medications.filterIsInstance<Supplement>() }
+  val showTabs = meds.isNotEmpty() && supplements.isNotEmpty()
+  var selectedTab by rememberSaveable {
+    mutableStateOf(if (meds.isNotEmpty()) ExtraDoseTab.MEDICATIONS else ExtraDoseTab.SUPPLEMENTS)
+  }
+  val activeTab = when {
+    meds.isEmpty() -> ExtraDoseTab.SUPPLEMENTS
+    supplements.isEmpty() -> ExtraDoseTab.MEDICATIONS
+    else -> selectedTab
+  }
+  val activeItems = if (activeTab == ExtraDoseTab.SUPPLEMENTS) supplements else meds
   var query by rememberSaveable { mutableStateOf("") }
-  val matches = remember(medications, query) {
+  val matches = remember(activeItems, query) {
     val q = query.trim().lowercase()
-    medications
+    activeItems
       .filter {
-        q.isEmpty() || it.formulaName.lowercase().contains(q) || it.brandName?.lowercase()?.contains(q) == true
+        q.isEmpty() ||
+          it.primaryName.lowercase().contains(q) ||
+          it.secondaryName?.lowercase()?.contains(q) == true ||
+          it.manufacturer?.lowercase()?.contains(q) == true ||
+          it.ingredientsOrEmpty.any { ing -> ing.name.lowercase().contains(q) }
       }
       .sortedBy { it.primaryName.lowercase() }
   }
@@ -716,11 +749,29 @@ private fun ExtraDosePickerDialog(
     title = { Text(stringResource(R.string.today_log_extra_dose)) },
     text = {
       Column {
-        if (medications.size > 6) {
+        if (showTabs) {
+          AdaptiveSingleChoiceRow(
+            options = ExtraDoseTab.entries,
+            selected = activeTab,
+            onSelect = {
+              selectedTab = it
+              query = ""
+            },
+            label = { it.label() },
+            modifier = Modifier.padding(bottom = 8.dp),
+          )
+        }
+        if (activeItems.size > 6 || query.isNotEmpty()) {
           OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            placeholder = { Text(stringResource(R.string.medications_search)) },
+            placeholder = {
+              Text(
+                stringResource(
+                  if (activeTab == ExtraDoseTab.SUPPLEMENTS) R.string.supplements_search else R.string.medications_search,
+                ),
+              )
+            },
             singleLine = true,
             modifier = Modifier
               .fillMaxWidth()
@@ -732,14 +783,21 @@ private fun ExtraDosePickerDialog(
         }
         LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
           items(matches, key = { it.id }) { med ->
+            val supporting = listOfNotNull(
+              med.secondaryName,
+              med.strength.takeIf { it.isNotBlank() },
+              (med as? Supplement)?.manufacturer?.takeIf { it.isNotBlank() },
+            ).joinToString(" · ")
             ListItem(
               leadingContent = { FormIcon(med.form) },
-              supportingContent = {
-                Text(
-                  listOfNotNull(med.secondaryName, med.strength).joinToString(" · "),
-                  maxLines = 2,
-                  overflow = TextOverflow.Ellipsis,
-                )
+              supportingContent = supporting.takeIf { it.isNotEmpty() }?.let { line ->
+                {
+                  Text(
+                    line,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                  )
+                }
               },
               colors = ListItemDefaults.colors(containerColor = Color.Transparent),
               modifier = Modifier.clickable { onPick(med) },
@@ -755,7 +813,7 @@ private fun ExtraDosePickerDialog(
 
 /** A scheduled, as-needed, or extra dose waiting for the user to say when it was taken. */
 private sealed interface LogTimeRequest {
-  val medication: Medication
+  val medication: RegimenItem
   val startWithOtherTime: Boolean
 
   data class Prn(val item: PrnDoseItem, override val startWithOtherTime: Boolean) : LogTimeRequest {
@@ -769,7 +827,7 @@ private sealed interface LogTimeRequest {
 
 /** A pending "take" through the pacing/confirmation flow. */
 private sealed interface TakeRequest {
-  val medication: Medication
+  val medication: RegimenItem
   val pacing: PacingEvaluation
   val suggestedSite: String?
 
@@ -793,7 +851,7 @@ private sealed interface TakeRequest {
   }
 }
 
-private fun pacingExplanation(res: Resources, pacing: PacingEvaluation, medication: Medication): String {
+private fun pacingExplanation(res: Resources, pacing: PacingEvaluation, medication: RegimenItem): String {
   val parts = mutableListOf<String>()
   pacing.nextAllowedText(res.texts())?.let { parts.add(res.getString(R.string.pacing_next_dose, it)) }
   val doseLimitReached = pacing.isDailyDoseLimitReached ||
@@ -1376,7 +1434,7 @@ private fun PrnCard(
 @Composable
 private fun DayLogList(
   logs: List<DoseLog>,
-  medications: List<Medication>,
+  medications: List<RegimenItem>,
   onEdit: (DoseLog) -> Unit,
 ) {
   val medMap = remember(medications) { medications.associateBy { it.id } }
@@ -1505,7 +1563,7 @@ private fun EmptyDayCard(
 
 @Composable
 fun SiteSelectionDialog(
-  medication: Medication,
+  medication: RegimenItem,
   suggestedSite: String?,
   lastSiteUsed: String?,
   onDismiss: () -> Unit,

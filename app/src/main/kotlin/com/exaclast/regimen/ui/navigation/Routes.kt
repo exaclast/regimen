@@ -2,10 +2,10 @@ package com.exaclast.regimen.ui.navigation
 
 import androidx.annotation.StringRes
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Medication
+import androidx.compose.material.icons.filled.Spa
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
@@ -19,6 +19,10 @@ sealed interface Route : NavKey {
 
   @Serializable data object Medications : Route
 
+  @Serializable data object Supplements : Route
+
+  @Serializable data object Care : Route
+
   @Serializable data object Providers : Route
 
   @Serializable data object Indications : Route
@@ -26,6 +30,8 @@ sealed interface Route : NavKey {
   @Serializable data class MedicationDetail(val id: String, val promptForSchedule: Boolean = false) : Route
 
   @Serializable data class MedicationEditor(val id: String? = null) : Route
+
+  @Serializable data class SupplementEditor(val id: String? = null) : Route
 
   @Serializable data class ScheduleEditor(val medicationId: String, val scheduleId: String? = null) : Route
 
@@ -74,13 +80,14 @@ sealed interface Route : NavKey {
 enum class TopLevel(val route: Route, @param:StringRes val labelRes: Int, val icon: ImageVector) {
   TODAY(Route.Today, R.string.today_title, Icons.Default.CheckCircle),
   MEDICATIONS(Route.Medications, R.string.medications_title, Icons.Default.Medication),
-  PROVIDERS(Route.Providers, R.string.providers_title, Icons.Default.Badge),
-  INDICATIONS(Route.Indications, R.string.indications_title, Icons.Default.Favorite),
+  SUPPLEMENTS(Route.Supplements, R.string.supplements_title, Icons.Default.Spa),
+  CARE(Route.Care, R.string.care_title, Icons.Default.Favorite),
 }
 
 /** Full-screen task destinations hide the navigation bar. */
 val Route.isFullScreenTask: Boolean
   get() = this is Route.MedicationEditor ||
+    this is Route.SupplementEditor ||
     this is Route.ScheduleEditor ||
     this is Route.AdjustmentEditor ||
     this is Route.ProviderEditor ||

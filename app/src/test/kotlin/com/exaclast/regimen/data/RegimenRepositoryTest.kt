@@ -10,8 +10,11 @@ import com.exaclast.regimen.model.DoseLog
 import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.IndicationKind
+import com.exaclast.regimen.model.ItemSource
+import com.exaclast.regimen.model.KeyIngredient
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationAdjustment
+import com.exaclast.regimen.model.MedicationForm
 import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.PrimaryClaim
 import com.exaclast.regimen.model.RegimenBackupBundle
@@ -19,6 +22,7 @@ import com.exaclast.regimen.model.ScheduleDose
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.SharedSettings
 import com.exaclast.regimen.model.SiteMode
+import com.exaclast.regimen.model.Supplement
 import com.exaclast.regimen.model.SyncDevice
 import com.exaclast.regimen.model.TimeOfDayBucket
 import com.exaclast.regimen.notifications.DoseNotificationManager
@@ -192,7 +196,7 @@ class RegimenRepositoryTest {
     assertTrue(repo.snapshot.value.medications.isEmpty())
     val afterClear = repo.currentBundle()
     assertTrue(afterClear.medications.any { it.id == med.id && it.deletedAtEpochMillis != null })
-    assertTrue(demoIds1.all { id -> afterClear.medications.any { it.id == id && it.deletedAtEpochMillis != null } })
+    assertTrue(demoIds1.all { id -> afterClear.allItems.any { it.id == id && it.deletedAtEpochMillis != null } })
 
     repo.resetToSampleData()
     val demoIds2 = repo.snapshot.value.medications.map { it.id }.toSet()
@@ -340,7 +344,29 @@ class RegimenRepositoryTest {
     assertTrue(demo.indications.any { it.suspected })
     assertTrue(demo.indications.any { it.primaryIds.isNotEmpty() })
     assertTrue(demo.medications.any { it.siteMode == SiteMode.RECORD })
-    assertTrue(demo.medications.any { it.injectableDetails?.drawNeedleGauge != null })
+    assertTrue(demo.medications.any { it.injectableOrNull?.drawNeedleGauge != null })
+    assertTrue(demo.medications.any { it is Supplement && it.ingredients.isNotEmpty() && it.source == ItemSource.OTC })
     assertTrue(demo.schedules.any { it.frequencyType == ScheduleFrequencyType.DAYS_OF_WEEK })
+  }
+
+  @Test
+  fun supplement_persistsAndReloadsWithKeyIngredients() {
+    val supp = Supplement(
+      id = "supp_pre",
+      name = "Pre-Workout",
+      form = MedicationForm.POWDER,
+      source = ItemSource.OTC,
+      defaultDoseAmount = 1.0,
+      defaultDoseUnit = DoseUnit.SCOOP,
+      ingredients = listOf(KeyIngredient("Caffeine", "175 mg"), KeyIngredient("Beta-Alanine", "1.5 g")),
+    )
+    repo.saveMedication(supp)
+
+    RegimenRepository.resetForTests()
+    val reloaded = RegimenRepository.getInstance(app).snapshot.value.medication("supp_pre") as Supplement
+    assertEquals("Pre-Workout", reloaded.name)
+    assertEquals(ItemSource.OTC, reloaded.source)
+    assertEquals(2, reloaded.ingredients.size)
+    assertEquals("Caffeine — 175 mg", reloaded.ingredients[0].formatted())
   }
 }

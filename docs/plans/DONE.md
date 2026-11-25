@@ -13,6 +13,13 @@ resolve.
 
 Newest first.
 
+- **T-127, partial T-126, ICD-10 indications, & NDC-9 OpenFDA lookup** (uncommitted after `v1.0.0-beta2`):
+  - **T-127**: Introduced sealed `RegimenItem` parent interface (`Medication` vs `Supplement`), `ItemSource` (`PRESCRIBED` / `OTC`), `KeyIngredient` list, supplement forms/units (`SOFTGEL`, `GUMMY`, `CHEWABLE`, `POWDER`; `G`, `SOFTGEL`, `GUMMY`, `SCOOP`, `PACKET`, `TSP`, `TBSP`), and backup/merge support (`RegimenBackupBundle.supplements`). Added separate **Medications**, **Supplements**, and **Care** (`Indications | Providers`) tabs (`CareScreen`), dedicated `SupplementEditorScreen`, contextual `Indication` grouping chip hiding when unlinked, split **As-needed medications** / **As-needed supplements** sections on Today, tabbed `ExtraDosePickerDialog`, separate **Supplements** section with bulleted ingredients in `CareSummary`, and sample supplements (`Vitamin C`, `Psyllium Husk Fiber`, `Pre-Workout`).
+  - **Indications ICD-10**: Added optional `Indication.icd10` and `IndicationKind.hasIcd10` (shown for `ACUTE`, `CHRONIC`, and `PREVENTIVE`, omitted for allergies/intolerances), `NumberInput.filterIcd10`, search matching, detail/editor/Health Summary display, and demo ICD-10 codes.
+  - **OpenFDA product NDC-9 support**: Added `FdaNdcLookupService.candidateNdc9s`, `parseOpenFdaJsonForProductNdc`, `product_ndc` search queries, `Medication.normalizeNdc11` 9-digit formatting, and 8–11 digit label NDC parsing (`DrugLabelParser`) while rejecting ambiguous bare 8-digit collisions.
+  - **Partial T-126 & dose UX**: Added optional `Provider.npi` with `NumberInput.filterNpi` (`96b3eca`), and `SkipReasonDialog` + moving dose-log deletion into `DoseLogEditorScreen` (`684e801`).
+  - Proof: `./gradlew testDebugUnitTest assembleDebug` (`304` tests, `0` failures); verified on Pixel 10 Pro (`192.168.1.38:38279`).
+
 - **Pre-beta bug sweep, sample data update, and Pixel verification** (uncommitted v1.0 / M5):
   - **T-007, T-008**: Moved `AlarmRingtonePlayer` `MediaPlayer` preparation off the main thread onto a background coroutine with failure cleanup; removed obsolete `"Snooze, "` from `channel_window_description`.
   - **T-031, T-032, T-033, T-034, T-035**: Tightened `DrugLabelParser` fuzzy patient/prescriber token filtering (`length >= 5` prefix / `length >= 4` edit distance `<= 1`), fixed `FdaNdcLookupService.parseGs1DateToIso` month-end `00` resolution via `YearMonth` and strict calendar validation, preserved ambiguous 10-digit label NDCs (`normalizeIfUnambiguousNdc`), disabled both lookup actions during `isLookingUpNdc`, and collapsed identical multi-salt strengths (`displayStrength`).

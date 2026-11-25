@@ -54,6 +54,7 @@ class ConcentrationTest {
     val mg = Concentration(200.0, AmountUnit.MG)
     assertEquals(0.5, mg.volumeMl(100.0, DoseUnit.MG)!!, 1e-9)
     assertEquals(0.5, mg.volumeMl(100_000.0, DoseUnit.MCG)!!, 1e-9)
+    assertEquals(1.0, mg.volumeMl(0.2, DoseUnit.G)!!, 1e-9)
     assertNull(mg.volumeMl(20.0, DoseUnit.UNITS))
     assertNull(mg.volumeMl(1.0, DoseUnit.TABLET))
 

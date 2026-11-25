@@ -17,6 +17,8 @@ import com.exaclast.regimen.model.DoseStatus
 import com.exaclast.regimen.model.DoseUnit
 import com.exaclast.regimen.model.InjectableDetails
 import com.exaclast.regimen.model.InjectionRoute
+import com.exaclast.regimen.model.ItemSource
+import com.exaclast.regimen.model.KeyIngredient
 import com.exaclast.regimen.model.Medication
 import com.exaclast.regimen.model.MedicationAdjustment
 import com.exaclast.regimen.model.MedicationForm
@@ -24,10 +26,12 @@ import com.exaclast.regimen.model.MedicationSchedule
 import com.exaclast.regimen.model.PrimaryClaim
 import com.exaclast.regimen.model.Provider
 import com.exaclast.regimen.model.RegimenBackupBundle
+import com.exaclast.regimen.model.RegimenItem
 import com.exaclast.regimen.model.ScheduleDose
 import com.exaclast.regimen.model.ScheduleFrequencyType
 import com.exaclast.regimen.model.Severity
 import com.exaclast.regimen.model.SiteMode
+import com.exaclast.regimen.model.Supplement
 import com.exaclast.regimen.model.SyncDevice
 import com.exaclast.regimen.model.SyringeType
 import com.exaclast.regimen.model.TimeOfDayBucket
@@ -44,18 +48,18 @@ import kotlinx.serialization.json.Json
 
 data class RegimenSnapshot(
   val settings: AppSettings = AppSettings(),
-  val medications: List<Medication> = emptyList(),
-  val deletedMedications: List<Medication> = emptyList(),
+  val medications: List<RegimenItem> = emptyList(),
+  val deletedMedications: List<RegimenItem> = emptyList(),
   val providers: List<Provider> = emptyList(),
   val indications: List<Indication> = emptyList(),
   val buckets: List<TimeOfDayBucket> = TimeOfDayBucket.defaultBuckets(),
   val schedules: List<MedicationSchedule> = emptyList(),
   val doseLogs: List<DoseLog> = emptyList(),
 ) {
-  val allMedications: List<Medication>
+  val allMedications: List<RegimenItem>
     get() = medications + deletedMedications
 
-  fun medication(id: String): Medication? =
+  fun medication(id: String): RegimenItem? =
     medications.find { it.id == id } ?: deletedMedications.find { it.id == id }
   /**
    * Providers and indications are optional. Until the user chooses, they're shown only when
@@ -166,16 +170,19 @@ class RegimenRepository private constructor(context: Context) {
   }
 
   @Synchronized
-  fun saveMedication(medication: Medication, schedulesForMedication: List<MedicationSchedule>? = null) {
+  fun saveMedication(medication: RegimenItem, schedulesForMedication: List<MedicationSchedule>? = null) {
     val now = System.currentTimeMillis()
-    val normalized = medication.copy(
-      ndc11 = Medication.normalizeNdc11(medication.ndc11),
-      // A blank NDC on an adjustment means "cleared" and must stay blank, not become null (carry over).
-      adjustments = medication.adjustments.map { adjustment ->
-        adjustment.ndc11?.takeIf { it.isNotBlank() }?.let { adjustment.copy(ndc11 = Medication.normalizeNdc11(it)) } ?: adjustment
-      },
-      updatedAtEpochMillis = now,
-    )
+    val normalized: RegimenItem = when (medication) {
+      is Medication -> medication.copy(
+        ndc11 = Medication.normalizeNdc11(medication.ndc11),
+        // A blank NDC on an adjustment means "cleared" and must stay blank, not become null (carry over).
+        adjustments = medication.adjustments.map { adjustment ->
+          adjustment.ndc11?.takeIf { it.isNotBlank() }?.let { adjustment.copy(ndc11 = Medication.normalizeNdc11(it)) } ?: adjustment
+        },
+        updatedAtEpochMillis = now,
+      )
+      is Supplement -> medication.copy(updatedAtEpochMillis = now)
+    }
     db.upsertMedication(normalized)
 
     if (schedulesForMedication != null) {
@@ -196,7 +203,7 @@ class RegimenRepository private constructor(context: Context) {
     val now = System.currentTimeMillis()
     val med = _snapshot.value.medications.find { it.id == medicationId } ?: return
     cancelSnoozeAlarms(_snapshot.value.doseLogs.filter { it.medicationId == medicationId })
-    db.upsertMedication(med.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now))
+    db.upsertMedication(med.withDeletedAt(now))
     _snapshot.value.schedules.filter { it.medicationId == medicationId }.forEach { sched ->
       db.upsertSchedule(sched.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now))
     }
@@ -212,11 +219,11 @@ class RegimenRepository private constructor(context: Context) {
 
   /** Atomically saves a schedule edit (which may update medication adjustments and version schedules). */
   @Synchronized
-  fun saveScheduleEdit(medication: Medication?, schedules: List<MedicationSchedule>) {
+  fun saveScheduleEdit(medication: RegimenItem?, schedules: List<MedicationSchedule>) {
     if (medication == null && schedules.isEmpty()) return
     val now = System.currentTimeMillis()
     db.inTransaction {
-      medication?.let { db.upsertMedication(it.copy(updatedAtEpochMillis = now)) }
+      medication?.let { db.upsertMedication(it.withUpdatedAt(now)) }
       schedules.forEach { db.upsertSchedule(it.copy(updatedAtEpochMillis = now)) }
     }
     reloadSnapshot()
@@ -245,7 +252,7 @@ class RegimenRepository private constructor(context: Context) {
     db.upsertProvider(provider.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now))
     // Unlink medications it prescribed and indications it was managing.
     _snapshot.value.medications.filter { it.prescriberId == providerId }.forEach { med ->
-      db.upsertMedication(med.copy(prescriberId = null, updatedAtEpochMillis = now))
+      db.upsertMedication(med.withPrescriberId(null, now))
     }
     _snapshot.value.indications.filter { providerId in it.providerIds }.forEach { indication ->
       db.upsertIndication(indication.copy(providerIds = indication.providerIds - providerId, updatedAtEpochMillis = now))
@@ -291,7 +298,7 @@ class RegimenRepository private constructor(context: Context) {
     db.upsertIndication(indication.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now))
     // Unlink any medications pointing to this indication
     _snapshot.value.medications.filter { indicationId in it.indicationIds }.forEach { med ->
-      db.upsertMedication(med.copy(indicationIds = med.indicationIds - indicationId, updatedAtEpochMillis = now))
+      db.upsertMedication(med.withIndicationIds(med.indicationIds - indicationId, now))
     }
     reloadSnapshot()
   }
@@ -316,7 +323,7 @@ class RegimenRepository private constructor(context: Context) {
       val shouldLink = med.id in medicationIds
       if (linked != shouldLink) {
         val ids = if (shouldLink) med.indicationIds + indicationId else med.indicationIds - indicationId
-        db.upsertMedication(med.copy(indicationIds = ids, updatedAtEpochMillis = now))
+        db.upsertMedication(med.withIndicationIds(ids, now))
       }
     }
     reloadSnapshot()
@@ -580,6 +587,7 @@ class RegimenRepository private constructor(context: Context) {
     }
     val devices = (storedDevices.filterNot { it.id == selfDevice.id } + selfDevice)
       .sortedWith(compareBy({ it.firstSeenEpochMillis }, { it.id }))
+    val allItems = db.getAllMedications(includeDeleted = true)
     return RegimenBackupBundle(
       exportedAtEpochMillis = System.currentTimeMillis(),
       sourceDeviceId = deviceIdentity.deviceId,
@@ -587,7 +595,8 @@ class RegimenRepository private constructor(context: Context) {
       sharedSettings = settings.shared(),
       devices = devices,
       primary = loadPrimaryClaim(),
-      medications = db.getAllMedications(includeDeleted = true),
+      medications = allItems.filterIsInstance<Medication>(),
+      supplements = allItems.filterIsInstance<Supplement>(),
       providers = db.getAllProviders(includeDeleted = true),
       indications = db.getAllIndications(includeDeleted = true),
       buckets = db.getAllBuckets(includeDeleted = true).ifEmpty { TimeOfDayBucket.defaultBuckets() },
@@ -640,6 +649,7 @@ class RegimenRepository private constructor(context: Context) {
       bundle.providers.forEach { db.upsertProvider(it) }
       bundle.indications.forEach { db.upsertIndication(it) }
       bundle.medications.forEach { db.upsertMedication(it) }
+      bundle.supplements.forEach { db.upsertMedication(it) }
       bundle.schedules.forEach { db.upsertSchedule(it) }
       bundle.doseLogs.forEach { db.upsertDoseLog(it) }
       val liveAfterIds = buckets.filter { it.deletedAtEpochMillis == null }.mapTo(HashSet()) { it.id }
@@ -675,7 +685,7 @@ class RegimenRepository private constructor(context: Context) {
     db.inTransaction {
       db.getAllDoseLogs().forEach { db.upsertDoseLog(it.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now)) }
       db.getAllSchedules().forEach { db.upsertSchedule(it.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now)) }
-      db.getAllMedications().forEach { db.upsertMedication(it.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now)) }
+      db.getAllMedications().forEach { db.upsertMedication(it.withDeletedAt(now)) }
       db.getAllProviders().forEach { db.upsertProvider(it.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now)) }
       db.getAllIndications().forEach { db.upsertIndication(it.copy(updatedAtEpochMillis = now, deletedAtEpochMillis = now)) }
     }
@@ -781,6 +791,7 @@ class RegimenRepository private constructor(context: Context) {
     val condDiabetes = Indication(
       id = UUID.randomUUID().toString(),
       name = "Type 2 Diabetes Mellitus",
+      icd10 = "E11.9",
       details = "Glycemic control, fasting blood glucose monitoring, and basal insulin regimen.",
       kind = IndicationKind.CHRONIC,
       status = IndicationStatus.MANAGED,
@@ -793,6 +804,7 @@ class RegimenRepository private constructor(context: Context) {
     val condNeuropathy = Indication(
       id = UUID.randomUUID().toString(),
       name = "Peripheral Neuropathy",
+      icd10 = "E11.42",
       details = "Mild tingling in feet secondary to diabetes; B12 supplementation started.",
       kind = IndicationKind.CHRONIC,
       status = IndicationStatus.MANAGED,
@@ -806,6 +818,7 @@ class RegimenRepository private constructor(context: Context) {
     val condSinusitis = Indication(
       id = UUID.randomUUID().toString(),
       name = "Acute Bacterial Sinusitis",
+      icd10 = "J01.90",
       details = "10-day oral antibiotic course for acute bacterial sinus infection.",
       kind = IndicationKind.ACUTE,
       status = IndicationStatus.ACTIVE,
@@ -893,6 +906,7 @@ class RegimenRepository private constructor(context: Context) {
     val condStrep = Indication(
       id = UUID.randomUUID().toString(),
       name = "Strep Throat",
+      icd10 = "J02.0",
       details = "Treated with a 10-day amoxicillin course.",
       kind = IndicationKind.ACUTE,
       status = IndicationStatus.RESOLVED,
@@ -906,6 +920,7 @@ class RegimenRepository private constructor(context: Context) {
     val condHeadache = Indication(
       id = UUID.randomUUID().toString(),
       name = "Tension Headache",
+      icd10 = "G44.209",
       details = "Occasional episodic tension headaches and mild musculoskeletal pain.",
       kind = IndicationKind.CHRONIC,
       status = IndicationStatus.MANAGED,
@@ -962,6 +977,7 @@ class RegimenRepository private constructor(context: Context) {
       ndc11 = "50580-0496-50",
       strength = "500 mg",
       form = MedicationForm.TABLET,
+      source = ItemSource.OTC,
       defaultDoseAmount = 1.0,
       defaultDoseUnit = DoseUnit.TABLET,
       minIntervalMinutes = 360, // 6 hours minimum between doses
@@ -1048,6 +1064,7 @@ class RegimenRepository private constructor(context: Context) {
       manufacturer = "Alcon",
       strength = "0.025%",
       form = MedicationForm.DROPS,
+      source = ItemSource.OTC,
       defaultDoseAmount = 1.0,
       defaultDoseUnit = DoseUnit.DROP,
       siteMode = SiteMode.RECORD,
@@ -1107,7 +1124,66 @@ class RegimenRepository private constructor(context: Context) {
       updatedAtEpochMillis = now,
     )
 
-    listOf(medAmoxClav, medTylenol, medInsulin, medB12, medEyeDrops, medIsotretinoin, medPrednisone).forEach {
+    // 3h. Sample Supplements
+    val suppVitaminC = Supplement(
+      id = UUID.randomUUID().toString(),
+      name = "Vitamin C",
+      strength = "1000 mg",
+      form = MedicationForm.TABLET,
+      source = ItemSource.OTC,
+      defaultDoseAmount = 1.0,
+      defaultDoseUnit = DoseUnit.TABLET,
+      manufacturer = "Nature Made",
+      ingredients = listOf(KeyIngredient("Vitamin C (Ascorbic Acid)", "1000 mg")),
+      startedDateIso = today.minusMonths(2).toString(),
+      notes = "Take with morning meal.",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+
+    val suppFiber = Supplement(
+      id = UUID.randomUUID().toString(),
+      name = "Psyllium Husk Fiber",
+      form = MedicationForm.POWDER,
+      source = ItemSource.OTC,
+      defaultDoseAmount = 1.0,
+      defaultDoseUnit = DoseUnit.TBSP,
+      manufacturer = "Metamucil",
+      ingredients = listOf(
+        KeyIngredient("Psyllium Husk", "5.8 g"),
+        KeyIngredient("Soluble Fiber", "3 g"),
+      ),
+      startedDateIso = today.minusMonths(1).toString(),
+      notes = "Mix thoroughly into at least 8 oz of water and drink promptly.",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+
+    val suppPreWorkout = Supplement(
+      id = UUID.randomUUID().toString(),
+      name = "Pre-Workout",
+      form = MedicationForm.POWDER,
+      source = ItemSource.OTC,
+      defaultDoseAmount = 1.0,
+      defaultDoseUnit = DoseUnit.SCOOP,
+      manufacturer = "Optimum Nutrition",
+      minIntervalMinutes = 12 * 60,
+      maxDailyDoses = 1.0,
+      ingredients = listOf(
+        KeyIngredient("Caffeine", "175 mg"),
+        KeyIngredient("Beta-Alanine", "1.5 g"),
+        KeyIngredient("Creatine Monohydrate", "3 g"),
+        KeyIngredient("L-Citrulline", "750 mg"),
+      ),
+      notes = "Take 20–30 minutes before training. Avoid within 6 hours of bedtime.",
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+
+    listOf(
+      medAmoxClav, medTylenol, medInsulin, medB12, medEyeDrops, medIsotretinoin, medPrednisone,
+      suppVitaminC, suppFiber, suppPreWorkout,
+    ).forEach {
       db.upsertMedication(it)
     }
 
@@ -1207,6 +1283,44 @@ class RegimenRepository private constructor(context: Context) {
       updatedAtEpochMillis = now,
     )
 
+    val schedVitaminCDaily = MedicationSchedule(
+      id = UUID.randomUUID().toString(),
+      startDateIso = today.minusMonths(2).toString(),
+      medicationId = suppVitaminC.id,
+      frequencyType = ScheduleFrequencyType.DAILY,
+      bucketIds = listOf(TimeOfDayBucket.BUCKET_MORNING),
+      doseAmount = 1.0,
+      doseUnit = DoseUnit.TABLET,
+      enabled = true,
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+
+    val schedFiberDaily = MedicationSchedule(
+      id = UUID.randomUUID().toString(),
+      startDateIso = today.minusMonths(1).toString(),
+      medicationId = suppFiber.id,
+      frequencyType = ScheduleFrequencyType.DAILY,
+      bucketIds = listOf(TimeOfDayBucket.BUCKET_EVENING),
+      doseAmount = 1.0,
+      doseUnit = DoseUnit.TBSP,
+      enabled = true,
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+
+    val schedPreWorkoutPrn = MedicationSchedule(
+      id = UUID.randomUUID().toString(),
+      medicationId = suppPreWorkout.id,
+      frequencyType = ScheduleFrequencyType.AS_NEEDED,
+      bucketIds = emptyList(),
+      doseAmount = 1.0,
+      doseUnit = DoseUnit.SCOOP,
+      enabled = true,
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+
     listOf(
       schedAmoxClavDaily,
       schedTylenolPrn,
@@ -1215,6 +1329,9 @@ class RegimenRepository private constructor(context: Context) {
       schedEyeDropsDaily,
       schedIsotretinoin,
       schedPrednisoneFinished,
+      schedVitaminCDaily,
+      schedFiberDaily,
+      schedPreWorkoutPrn,
     ).forEach { db.upsertSchedule(it) }
 
     // 5. Prior Dose Logs:
@@ -1278,7 +1395,20 @@ class RegimenRepository private constructor(context: Context) {
       createdAtEpochMillis = now,
       updatedAtEpochMillis = now,
     )
-    listOf(yesterdayLog, yesterdayDropsLog, b12Log, prednisoneLog).forEach { db.upsertDoseLog(it) }
+    val vitaminCLog = DoseLog(
+      id = UUID.randomUUID().toString(),
+      medicationId = suppVitaminC.id,
+      scheduleId = schedVitaminCDaily.id,
+      bucketId = TimeOfDayBucket.BUCKET_MORNING,
+      scheduledDateIso = yesterdayIso,
+      actionTimestampMillis = now - (36L * 3600L * 1000L),
+      status = DoseStatus.TAKEN,
+      amountTaken = 1.0,
+      amountUnit = DoseUnit.TABLET,
+      createdAtEpochMillis = now,
+      updatedAtEpochMillis = now,
+    )
+    listOf(yesterdayLog, yesterdayDropsLog, b12Log, prednisoneLog, vitaminCLog).forEach { db.upsertDoseLog(it) }
   }
 
   companion object {
