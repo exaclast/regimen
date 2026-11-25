@@ -407,6 +407,7 @@
     <string name="a11y_mark_taken_on_time">Mark as taken on time, at %1$s</string>
     <string name="a11y_mark_taken_at_other_time">Mark as taken at another time</string>
     <string name="a11y_open_medication">Open medication</string>
+    <string name="a11y_open_supplement">Open supplement</string>
     <plurals name="a11y_snooze_minutes">
         <item quantity="one">Snooze %1$d minute</item>
         <item quantity="other">Snooze %1$d minutes</item>
@@ -427,6 +428,9 @@
     <string name="med_edit">Edit medication</string>
     <string name="med_delete">Delete medication</string>
     <string name="med_delete_text">This removes the medication and its schedules. Dose history is kept.</string>
+    <string name="supp_edit">Edit supplement</string>
+    <string name="supp_delete">Delete supplement</string>
+    <string name="supp_delete_text">This removes the supplement and its schedules. Dose history is kept.</string>
     <string name="med_default_dose">Default dose: %1$s</string>
     <string name="med_next_site">Next site: %1$s</string>
     <string name="med_log_window_dose">Log %1$s dose</string>
@@ -759,7 +763,6 @@
     <string name="editor_supplement_name_hint">e.g. Vitamin C, Pre-Workout, Fiber</string>
     <string name="editor_strength_short">Strength</string>
     <string name="editor_strength_optional_hint">Optional, e.g. 1000 mg</string>
-    <string name="editor_strength_optional">Strength (optional)</string>
     <string name="editor_key_ingredients">Key ingredients</string>
     <string name="editor_key_ingredients_none">Optional</string>
     <plurals name="editor_key_ingredients_count">
@@ -769,7 +772,6 @@
     <string name="editor_ingredient_name">Ingredient</string>
     <string name="editor_ingredient_name_hint">e.g. Caffeine, Vitamin C</string>
     <string name="editor_ingredient_amount_short">Amount</string>
-    <string name="editor_ingredient_amount">Amount (optional)</string>
     <string name="editor_ingredient_amount_hint">e.g. 200 mg, 5 g</string>
     <string name="editor_add_ingredient">Add ingredient</string>
     <string name="editor_remove_ingredient">Remove %1$s</string>

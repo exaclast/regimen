@@ -202,12 +202,14 @@ fun MedicationDetailScreen(
           IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back)) }
         },
         actions = {
-          IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.med_edit)) }
+          IconButton(onClick = onEdit) {
+            Icon(Icons.Default.Edit, contentDescription = stringResource(if (medication.isSupplement) R.string.supp_edit else R.string.med_edit))
+          }
           Box {
             IconButton(onClick = { menuOpen = true }) { Icon(Icons.Default.MoreVert, contentDescription = stringResource(R.string.action_more)) }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
               DropdownMenuItem(
-                text = { Text(stringResource(R.string.med_delete)) },
+                text = { Text(stringResource(if (medication.isSupplement) R.string.supp_delete else R.string.med_delete)) },
                 leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
                 onClick = { menuOpen = false; confirmDelete = true },
               )
@@ -602,7 +604,7 @@ fun MedicationDetailScreen(
   if (confirmDelete) {
     ConfirmDialog(
       title = stringResource(R.string.provider_delete_title, medication.primaryName),
-      text = stringResource(R.string.med_delete_text),
+      text = stringResource(if (medication.isSupplement) R.string.supp_delete_text else R.string.med_delete_text),
       confirmLabel = stringResource(R.string.action_delete),
       destructive = true,
       onConfirm = {

@@ -1120,10 +1120,11 @@ private fun DoseCard(
     if (canMarkSkipped) add(CustomAccessibilityAction(stringResource(R.string.mark_skipped)) { onSkip(); true })
     if (item.existingLog != null) add(CustomAccessibilityAction(stringResource(R.string.mark_not_taken)) { onClearLog(); true })
   }
-  val openMedicationLabel = stringResource(R.string.a11y_open_medication)
+  val subtitle = med.todaySubtitle()
+  val openMedicationLabel = stringResource(if (med.isSupplement) R.string.a11y_open_supplement else R.string.a11y_open_medication)
   val a11yDescription = listOfNotNull(
     med.primaryName,
-    med.secondaryName,
+    subtitle.takeIf { it.isNotEmpty() },
     item.doseText(),
     if (item.isNewDose && !item.isCompleted) stringResource(R.string.dose_new_from_today) else null,
     statusText,
@@ -1153,13 +1154,15 @@ private fun DoseCard(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
           )
-          Text(
-            text = listOfNotNull(med.secondaryName, med.strength).joinToString(" · "),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-          )
+          if (subtitle.isNotEmpty()) {
+            Text(
+              text = subtitle,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
           Text(
             text = item.doseText(),
             style = MaterialTheme.typography.bodyMedium,
@@ -1375,8 +1378,9 @@ private fun PrnCard(
   }
   val logLabel = stringResource(R.string.prn_log_label, formatNum(item.doseAmount), item.doseUnit.symbol)
   val logOtherTimeLabel = stringResource(R.string.prn_log_other_time_label, logLabel)
+  val subtitle = med.todaySubtitle()
   val readyLabel = stringResource(R.string.status_ready)
-  val openMedicationLabel = stringResource(R.string.a11y_open_medication)
+  val openMedicationLabel = stringResource(if (med.isSupplement) R.string.a11y_open_supplement else R.string.a11y_open_medication)
   Surface(
     color = MaterialTheme.colorScheme.surfaceContainerLow,
     shape = MaterialTheme.shapes.extraLarge,
@@ -1384,7 +1388,7 @@ private fun PrnCard(
     modifier = Modifier
       .fillMaxWidth()
       .clearAndSetSemantics {
-        contentDescription = listOfNotNull(med.primaryName, med.secondaryName, med.strength, warning ?: readyLabel, dailyNote)
+        contentDescription = listOfNotNull(med.primaryName, subtitle.takeIf { it.isNotEmpty() }, warning ?: readyLabel, dailyNote)
           .joinToString(", ")
         onClick(label = openMedicationLabel) { onOpenMedication(); true }
         if (enabled) {
@@ -1403,11 +1407,13 @@ private fun PrnCard(
         maxLines = 2,
         overflow = TextOverflow.Ellipsis,
       )
-      Text(
-        text = listOfNotNull(med.secondaryName, med.strength).joinToString(" · "),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
+      if (subtitle.isNotEmpty()) {
+        Text(
+          text = subtitle,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
       if (warning != null) {
         StatusLine(icon = Icons.Default.Warning, text = warning, color = MaterialTheme.colorScheme.error)
       } else {
@@ -1617,3 +1623,9 @@ fun SiteSelectionDialog(
     dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
 }
+
+private fun RegimenItem.todaySubtitle(): String = listOfNotNull(
+  secondaryName?.takeIf { it.isNotBlank() },
+  strength.takeIf { it.isNotBlank() },
+  (this as? Supplement)?.manufacturer?.takeIf { it.isNotBlank() },
+).distinct().joinToString(" · ")
